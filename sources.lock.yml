@@ -1,0 +1,24 @@
+# Pinned upstream sources. ASVS pins a release tag; the Cheat Sheet Series rolls
+# continuously so it pins a commit SHA. Bumped by CI via a reviewed PR.
+packs:
+  asvs:
+    type: checklist
+    repo: OWASP/ASVS
+    release: v5.0.0_release
+    version: 5.0.0
+    license: CC-BY-SA-4.0
+    assets:
+      - OWASP_Application_Security_Verification_Standard_5.0.0_en.flat.json
+    extra_paths:
+      - 5.0/mappings/v5.0.be_cwe_mapping.json
+      - 5.0/mappings/nist.md
+      - 5.0/mappings/mapping_v5.0.0_to_v4.0.3.yml
+  cheatsheets:
+    type: corpus
+    repo: OWASP/CheatSheetSeries
+    commit: 7d1c2d3daf632206e8f2c685214c699ff8f11938
+    version: "20260724"
+    license: CC-BY-SA-4.0
+    paths:
+      - cheatsheets/
+      - IndexASVS.md
