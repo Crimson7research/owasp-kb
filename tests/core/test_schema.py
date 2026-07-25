@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from owasp_kb.core.db import connect, finalize_for_readonly
+from owasp_kb.core.db import connect, finalize_for_readonly, is_wal_index
 from owasp_kb.core.schema import create_schema
 
 EXPECTED_TABLES = {
@@ -128,3 +128,56 @@ def test_read_only_connection_rejects_writes(tmp_path):
     served = connect(tmp_path / "kb.sqlite", read_only=True)
     with pytest.raises(sqlite3.OperationalError):
         served.execute("INSERT INTO packs(name, type, version) VALUES ('x', 'corpus', '1')")
+
+
+def test_serving_an_unfinalized_wal_index_raises_actionably(tmp_path):
+    """immutable=1 can return silently wrong results for a file still being
+    written, so serving a WAL index must fail loudly instead."""
+    index = tmp_path / "kb.sqlite"
+    conn = connect(index)
+    create_schema(conn)
+    _seed_one_chunk(conn, "brute force")
+    conn.commit()
+    conn.close()  # deliberately NOT finalized
+
+    with pytest.raises(RuntimeError) as excinfo:
+        connect(index, read_only=True)
+    message = str(excinfo.value)
+    assert "WAL" in message
+    assert "finalize_for_readonly" in message, "the error must name the fix"
+
+
+def test_is_wal_index_detects_both_states(tmp_path):
+    index = tmp_path / "kb.sqlite"
+    conn = connect(index)
+    create_schema(conn)
+    conn.commit()
+    assert is_wal_index(index) is True
+    finalize_for_readonly(conn)
+    conn.close()
+    assert is_wal_index(index) is False
+
+
+def test_is_wal_index_on_a_missing_or_truncated_file_is_false(tmp_path):
+    assert is_wal_index(tmp_path / "absent.sqlite") is False
+    stub = tmp_path / "stub.sqlite"
+    stub.write_bytes(b"short")
+    assert is_wal_index(stub) is False
+
+
+def test_read_only_open_handles_a_path_with_uri_metacharacters(tmp_path):
+    """An unencoded '?' in the path silently opens a different database."""
+    directory = tmp_path / "od? d"
+    directory.mkdir()
+    index = directory / "kb.sqlite"
+
+    conn = connect(index)
+    create_schema(conn)
+    _seed_one_chunk(conn, "argon2id")
+    conn.commit()
+    finalize_for_readonly(conn)
+    conn.close()
+
+    served = connect(index, read_only=True)
+    assert len(_matches(served, "argon2id")) == 1
+    served.close()
