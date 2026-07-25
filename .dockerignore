@@ -1,0 +1,14 @@
+.git
+.github
+.devcontainer
+data
+docs
+tests
+plugins
+install
+scripts
+__pycache__
+*.egg-info
+.pytest_cache
+.ruff_cache
+dist/*.sqlite-journal
