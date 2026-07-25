@@ -21,8 +21,12 @@ EXPECTED_SKILLS = {
     "owasp-threat-model",
 }
 TOOL_NAMES = {
-    "kb_info", "owasp_search", "owasp_outline",
-    "owasp_get", "owasp_checklist", "owasp_related",
+    "kb_info",
+    "owasp_search",
+    "owasp_outline",
+    "owasp_get",
+    "owasp_checklist",
+    "owasp_related",
 }
 
 
