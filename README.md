@@ -72,7 +72,7 @@ The embedder is the entire size difference (~446 MB). It also measurably
 improves ranking: mean rank of the expected document across four paraphrased
 queries goes from 3.0 (lexical) to 2.2 (hybrid) on the real corpus — see
 [docs/architecture.md](docs/architecture.md) and ADR
-`docs/decisions/0004-lite-and-full-variants.md` for the full measurement and
+[0004](docs/decisions/0004-lite-and-full-variants.md) for the full measurement and
 how the acceptance bar was corrected along the way.
 
 ## Install
@@ -147,7 +147,7 @@ image exists, independent of whatever `:full` points to later.
 
 Design decisions — including the SQLite-over-Postgres call, the baked-index
 trade-off, and why the project is Python — are recorded as ADRs in
-`docs/decisions/`.
+[docs/decisions/](docs/decisions/).
 
 ## Licensing
 
