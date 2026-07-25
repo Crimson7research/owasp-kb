@@ -7,10 +7,7 @@
   "runArgs": ["--name", "owasp-kb-dev"],
   "workspaceFolder": "/workspace",
   "remoteUser": "dev",
-  "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
-  },
-  "postCreateCommand": "pip install --user -e '.[dev]'",
+  "postCreateCommand": "if [ -f pyproject.toml ]; then pip install --user -e '.[dev]'; else echo 'no pyproject.toml yet; run pip install --user -e \".[dev]\" after Task 2'; fi",
   "customizations": {
     "vscode": {
       "extensions": ["ms-python.python", "charliermarsh.ruff"]
