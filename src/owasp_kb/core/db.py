@@ -10,7 +10,7 @@ SQLITE_HEADER_WRITE_VERSION_OFFSET = 18
 WAL_WRITE_VERSION = 2
 
 
-def is_wal_index(path: Path) -> bool:
+def is_wal_index(path: str | Path) -> bool:
     """Whether this file's SQLite header says it is in WAL mode.
 
     Byte 18 of the header is the file-format write version: 1 for a rollback
@@ -21,7 +21,7 @@ def is_wal_index(path: Path) -> bool:
     detect this.
     """
     try:
-        with path.open("rb") as handle:
+        with Path(path).open("rb") as handle:
             header = handle.read(20)
     except OSError:
         return False
