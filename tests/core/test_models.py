@@ -1,3 +1,5 @@
+import pytest
+
 from owasp_kb.core.models import Chunk, OutlineNode, RelatedEdge, RequirementRow, SearchHit
 
 
@@ -25,6 +27,34 @@ def test_search_hit_citation_for_whole_document():
         heading_path="Authentication", text="x", score=0.5,
     )
     assert hit.citation == "Authentication_Cheat_Sheet"
+
+
+def test_hit_without_any_identifier_is_rejected():
+    """A hit with neither identifier would render as the literal 'None', which
+    looks like a citation and points nowhere."""
+    with pytest.raises(ValueError, match="citable"):
+        SearchHit(
+            pack="cheatsheets", pack_version="20260724", req_id=None, doc_key=None,
+            anchor=None, heading_path="x", text="y", score=0.0,
+        )
+
+
+def test_anchor_without_doc_key_is_rejected():
+    """Would otherwise render as 'None#password-storage'."""
+    with pytest.raises(ValueError, match="citable"):
+        SearchHit(
+            pack="cheatsheets", pack_version="20260724", req_id=None, doc_key=None,
+            anchor="password-storage", heading_path="x", text="y", score=0.0,
+        )
+
+
+def test_citation_falls_back_to_the_raw_pack_name_for_an_unlabelled_pack():
+    """Later packs (WSTG, MASVS) must cite sensibly before they get a label."""
+    hit = SearchHit(
+        pack="wstg", pack_version="4.2", req_id="WSTG-ATHN-01", doc_key=None,
+        anchor=None, heading_path="x", text="y", score=0.0,
+    )
+    assert hit.citation == "wstg 4.2 WSTG-ATHN-01"
 
 
 def test_chunk_and_row_types_construct():

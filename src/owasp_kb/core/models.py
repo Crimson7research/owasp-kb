@@ -28,6 +28,22 @@ class SearchHit:
     text: str
     score: float
 
+    def __post_init__(self) -> None:
+        """Reject a hit that cannot be cited.
+
+        Citations are the product: the server's value is references a reviewer can
+        check. A hit carrying neither a requirement id nor a doc_key would render
+        as the literal string "None" (or "None#password-storage"), which looks
+        like a citation and points nowhere. That is a bug in whichever retriever
+        built the row, so fail at construction where it can be traced.
+        """
+        if not self.req_id and not self.doc_key:
+            raise ValueError(
+                "SearchHit needs a req_id or a doc_key to be citable; got neither "
+                f"(pack={self.pack!r}, heading_path={self.heading_path!r}). A "
+                "retriever built this from an incomplete row."
+            )
+
     @property
     def citation(self) -> str:
         """A stable, human-checkable reference for this hit."""
@@ -36,7 +52,7 @@ class SearchHit:
             return f"{label} {self.pack_version} {self.req_id}"
         if self.anchor:
             return f"{self.doc_key}#{self.anchor}"
-        return str(self.doc_key)
+        return self.doc_key
 
 
 @dataclass(frozen=True)
