@@ -1,0 +1,25 @@
+{
+  "requirements": [
+    {
+      "chapter_id": "V1", "chapter_name": "Encoding and Sanitization",
+      "section_id": "V1.1", "section_name": "Encoding and Sanitization Architecture",
+      "req_id": "V1.1.1",
+      "req_description": "Verify that input is decoded or unescaped into a canonical form only once.",
+      "L": "2"
+    },
+    {
+      "chapter_id": "V6", "chapter_name": "Authentication",
+      "section_id": "V6.2", "section_name": "Password Security",
+      "req_id": "V6.2.1",
+      "req_description": "Verify that user set passwords are at least 8 characters in length.",
+      "L": "1"
+    },
+    {
+      "chapter_id": "V6", "chapter_name": "Authentication",
+      "section_id": "V6.2", "section_name": "Password Security",
+      "req_id": "V6.2.2",
+      "req_description": "Verify that passwords of at least 64 characters are permitted.",
+      "L": "2"
+    }
+  ]
+}
