@@ -11,6 +11,9 @@ packs:
       - OWASP_Application_Security_Verification_Standard_5.0.0_en.flat.json
     extra_paths:
       - 5.0/mappings/v5.0.be_cwe_mapping.json
+      # Required to use the CWE mapping at all: it is keyed on bleeding-edge ids,
+      # which are renumbered relative to 5.0.0 (measured: 0 of 345 are unchanged).
+      - 5.0/mappings/mapping_v5.0.be_to_v5.0.0.yml
       - 5.0/mappings/nist.md
       - 5.0/mappings/mapping_v5.0.0_to_v4.0.3.yml
   cheatsheets:
