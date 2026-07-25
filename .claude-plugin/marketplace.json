@@ -1,0 +1,14 @@
+{
+  "name": "owasp-kb",
+  "owner": {
+    "name": "Yimura"
+  },
+  "plugins": [
+    {
+      "name": "owasp-kb",
+      "source": "./plugins/owasp-kb",
+      "description": "OWASP ASVS and Cheat Sheet guidance for secure coding, ASVS verification, gap reporting and threat modelling, backed by a local MCP knowledge base",
+      "version": "0.1.0"
+    }
+  ]
+}

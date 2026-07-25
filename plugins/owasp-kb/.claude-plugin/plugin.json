@@ -1,0 +1,12 @@
+{
+  "name": "owasp-kb",
+  "version": "0.1.0",
+  "description": "Authoritative OWASP security guidance (ASVS 5.0.0 + Cheat Sheet Series) via a local MCP server, with skills for secure coding, ASVS verification, gap reporting and threat modelling",
+  "author": {
+    "name": "Yimura"
+  },
+  "repository": "https://github.com/Yimura/owasp-kb",
+  "license": "MIT",
+  "keywords": ["security", "owasp", "asvs", "appsec", "secure-coding", "threat-modeling"],
+  "mcpServers": "./.mcp.json"
+}
