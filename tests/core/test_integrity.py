@@ -12,11 +12,14 @@ from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 def conn(tmp_path):
     c = connect(tmp_path / "kb.sqlite")
     create_schema(c)
-    ingest_asvs(c, "tests/fixtures/asvs_sample.flat.json",
-                version="5.0.0", license="CC-BY-SA-4.0")
-    ingest_cheatsheets(c, "tests/fixtures/cheatsheets", version="20260724",
-                       commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
-                       license="CC-BY-SA-4.0")
+    ingest_asvs(c, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0")
+    ingest_cheatsheets(
+        c,
+        "tests/fixtures/cheatsheets",
+        version="20260724",
+        commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
+        license="CC-BY-SA-4.0",
+    )
     return c
 
 
@@ -62,12 +65,12 @@ def test_detects_empty_chunks(conn):
 def test_detects_document_with_no_chunks(conn):
     _all_rels(conn)
     pid = conn.execute("SELECT id FROM packs WHERE name='cheatsheets'").fetchone()[0]
-    conn.execute("INSERT INTO docs (pack_id, doc_key, title) VALUES (?, 'Empty_Doc', 'Empty')",
-                 (pid,))
+    conn.execute(
+        "INSERT INTO docs (pack_id, doc_key, title) VALUES (?, 'Empty_Doc', 'Empty')", (pid,)
+    )
     conn.commit()
     assert any(
-        "Empty_Doc" in f
-        for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+        "Empty_Doc" in f for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
     )
 
 
@@ -79,8 +82,10 @@ def test_detects_dangling_guidance_link(conn):
         " 'guidance', 'IndexASVS.md')"
     )
     conn.commit()
-    assert any("Does_Not_Exist_Cheat_Sheet" in f
-               for f in run_checks(conn, expected_requirements=3, check_edge_floors=False))
+    assert any(
+        "Does_Not_Exist_Cheat_Sheet" in f
+        for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    )
 
 
 def test_detects_requirement_without_a_chunk(conn):
@@ -88,16 +93,17 @@ def test_detects_requirement_without_a_chunk(conn):
     conn.execute("UPDATE requirements SET chunk_id = NULL WHERE req_id = 'V6.2.1'")
     conn.commit()
     assert any(
-        "V6.2.1" in f
-        for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+        "V6.2.1" in f for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
     )
 
 
 def test_detects_unbalanced_code_fence(conn):
     _all_rels(conn)
     sid = conn.execute("SELECT id FROM sections LIMIT 1").fetchone()[0]
-    conn.execute("INSERT INTO chunks (section_id, text, token_est)"
-                 " VALUES (?, 'text ``` unclosed', 3)", (sid,))
+    conn.execute(
+        "INSERT INTO chunks (section_id, text, token_est) VALUES (?, 'text ``` unclosed', 3)",
+        (sid,),
+    )
     conn.commit()
     assert any(
         "code fence" in f

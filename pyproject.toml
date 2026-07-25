@@ -38,6 +38,10 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# ruff formats Python code blocks inside markdown. The plan and spec documents
+# record what was specified and executed, so reformatting them produces a large
+# diff of noise over content that is deliberately frozen.
+extend-exclude = ["docs/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

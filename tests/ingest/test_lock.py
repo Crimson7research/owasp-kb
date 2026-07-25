@@ -37,10 +37,21 @@ def test_release_assets_are_named_exactly_not_globbed():
 
 def test_loading_a_lock_pinning_latest_is_rejected(tmp_path):
     bad = tmp_path / "bad.yml"
-    bad.write_text(yaml.safe_dump({"packs": {"asvs": {
-        "type": "checklist", "repo": "OWASP/ASVS", "release": "latest",
-        "version": "5.0.0", "license": "CC-BY-SA-4.0",
-    }}}))
+    bad.write_text(
+        yaml.safe_dump(
+            {
+                "packs": {
+                    "asvs": {
+                        "type": "checklist",
+                        "repo": "OWASP/ASVS",
+                        "release": "latest",
+                        "version": "5.0.0",
+                        "license": "CC-BY-SA-4.0",
+                    }
+                }
+            }
+        )
+    )
     with pytest.raises(ValueError, match="latest"):
         load_lock(bad)
 

@@ -37,9 +37,7 @@ def sources(tmp_path):
         (cs / "cheatsheets" / name).write_text(
             (FIXTURES / "cheatsheets" / name).read_text(encoding="utf-8")
         )
-    (cs / "IndexASVS.md").write_text(
-        (FIXTURES / "IndexASVS_sample.md").read_text(encoding="utf-8")
-    )
+    (cs / "IndexASVS.md").write_text((FIXTURES / "IndexASVS_sample.md").read_text(encoding="utf-8"))
     return tmp_path
 
 
@@ -125,10 +123,17 @@ def test_main_returns_zero_on_success(sources, tmp_path):
     from owasp_kb.ingest import build as build_mod
 
     out = tmp_path / "cli.sqlite"
-    rc = build_mod.main([
-        "--sources", str(sources), "--out", str(out),
-        "--expected-requirements", "3", "--no-edge-floors",
-    ])
+    rc = build_mod.main(
+        [
+            "--sources",
+            str(sources),
+            "--out",
+            str(out),
+            "--expected-requirements",
+            "3",
+            "--no-edge-floors",
+        ]
+    )
     assert rc == 0
     assert out.exists()
 
@@ -137,9 +142,16 @@ def test_main_returns_nonzero_when_integrity_fails(sources, tmp_path):
     from owasp_kb.ingest import build as build_mod
 
     out = tmp_path / "bad.sqlite"
-    rc = build_mod.main([
-        "--sources", str(sources), "--out", str(out),
-        "--expected-requirements", "999", "--no-edge-floors",
-    ])
+    rc = build_mod.main(
+        [
+            "--sources",
+            str(sources),
+            "--out",
+            str(out),
+            "--expected-requirements",
+            "999",
+            "--no-edge-floors",
+        ]
+    )
     assert rc != 0
     assert not out.exists()

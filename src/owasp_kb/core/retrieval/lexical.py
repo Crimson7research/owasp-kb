@@ -15,11 +15,13 @@ _TERM = re.compile(r"[\w']+")
 # measured, "how do I bake sourdough bread" scored -12.28, better than a real
 # query's third hit at -10.5, purely on how/do/I. A score threshold cannot fix
 # that; removing the terms can.
-_STOPWORDS = frozenset("""
+_STOPWORDS = frozenset(
+    """
 a an and are as at be but by can could do does for from how i if in into is it me my of on or
 should that the their them then there these they this to us was we what when where which who
 why will with would you your
-""".split())
+""".split()
+)
 
 
 def to_fts_query(text: str) -> str | None:

@@ -60,9 +60,7 @@ class Kb:
     # -- corpus navigation -----------------------------------------------
 
     def _doc_id(self, doc_key: str) -> int:
-        row = self._conn.execute(
-            "SELECT id FROM docs WHERE doc_key = ?", (doc_key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT id FROM docs WHERE doc_key = ?", (doc_key,)).fetchone()
         if row is not None:
             return int(row["id"])
         all_keys = [r[0] for r in self._conn.execute("SELECT doc_key FROM docs")]
@@ -74,8 +72,7 @@ class Kb:
         """Heading tree for a document, so a caller can fetch one section."""
         doc_id = self._doc_id(doc_key)
         rows = self._conn.execute(
-            "SELECT anchor, heading_path, depth, ord FROM sections"
-            " WHERE doc_id = ? ORDER BY ord",
+            "SELECT anchor, heading_path, depth, ord FROM sections WHERE doc_id = ? ORDER BY ord",
             (doc_id,),
         ).fetchall()
         return [
@@ -92,8 +89,7 @@ class Kb:
         """Return a whole document, or one section when anchor is given."""
         doc_id = self._doc_id(doc_key)
         sql = (
-            "SELECT c.text FROM chunks c JOIN sections s ON s.id = c.section_id"
-            " WHERE s.doc_id = ?"
+            "SELECT c.text FROM chunks c JOIN sections s ON s.id = c.section_id WHERE s.doc_id = ?"
         )
         params: list[object] = [doc_id]
         if anchor is not None:
@@ -134,8 +130,10 @@ class Kb:
         )
         params: list[object] = [pack_id(self._conn, pack)]
         for column, value in (
-            ("chapter_id", chapter), ("section_id", section),
-            ("req_id", req_id), ("level", level),
+            ("chapter_id", chapter),
+            ("section_id", section),
+            ("req_id", req_id),
+            ("level", level),
         ):
             if value is not None:
                 sql += f" AND {column} = ?"
@@ -150,9 +148,13 @@ class Kb:
         rows = self._conn.execute(sql, params).fetchall()
         return [
             RequirementRow(
-                req_id=r["req_id"], chapter_id=r["chapter_id"],
-                chapter_name=r["chapter_name"], section_id=r["section_id"],
-                section_name=r["section_name"], text=r["text"], level=r["level"],
+                req_id=r["req_id"],
+                chapter_id=r["chapter_id"],
+                chapter_name=r["chapter_name"],
+                section_id=r["section_id"],
+                section_name=r["section_name"],
+                text=r["text"],
+                level=r["level"],
             )
             for r in rows
         ]
@@ -183,8 +185,6 @@ class Kb:
         sql += " ORDER BY rel, to_id"
         rows = self._conn.execute(sql, params).fetchall()
         return [
-            RelatedEdge(
-                rel=r["rel"], to_kind=r["to_kind"], to_id=r["to_id"], source=r["source"]
-            )
+            RelatedEdge(rel=r["rel"], to_kind=r["to_kind"], to_id=r["to_id"], source=r["source"])
             for r in rows
         ]

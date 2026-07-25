@@ -17,12 +17,39 @@ MAX_GET_CHARS = 30_000
 LARGE_CHECKLIST_ROWS = 100
 
 TOOL_TRIGGER_TOPICS = (
-    "authentication", "passwords", "MFA", "sessions", "cookies", "JWT", "OAuth", "OIDC",
-    "authorization", "access control", "input validation", "SQL injection",
-    "command injection", "LDAP injection", "XSS", "output encoding", "deserialization",
-    "file upload", "file download", "cryptography", "TLS", "key management", "secrets",
-    "logging", "error handling", "CSRF", "CORS", "security headers", "GraphQL",
-    "WebSocket", "WebRTC", "API security", "secure design review",
+    "authentication",
+    "passwords",
+    "MFA",
+    "sessions",
+    "cookies",
+    "JWT",
+    "OAuth",
+    "OIDC",
+    "authorization",
+    "access control",
+    "input validation",
+    "SQL injection",
+    "command injection",
+    "LDAP injection",
+    "XSS",
+    "output encoding",
+    "deserialization",
+    "file upload",
+    "file download",
+    "cryptography",
+    "TLS",
+    "key management",
+    "secrets",
+    "logging",
+    "error handling",
+    "CSRF",
+    "CORS",
+    "security headers",
+    "GraphQL",
+    "WebSocket",
+    "WebRTC",
+    "API security",
+    "secure design review",
 )
 
 _TOPICS = ", ".join(TOOL_TRIGGER_TOPICS)
@@ -65,8 +92,11 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             "retrieval_mode": info.retrieval_mode,
             "packs": [
                 {
-                    "name": p.name, "type": p.type, "version": p.version,
-                    "commit_sha": p.commit_sha, "license": p.license,
+                    "name": p.name,
+                    "type": p.type,
+                    "version": p.version,
+                    "commit_sha": p.commit_sha,
+                    "license": p.license,
                 }
                 for p in info.packs
             ],
@@ -91,8 +121,11 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         return {
             "hits": [
                 {
-                    "citation": h.citation, "pack": h.pack, "req_id": h.req_id,
-                    "doc_key": h.doc_key, "anchor": h.anchor,
+                    "citation": h.citation,
+                    "pack": h.pack,
+                    "req_id": h.req_id,
+                    "doc_key": h.doc_key,
+                    "anchor": h.anchor,
                     "heading_path": h.heading_path,
                     "excerpt": _truncate(h.text, MAX_EXCERPT_CHARS),
                 }
@@ -142,9 +175,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         where you need every applicable requirement rather than the best-matching
         few."""
         try:
-            rows = kb.checklist(
-                pack, chapter=chapter, section=section, req_id=req_id, level=level
-            )
+            rows = kb.checklist(pack, chapter=chapter, section=section, req_id=req_id, level=level)
             version = next(p.version for p in kb.info().packs if p.name == pack)
         except (KeyError, ValueError) as exc:
             return _error(exc)
@@ -154,9 +185,13 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             "count": len(rows),
             "requirements": [
                 {
-                    "req_id": r.req_id, "level": r.level, "chapter": r.chapter_id,
-                    "chapter_name": r.chapter_name, "section": r.section_id,
-                    "section_name": r.section_name, "text": r.text,
+                    "req_id": r.req_id,
+                    "level": r.level,
+                    "chapter": r.chapter_id,
+                    "chapter_name": r.chapter_name,
+                    "section": r.section_id,
+                    "section_name": r.section_name,
+                    "text": r.text,
                 }
                 for r in rows
             ],

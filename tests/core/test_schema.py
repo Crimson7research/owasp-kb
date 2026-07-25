@@ -6,7 +6,13 @@ from owasp_kb.core.db import connect, finalize_for_readonly, is_wal_index
 from owasp_kb.core.schema import create_schema
 
 EXPECTED_TABLES = {
-    "packs", "docs", "sections", "chunks", "chunks_fts", "requirements", "links",
+    "packs",
+    "docs",
+    "sections",
+    "chunks",
+    "chunks_fts",
+    "requirements",
+    "links",
 }
 
 
@@ -59,9 +65,7 @@ def _seed_one_chunk(conn, text):
 
 
 def _matches(conn, term):
-    return conn.execute(
-        "SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ?", (term,)
-    ).fetchall()
+    return conn.execute("SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ?", (term,)).fetchall()
 
 
 def test_deleting_a_chunk_removes_it_from_fts(tmp_path):

@@ -77,9 +77,7 @@ def _split_oversized(body: str, max_tokens: int) -> list[str]:
     return [p for p in parts if p] or [body.strip()]
 
 
-def chunk_markdown(
-    text: str, *, title: str, max_tokens: int = DEFAULT_MAX_TOKENS
-) -> list[Chunk]:
+def chunk_markdown(text: str, *, title: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> list[Chunk]:
     """Split a markdown document at H2/H3 into chunks carrying their heading path."""
     sections: list[tuple[int, str, list[str]]] = [(1, title, [])]
     ancestors: dict[int, str] = {1: title}

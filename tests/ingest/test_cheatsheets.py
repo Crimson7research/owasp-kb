@@ -150,9 +150,9 @@ def test_repeated_headings_produce_distinct_sections(conn, tmp_path):
         "## CSP\n\ncsp\n\n### Limitations\n\ncsp limits\n"
     )
     _ingest(conn, directory)
-    rows = dict(conn.execute(
-        "SELECT anchor, heading_path FROM sections WHERE anchor LIKE 'limitations%'"
-    ))
+    rows = dict(
+        conn.execute("SELECT anchor, heading_path FROM sections WHERE anchor LIKE 'limitations%'")
+    )
     assert set(rows) == {"limitations", "limitations-1"}
     assert rows["limitations"].endswith("X-Frame-Options > Limitations")
     assert rows["limitations-1"].endswith("CSP > Limitations")

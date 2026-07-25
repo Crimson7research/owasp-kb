@@ -126,9 +126,7 @@ def ingest_cwe_links(
     return added, dropped
 
 
-def ingest_supersedes_links(
-    conn: sqlite3.Connection, mapping_path: str | Path
-) -> tuple[int, int]:
+def ingest_supersedes_links(conn: sqlite3.Connection, mapping_path: str | Path) -> tuple[int, int]:
     """Map v5 requirements to the v4.0.3 requirements they replace.
 
     Upstream values are prose, e.g. 'MODIFIED, MOVED FROM v4.0.3-2.1.1, COVERS
@@ -152,14 +150,13 @@ def ingest_supersedes_links(
             continue
         text = " ".join(str(v) for v in value.values()) if isinstance(value, dict) else str(value)
         for v4 in dict.fromkeys(_V4_REF.findall(text)):
-            rows.append(("requirement", req_id, "requirement", f"4.0.3-{v4}",
-                         "supersedes", source))
+            rows.append(("requirement", req_id, "requirement", f"4.0.3-{v4}", "supersedes", source))
 
     added = _insert(conn, rows, source)
     if dropped:
         log.warning(
-            "dropped %d v4 mapping entries whose v5 requirement ids are absent from this "
-            "release", dropped,
+            "dropped %d v4 mapping entries whose v5 requirement ids are absent from this release",
+            dropped,
         )
     return added, dropped
 
@@ -184,13 +181,12 @@ def ingest_nist_links(conn: sqlite3.Connection, nist_path: str | Path) -> tuple[
         if section:
             v4_to_nist[match.group(1)] = section
 
-    edges = conn.execute(
-        "SELECT from_id, to_id FROM links WHERE rel = 'supersedes'"
-    ).fetchall()
+    edges = conn.execute("SELECT from_id, to_id FROM links WHERE rel = 'supersedes'").fetchall()
     if not edges:
         log.warning(
             "no 'supersedes' edges present, so %d NIST rows cannot be attached to v5 "
-            "requirement ids; run ingest_supersedes_links first", len(v4_to_nist),
+            "requirement ids; run ingest_supersedes_links first",
+            len(v4_to_nist),
         )
         return 0, len(v4_to_nist)
 
@@ -202,15 +198,23 @@ def ingest_nist_links(conn: sqlite3.Connection, nist_path: str | Path) -> tuple[
         if section is None:
             continue
         matched_v4.add(v4_id)
-        rows.append((
-            "requirement", edge["from_id"], "nist",
-            f"NIST SP 800-63B {section}", "nist", source,
-        ))
+        rows.append(
+            (
+                "requirement",
+                edge["from_id"],
+                "nist",
+                f"NIST SP 800-63B {section}",
+                "nist",
+                source,
+            )
+        )
 
     added = _insert(conn, rows, source)
     skipped = len(v4_to_nist) - len(matched_v4)
     log.info(
         "NIST links: %d edges added, %d nist.md rows unmatched (mapping is keyed on "
-        "v4.0.3, so coverage is partial)", added, skipped,
+        "v4.0.3, so coverage is partial)",
+        added,
+        skipped,
     )
     return added, skipped

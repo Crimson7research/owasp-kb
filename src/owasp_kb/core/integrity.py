@@ -83,9 +83,7 @@ def run_checks(
 
     if check_edge_floors:
         for rel, minimum in sorted(MIN_EDGES_PER_REL.items()):
-            count = conn.execute(
-                "SELECT COUNT(*) FROM links WHERE rel = ?", (rel,)
-            ).fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM links WHERE rel = ?", (rel,)).fetchone()[0]
             if 0 < count < minimum:
                 failures.append(
                     f"only {count} {rel!r} links, expected at least {minimum}; "

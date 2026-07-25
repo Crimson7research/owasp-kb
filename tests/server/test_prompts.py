@@ -1,8 +1,12 @@
 from owasp_kb.server.prompts import build_prompts
 
 TOOL_NAMES = {
-    "kb_info", "owasp_search", "owasp_outline",
-    "owasp_get", "owasp_checklist", "owasp_related",
+    "kb_info",
+    "owasp_search",
+    "owasp_outline",
+    "owasp_get",
+    "owasp_checklist",
+    "owasp_related",
 }
 
 

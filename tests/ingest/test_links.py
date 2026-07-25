@@ -109,9 +109,9 @@ def test_load_be_to_release_map_parses_the_real_file():
     translation = load_be_to_release_map(real_map)
     assert len(translation) > 300
     assert translation["v5.0.be-1.2.4"] == "V6.1.3"
-    assert (
-        sum(1 for k, v in translation.items() if v == "V" + k.replace("v5.0.be-", "")) == 0
-    ), "if any id were unchanged, a prefix strip might look correct on it"
+    assert sum(1 for k, v in translation.items() if v == "V" + k.replace("v5.0.be-", "")) == 0, (
+        "if any id were unchanged, a prefix strip might look correct on it"
+    )
 
 
 def test_links_ingest_is_idempotent(conn):

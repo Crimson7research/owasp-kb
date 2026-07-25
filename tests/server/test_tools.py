@@ -17,23 +17,36 @@ MAX_RESPONSE_CHARS = 40_000
 def tools(tmp_path):
     conn = connect(tmp_path / "kb.sqlite")
     create_schema(conn)
-    ingest_asvs(conn, "tests/fixtures/asvs_sample.flat.json",
-                version="5.0.0", license="CC-BY-SA-4.0")
-    ingest_cheatsheets(conn, "tests/fixtures/cheatsheets", version="20260724",
-                       commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
-                       license="CC-BY-SA-4.0")
+    ingest_asvs(
+        conn, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0"
+    )
+    ingest_cheatsheets(
+        conn,
+        "tests/fixtures/cheatsheets",
+        version="20260724",
+        commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
+        license="CC-BY-SA-4.0",
+    )
     ingest_guidance_links(conn, "tests/fixtures/IndexASVS_sample.md")
-    ingest_cwe_links(conn, "tests/fixtures/cwe_mapping_sample.json",
-                     be_to_release_path="tests/fixtures/mapping_be_to_500_sample.yml")
+    ingest_cwe_links(
+        conn,
+        "tests/fixtures/cwe_mapping_sample.json",
+        be_to_release_path="tests/fixtures/mapping_be_to_500_sample.yml",
+    )
     return {t.__name__: t for t in build_tools(Kb(conn))}
 
 
 # -- surface ----------------------------------------------------------
 
+
 def test_exactly_six_tools_are_exposed(tools):
     assert set(tools) == {
-        "kb_info", "owasp_search", "owasp_outline",
-        "owasp_get", "owasp_checklist", "owasp_related",
+        "kb_info",
+        "owasp_search",
+        "owasp_outline",
+        "owasp_get",
+        "owasp_checklist",
+        "owasp_related",
     }
 
 
@@ -62,6 +75,7 @@ def test_related_description_explains_the_guidance_relationship(tools):
 
 # -- kb_info ----------------------------------------------------------
 
+
 def test_kb_info_reports_mode_and_packs(tools):
     info = tools["kb_info"]()
     assert info["retrieval_mode"] == "lexical"
@@ -74,6 +88,7 @@ def test_kb_info_exposes_versions_for_citation(tools):
 
 
 # -- owasp_search -----------------------------------------------------
+
 
 def test_search_returns_citations(tools):
     result = tools["owasp_search"]("password")
@@ -108,6 +123,7 @@ def test_search_respects_level_filter(tools):
 
 # -- outline / get ----------------------------------------------------
 
+
 def test_outline_then_get_is_smaller_than_whole_document(tools):
     outline = tools["owasp_outline"]("Authentication_Cheat_Sheet")
     assert outline["sections"]
@@ -135,6 +151,7 @@ def test_get_unknown_anchor_returns_an_error_listing_anchors(tools):
 
 
 # -- checklist --------------------------------------------------------
+
 
 def test_checklist_returns_rows_with_levels_and_version(tools):
     result = tools["owasp_checklist"]("asvs", chapter="V6")
@@ -168,6 +185,7 @@ def test_checklist_never_truncates_its_rows(tools):
 
 # -- related ----------------------------------------------------------
 
+
 def test_related_reaches_guidance_from_a_requirement(tools):
     edges = tools["owasp_related"]("V6.2.1")["edges"]
     assert any(e["to_id"] == "Authentication_Cheat_Sheet" for e in edges)
@@ -181,6 +199,7 @@ def test_related_unknown_id_returns_empty_edges_not_an_error(tools):
 
 
 # -- size discipline --------------------------------------------------
+
 
 def test_no_tool_response_exceeds_the_context_ceiling(tools):
     responses = [

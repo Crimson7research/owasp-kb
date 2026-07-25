@@ -13,16 +13,18 @@ NIST = "tests/fixtures/nist_sample.md"
 def conn(tmp_path):
     c = connect(tmp_path / "kb.sqlite")
     create_schema(c)
-    ingest_asvs(c, "tests/fixtures/asvs_sample.flat.json",
-                version="5.0.0", license="CC-BY-SA-4.0")
+    ingest_asvs(c, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0")
     return c
 
 
 def test_supersedes_links_extract_v4_ids(conn):
     added, dropped = ingest_supersedes_links(conn, MAPPING)
-    rows = {r[0] for r in conn.execute(
-        "SELECT to_id FROM links WHERE from_id = 'V6.2.1' AND rel = 'supersedes'"
-    )}
+    rows = {
+        r[0]
+        for r in conn.execute(
+            "SELECT to_id FROM links WHERE from_id = 'V6.2.1' AND rel = 'supersedes'"
+        )
+    }
     assert rows == {"4.0.3-2.1.1"}
     assert added >= 3
 
@@ -30,17 +32,23 @@ def test_supersedes_links_extract_v4_ids(conn):
 def test_supersedes_captures_every_v4_reference_in_the_prose(conn):
     """The value is prose: 'MOVED FROM v4.0.3-2.1.5, COVERS v4.0.3-2.1.6'."""
     ingest_supersedes_links(conn, MAPPING)
-    rows = {r[0] for r in conn.execute(
-        "SELECT to_id FROM links WHERE from_id = 'V6.2.2' AND rel = 'supersedes'"
-    )}
+    rows = {
+        r[0]
+        for r in conn.execute(
+            "SELECT to_id FROM links WHERE from_id = 'V6.2.2' AND rel = 'supersedes'"
+        )
+    }
     assert rows == {"4.0.3-2.1.5", "4.0.3-2.1.6"}
 
 
 def test_added_requirements_produce_no_supersedes_edge(conn):
     ingest_supersedes_links(conn, MAPPING)
-    assert conn.execute(
-        "SELECT 1 FROM links WHERE from_id = 'V1.1.1' AND rel = 'supersedes'"
-    ).fetchall() == []
+    assert (
+        conn.execute(
+            "SELECT 1 FROM links WHERE from_id = 'V1.1.1' AND rel = 'supersedes'"
+        ).fetchall()
+        == []
+    )
 
 
 def test_supersedes_drops_requirements_absent_from_this_release(conn):
@@ -52,18 +60,17 @@ def test_supersedes_drops_requirements_absent_from_this_release(conn):
 
 def test_supersedes_records_its_source(conn):
     ingest_supersedes_links(conn, MAPPING)
-    source = conn.execute(
-        "SELECT DISTINCT source FROM links WHERE rel='supersedes'"
-    ).fetchone()[0]
+    source = conn.execute("SELECT DISTINCT source FROM links WHERE rel='supersedes'").fetchone()[0]
     assert "v4.0.3" in source
 
 
 def test_nist_links_compose_through_the_v4_mapping(conn):
     ingest_supersedes_links(conn, MAPPING)
     added, skipped = ingest_nist_links(conn, NIST)
-    rows = {r[0] for r in conn.execute(
-        "SELECT to_id FROM links WHERE from_id = 'V6.2.1' AND rel = 'nist'"
-    )}
+    rows = {
+        r[0]
+        for r in conn.execute("SELECT to_id FROM links WHERE from_id = 'V6.2.1' AND rel = 'nist'")
+    }
     assert rows == {"NIST SP 800-63B 5.1.1.2"}
     assert added >= 1
 
@@ -71,13 +78,14 @@ def test_nist_links_compose_through_the_v4_mapping(conn):
 def test_nist_ignores_rows_with_an_empty_section(conn):
     ingest_supersedes_links(conn, MAPPING)
     ingest_nist_links(conn, NIST)
-    rows = {r[0] for r in conn.execute(
-        "SELECT to_id FROM links WHERE from_id = 'V6.2.2' AND rel = 'nist'"
-    )}
+    rows = {
+        r[0]
+        for r in conn.execute("SELECT to_id FROM links WHERE from_id = 'V6.2.2' AND rel = 'nist'")
+    }
     assert rows == {"NIST SP 800-63B 5.1.1.2"}  # from 2.1.5 only; 2.1.6 is blank
     assert not any(
-        t.strip().endswith("800-63B") for (t,) in
-        conn.execute("SELECT to_id FROM links WHERE rel='nist'")
+        t.strip().endswith("800-63B")
+        for (t,) in conn.execute("SELECT to_id FROM links WHERE rel='nist'")
     ), "an empty NIST cell must not become an empty target"
 
 

@@ -58,10 +58,12 @@ def test_encode_query_equals_encoding_the_prefixed_text(embedder):
 def test_semantic_similarity_beats_lexical_overlap(embedder):
     """The justification for the full variant. If this fails, suspect pooling."""
     query = embedder.encode_query("stop people brute-forcing logins")
-    related, unrelated = embedder.encode([
-        "Defend against credential stuffing with rate limiting and anti-automation.",
-        "Serialize dates in ISO 8601 format for the reporting API.",
-    ])
+    related, unrelated = embedder.encode(
+        [
+            "Defend against credential stuffing with rate limiting and anti-automation.",
+            "Serialize dates in ISO 8601 format for the reporting API.",
+        ]
+    )
     assert _dot(query, related) > _dot(query, unrelated)
 
 

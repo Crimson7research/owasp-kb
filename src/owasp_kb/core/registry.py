@@ -32,17 +32,28 @@ def upsert_pack(conn: sqlite3.Connection, pack: Pack) -> None:
             commit_sha=excluded.commit_sha, license=excluded.license,
             fetched_at=excluded.fetched_at
         """,
-        (pack.name, pack.type, pack.version, pack.source_url,
-         pack.commit_sha, pack.license, pack.fetched_at),
+        (
+            pack.name,
+            pack.type,
+            pack.version,
+            pack.source_url,
+            pack.commit_sha,
+            pack.license,
+            pack.fetched_at,
+        ),
     )
     conn.commit()
 
 
 def _row_to_pack(row: sqlite3.Row) -> Pack:
     return Pack(
-        name=row["name"], type=row["type"], version=row["version"],
-        source_url=row["source_url"], commit_sha=row["commit_sha"],
-        license=row["license"], fetched_at=row["fetched_at"],
+        name=row["name"],
+        type=row["type"],
+        version=row["version"],
+        source_url=row["source_url"],
+        commit_sha=row["commit_sha"],
+        license=row["license"],
+        fetched_at=row["fetched_at"],
     )
 
 

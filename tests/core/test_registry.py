@@ -14,9 +14,13 @@ def conn(tmp_path):
 
 def _pack(name="asvs", type_="checklist", version="5.0.0"):
     return Pack(
-        name=name, type=type_, version=version,
-        source_url="https://github.com/OWASP/ASVS", commit_sha=None,
-        license="CC-BY-SA-4.0", fetched_at="2026-07-25T00:00:00Z",
+        name=name,
+        type=type_,
+        version=version,
+        source_url="https://github.com/OWASP/ASVS",
+        commit_sha=None,
+        license="CC-BY-SA-4.0",
+        fetched_at="2026-07-25T00:00:00Z",
     )
 
 
@@ -77,10 +81,13 @@ def test_list_packs_on_an_empty_registry_is_empty(conn):
 
 def test_round_trip_preserves_every_field(conn):
     original = Pack(
-        name="cheatsheets", type="corpus", version="20260724",
+        name="cheatsheets",
+        type="corpus",
+        version="20260724",
         source_url="https://github.com/OWASP/CheatSheetSeries",
         commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
-        license="CC-BY-SA-4.0", fetched_at="2026-07-25T12:00:00Z",
+        license="CC-BY-SA-4.0",
+        fetched_at="2026-07-25T12:00:00Z",
     )
     upsert_pack(conn, original)
     assert get_pack(conn, "cheatsheets") == original

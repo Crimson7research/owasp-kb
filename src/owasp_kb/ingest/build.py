@@ -84,9 +84,7 @@ def build_index(
         license=cs_cfg.license,
     )
 
-    report.guidance_links = ingest_guidance_links(
-        conn, sources / "cheatsheets" / "IndexASVS.md"
-    )
+    report.guidance_links = ingest_guidance_links(conn, sources / "cheatsheets" / "IndexASVS.md")
     report.cwe_links, report.cwe_dropped = ingest_cwe_links(
         conn,
         _one(sources / "asvs", "*cwe_mapping.json"),
@@ -96,9 +94,7 @@ def build_index(
     report.supersedes_links, _ = ingest_supersedes_links(
         conn, _one(sources / "asvs", "mapping_v5.0.0_to_v4*.yml")
     )
-    report.nist_links, report.nist_skipped = ingest_nist_links(
-        conn, sources / "asvs" / "nist.md"
-    )
+    report.nist_links, report.nist_skipped = ingest_nist_links(conn, sources / "asvs" / "nist.md")
 
     if with_vectors:
         from owasp_kb.core.embed import Embedder
@@ -134,9 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default="dist/owasp-kb.sqlite")
     parser.add_argument("--lock", default="sources.lock.yml")
     parser.add_argument("--with-vectors", action="store_true")
-    parser.add_argument(
-        "--expected-requirements", type=int, default=EXPECTED_ASVS_REQUIREMENTS
-    )
+    parser.add_argument("--expected-requirements", type=int, default=EXPECTED_ASVS_REQUIREMENTS)
     parser.add_argument(
         "--no-edge-floors",
         action="store_true",

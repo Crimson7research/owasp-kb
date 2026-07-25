@@ -11,11 +11,14 @@ from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 def retriever(tmp_path):
     c = connect(tmp_path / "kb.sqlite")
     create_schema(c)
-    ingest_asvs(c, "tests/fixtures/asvs_sample.flat.json",
-                version="5.0.0", license="CC-BY-SA-4.0")
-    ingest_cheatsheets(c, "tests/fixtures/cheatsheets", version="20260724",
-                       commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
-                       license="CC-BY-SA-4.0")
+    ingest_asvs(c, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0")
+    ingest_cheatsheets(
+        c,
+        "tests/fixtures/cheatsheets",
+        version="20260724",
+        commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
+        license="CC-BY-SA-4.0",
+    )
     return LexicalRetriever(c)
 
 
@@ -89,16 +92,19 @@ def test_unknown_pack_raises_naming_available_packs(retriever):
     assert "asvs" in str(excinfo.value)
 
 
-@pytest.mark.parametrize("hostile", [
-    'password OR "session (management"',
-    "unbalanced \" quote",
-    "star* and NEAR(a b)",
-    "-leading-hyphen",
-    "",
-    "   ",
-    "^caret AND (unclosed",
-    "colon:prefix",
-])
+@pytest.mark.parametrize(
+    "hostile",
+    [
+        'password OR "session (management"',
+        'unbalanced " quote',
+        "star* and NEAR(a b)",
+        "-leading-hyphen",
+        "",
+        "   ",
+        "^caret AND (unclosed",
+        "colon:prefix",
+    ],
+)
 def test_hostile_query_syntax_never_raises(retriever, hostile):
     """Queries arrive from an agent relaying a user's words; raw FTS5 syntax in
     them must not produce an OperationalError."""

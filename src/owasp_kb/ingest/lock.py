@@ -38,9 +38,15 @@ def load_lock(path: str | Path) -> Lock:
                 "pin an explicit release so citations stay reproducible"
             )
         packs[name] = LockedPack(
-            name=name, type=cfg["type"], repo=cfg["repo"], version=str(cfg["version"]),
-            license=cfg["license"], release=cfg.get("release"), commit=cfg.get("commit"),
-            assets=cfg.get("assets", []), extra_paths=cfg.get("extra_paths", []),
+            name=name,
+            type=cfg["type"],
+            repo=cfg["repo"],
+            version=str(cfg["version"]),
+            license=cfg["license"],
+            release=cfg.get("release"),
+            commit=cfg.get("commit"),
+            assets=cfg.get("assets", []),
+            extra_paths=cfg.get("extra_paths", []),
             paths=cfg.get("paths", []),
         )
     return Lock(packs=packs)

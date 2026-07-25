@@ -15,9 +15,7 @@ from owasp_kb.server.tools import build_tools
 
 log = logging.getLogger(__name__)
 
-DEFAULT_INDEX_PATH = Path(
-    os.environ.get("OWASP_KB_INDEX", "/opt/owasp-kb/owasp-kb.sqlite")
-)
+DEFAULT_INDEX_PATH = Path(os.environ.get("OWASP_KB_INDEX", "/opt/owasp-kb/owasp-kb.sqlite"))
 SERVER_NAME = "owasp-kb"
 
 
@@ -69,9 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # stderr only: stdout is the MCP stdio transport, and anything written there
     # corrupts the protocol.
-    logging.basicConfig(
-        level=logging.INFO, stream=sys.stderr, format="%(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(levelname)s %(message)s")
     try:
         server = create_server(args.index)
     except (FileNotFoundError, RuntimeError) as exc:

@@ -82,10 +82,7 @@ class HybridRetriever:
             " WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
             (embedded, limit),
         ).fetchall()
-        return [
-            int(r["chunk_id"]) for r in rows
-            if float(r["distance"]) <= MAX_VECTOR_DISTANCE
-        ]
+        return [int(r["chunk_id"]) for r in rows if float(r["distance"]) <= MAX_VECTOR_DISTANCE]
 
     def _lexical_chunk_ids(self, query: str, limit: int) -> list[int]:
         expression = to_fts_query(query)
@@ -109,10 +106,12 @@ class HybridRetriever:
         if pack is not None:
             get_pack(self._conn, pack)
 
-        fused = rrf_fuse([
-            self._lexical_chunk_ids(query, CANDIDATES),
-            self._vector_chunk_ids(query, CANDIDATES),
-        ])
+        fused = rrf_fuse(
+            [
+                self._lexical_chunk_ids(query, CANDIDATES),
+                self._vector_chunk_ids(query, CANDIDATES),
+            ]
+        )
         if not fused:
             return []
 

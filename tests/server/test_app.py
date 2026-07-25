@@ -14,11 +14,16 @@ def index(tmp_path):
     path = tmp_path / "kb.sqlite"
     conn = connect(path)
     create_schema(conn)
-    ingest_asvs(conn, "tests/fixtures/asvs_sample.flat.json",
-                version="5.0.0", license="CC-BY-SA-4.0")
-    ingest_cheatsheets(conn, "tests/fixtures/cheatsheets", version="20260724",
-                       commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
-                       license="CC-BY-SA-4.0")
+    ingest_asvs(
+        conn, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0"
+    )
+    ingest_cheatsheets(
+        conn,
+        "tests/fixtures/cheatsheets",
+        version="20260724",
+        commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
+        license="CC-BY-SA-4.0",
+    )
     finalize_for_readonly(conn)
     conn.close()
     return path

@@ -8,9 +8,7 @@ from owasp_kb.core.schema import create_schema
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 
-needs_model = pytest.mark.skipif(
-    not model_dir_available(), reason="model not downloaded"
-)
+needs_model = pytest.mark.skipif(not model_dir_available(), reason="model not downloaded")
 
 
 def test_rrf_fuse_prefers_a_consistently_good_item_over_a_polarising_one():
@@ -23,8 +21,9 @@ def test_rrf_fuse_prefers_a_consistently_good_item_over_a_polarising_one():
     guarantee is that an item ranked well by both lists beats one that a single
     list buries.
     """
-    fused = rrf_fuse([["polarising", "steady"], ["steady"] + [f"x{i}" for i in range(18)]
-                      + ["polarising"]], k=60)
+    fused = rrf_fuse(
+        [["polarising", "steady"], ["steady"] + [f"x{i}" for i in range(18)] + ["polarising"]], k=60
+    )
     assert fused[0] == "steady"
 
 
@@ -61,11 +60,16 @@ def _index(tmp_path, *, with_vectors: bool):
     path = tmp_path / "kb.sqlite"
     conn = connect(path, load_vec=with_vectors)
     create_schema(conn)
-    ingest_asvs(conn, "tests/fixtures/asvs_sample.flat.json",
-                version="5.0.0", license="CC-BY-SA-4.0")
-    ingest_cheatsheets(conn, "tests/fixtures/cheatsheets", version="20260724",
-                       commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
-                       license="CC-BY-SA-4.0")
+    ingest_asvs(
+        conn, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0"
+    )
+    ingest_cheatsheets(
+        conn,
+        "tests/fixtures/cheatsheets",
+        version="20260724",
+        commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
+        license="CC-BY-SA-4.0",
+    )
     return conn, path
 
 

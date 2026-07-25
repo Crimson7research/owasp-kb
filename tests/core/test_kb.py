@@ -12,18 +12,27 @@ from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 def kb(tmp_path):
     conn = connect(tmp_path / "kb.sqlite")
     create_schema(conn)
-    ingest_asvs(conn, "tests/fixtures/asvs_sample.flat.json",
-                version="5.0.0", license="CC-BY-SA-4.0")
-    ingest_cheatsheets(conn, "tests/fixtures/cheatsheets", version="20260724",
-                       commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
-                       license="CC-BY-SA-4.0")
+    ingest_asvs(
+        conn, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0"
+    )
+    ingest_cheatsheets(
+        conn,
+        "tests/fixtures/cheatsheets",
+        version="20260724",
+        commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
+        license="CC-BY-SA-4.0",
+    )
     ingest_guidance_links(conn, "tests/fixtures/IndexASVS_sample.md")
-    ingest_cwe_links(conn, "tests/fixtures/cwe_mapping_sample.json",
-                     be_to_release_path="tests/fixtures/mapping_be_to_500_sample.yml")
+    ingest_cwe_links(
+        conn,
+        "tests/fixtures/cwe_mapping_sample.json",
+        be_to_release_path="tests/fixtures/mapping_be_to_500_sample.yml",
+    )
     return Kb(conn)
 
 
 # -- info -------------------------------------------------------------
+
 
 def test_info_reports_packs_and_mode(kb):
     info = kb.info()
@@ -38,6 +47,7 @@ def test_info_exposes_versions_for_citation(kb):
 
 
 # -- search -----------------------------------------------------------
+
 
 def test_search_returns_hits_with_citations(kb):
     hits = kb.search("password", limit=5)
@@ -68,6 +78,7 @@ def test_search_unknown_pack_raises_key_error(kb):
 
 
 # -- outline / get ----------------------------------------------------
+
 
 def test_outline_lists_sections_in_order(kb):
     nodes = kb.outline("Authentication_Cheat_Sheet")
@@ -113,6 +124,7 @@ def test_get_unknown_doc_raises_with_suggestions(kb):
 
 # -- checklist --------------------------------------------------------
 
+
 def test_checklist_filters_by_chapter(kb):
     assert {r.req_id for r in kb.checklist("asvs", chapter="V6")} == {"V6.2.1", "V6.2.2"}
 
@@ -139,11 +151,17 @@ def test_checklist_orders_numerically_not_lexically(kb, tmp_path):
 
     reqs = []
     for chapter in (2, 9, 10):
-        reqs.append({
-            "chapter_id": f"V{chapter}", "chapter_name": f"C{chapter}",
-            "section_id": f"V{chapter}.1", "section_name": "S",
-            "req_id": f"V{chapter}.1.1", "req_description": "text", "L": "1",
-        })
+        reqs.append(
+            {
+                "chapter_id": f"V{chapter}",
+                "chapter_name": f"C{chapter}",
+                "section_id": f"V{chapter}.1",
+                "section_name": "S",
+                "req_id": f"V{chapter}.1.1",
+                "req_description": "text",
+                "L": "1",
+            }
+        )
     path = tmp_path / "ord.json"
     path.write_text(json.dumps({"requirements": reqs}))
     conn = _connect(tmp_path / "ord.sqlite")
@@ -174,6 +192,7 @@ def test_checklist_returns_the_bare_requirement_text(kb):
 
 
 # -- related ----------------------------------------------------------
+
 
 def test_related_resolves_requirement_to_cwe(kb):
     assert any(e.rel == "cwe" and e.to_id == "CWE-521" for e in kb.related("V6.2.1"))
