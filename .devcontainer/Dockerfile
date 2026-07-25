@@ -4,7 +4,7 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git make curl ca-certificates build-essential sqlite3 \
+    git make curl ca-certificates build-essential sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # UID/GID must match the host user so bind-mounted files are not root-owned.

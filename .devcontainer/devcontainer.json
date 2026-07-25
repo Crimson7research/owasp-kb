@@ -5,6 +5,7 @@
     "args": { "USER_UID": "1000", "USER_GID": "1000" }
   },
   "runArgs": ["--name", "owasp-kb-dev"],
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "workspaceFolder": "/workspace",
   "remoteUser": "dev",
   "postCreateCommand": "if [ -f pyproject.toml ]; then pip install --user -e '.[dev]'; else echo 'no pyproject.toml yet; run pip install --user -e \".[dev]\" after Task 2'; fi",
