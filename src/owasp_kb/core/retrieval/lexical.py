@@ -11,18 +11,27 @@ from owasp_kb.core.retrieval.base import HIT_SQL, row_to_hit
 
 _TERM = re.compile(r"[\w']+")
 
+# Stopwords are stripped because BM25 cannot distinguish them from signal:
+# measured, "how do I bake sourdough bread" scored -12.28, better than a real
+# query's third hit at -10.5, purely on how/do/I. A score threshold cannot fix
+# that; removing the terms can.
+_STOPWORDS = frozenset("""
+a an and are as at be but by can could do does for from how i if in into is it me my of on or
+should that the their them then there these they this to us was we what when where which who
+why will with would you your
+""".split())
 
-def to_fts_query(text: str) -> str:
-    """Turn free text into a safe FTS5 MATCH expression.
 
-    Every term is quoted so FTS5 operators appearing in user input cannot cause a
-    syntax error, then OR-ed so partial matches still rank. Queries reach this
-    function from an AI agent relaying a user's words, so hostile syntax is the
-    normal case, not an edge case.
+def to_fts_query(text: str) -> str | None:
+    """Turn free text into a safe FTS5 MATCH expression, or None if nothing usable.
+
+    Every surviving term is quoted so FTS5 operators in user input cannot cause a
+    syntax error, then OR-ed. Returns None when the query is entirely stopwords or
+    punctuation, so the caller reports no match rather than matching on filler.
     """
-    terms = _TERM.findall(text)
+    terms = [t for t in _TERM.findall(text) if t.lower() not in _STOPWORDS]
     if not terms:
-        return '""'
+        return None
     return " OR ".join(f'"{t}"' for t in terms)
 
 
@@ -43,8 +52,12 @@ class LexicalRetriever:
         if pack is not None:
             get_pack(self._conn, pack)  # raises KeyError listing available packs
 
+        expression = to_fts_query(query)
+        if expression is None:
+            return []
+
         sql = HIT_SQL + " JOIN chunks_fts f ON f.rowid = c.id WHERE chunks_fts MATCH ?"
-        params: list[object] = [to_fts_query(query)]
+        params: list[object] = [expression]
         if pack is not None:
             sql += " AND p.name = ?"
             params.append(pack)

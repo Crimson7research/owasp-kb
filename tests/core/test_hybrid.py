@@ -161,6 +161,18 @@ def test_hybrid_scores_are_descending(tmp_path):
 
 
 @needs_model
+def test_vector_results_beyond_the_distance_floor_are_rejected(tmp_path):
+    """Without a floor, vector search always returns a nearest neighbour, so an
+    off-topic question came back with confident-looking security guidance."""
+    from owasp_kb.core.embed import Embedder
+    from owasp_kb.core.retrieval.hybrid import index_vectors
+
+    conn, _ = _index(tmp_path, with_vectors=True)
+    index_vectors(conn, Embedder())
+    assert build_retriever(conn).search("how do I bake sourdough bread", limit=5) == []
+
+
+@needs_model
 def test_hybrid_finds_a_paraphrase_lexical_ranks_poorly(tmp_path):
     from owasp_kb.core.embed import Embedder
     from owasp_kb.core.retrieval.hybrid import index_vectors

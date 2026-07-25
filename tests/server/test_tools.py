@@ -153,6 +153,19 @@ def test_checklist_defaults_to_asvs(tools):
     assert tools["owasp_checklist"]()["pack"] == "asvs"
 
 
+def test_large_checklist_is_returned_in_full_with_a_note(tools, tmp_path):
+    """Completeness beats brevity for a compliance enumeration; the note steers
+    the caller to filter rather than silently dropping rows."""
+    result = tools["owasp_checklist"]("asvs")
+    assert result["count"] == len(result["requirements"])
+    assert "note" not in result  # the fixture has only 3 requirements
+
+
+def test_checklist_never_truncates_its_rows(tools):
+    result = tools["owasp_checklist"]("asvs")
+    assert len(result["requirements"]) == result["count"]
+
+
 # -- related ----------------------------------------------------------
 
 def test_related_reaches_guidance_from_a_requirement(tools):

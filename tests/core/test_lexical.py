@@ -110,10 +110,33 @@ def test_to_fts_query_quotes_every_term():
 
 
 def test_to_fts_query_strips_operators():
-    assert "OR" in to_fts_query("a OR b")  # the joiner, not the user's operator
+    # "or" is itself a stopword, so use a literal FTS operator that is not
+    # ("NOT") to check it is treated as a term, not FTS5 syntax.
+    assert to_fts_query("session NOT token") == '"session" OR "NOT" OR "token"'
     assert to_fts_query("NEAR(x y)") == '"NEAR" OR "x" OR "y"'
 
 
 def test_to_fts_query_on_empty_input_is_safe():
-    assert to_fts_query("") == '""'
-    assert to_fts_query("!!!") == '""'
+    assert to_fts_query("") is None
+    assert to_fts_query("!!!") is None
+
+
+def test_stopword_only_query_matches_nothing(retriever):
+    assert retriever.search("the of and is a", limit=5) == []
+
+
+def test_stopwords_do_not_carry_a_match():
+    """BM25 cannot tell filler from signal, so the terms are removed instead."""
+    assert to_fts_query("how do I bake sourdough bread") == '"bake" OR "sourdough" OR "bread"'
+
+
+def test_to_fts_query_returns_none_when_nothing_survives():
+    assert to_fts_query("the of and is") is None
+    assert to_fts_query("!!!") is None
+    assert to_fts_query("") is None
+
+
+def test_unknown_pack_still_raises_for_a_stopword_only_query(retriever):
+    """The pack check must run before the early return."""
+    with pytest.raises(KeyError):
+        retriever.search("the of and", pack="nope", limit=5)

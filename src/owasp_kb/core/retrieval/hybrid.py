@@ -13,6 +13,11 @@ from owasp_kb.core.retrieval.lexical import to_fts_query
 RRF_K = 60
 CANDIDATES = 50
 
+# Measured on the real index: relevant queries score 0.52-0.70, unrelated ones
+# 0.90-1.03. Without a floor, vector search always returns a nearest neighbour,
+# so an off-topic question came back with confident-looking security guidance.
+MAX_VECTOR_DISTANCE = 0.80
+
 
 def serialize_f32(vector: list[float]) -> bytes:
     """Pack a float list into sqlite-vec's compact binary format."""
@@ -73,17 +78,23 @@ class HybridRetriever:
     def _vector_chunk_ids(self, query: str, limit: int) -> list[int]:
         embedded = serialize_f32(self._embedder.encode_query(query))
         rows = self._conn.execute(
-            "SELECT chunk_id FROM chunks_vec"
+            "SELECT chunk_id, distance FROM chunks_vec"
             " WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
             (embedded, limit),
         ).fetchall()
-        return [int(r["chunk_id"]) for r in rows]
+        return [
+            int(r["chunk_id"]) for r in rows
+            if float(r["distance"]) <= MAX_VECTOR_DISTANCE
+        ]
 
     def _lexical_chunk_ids(self, query: str, limit: int) -> list[int]:
+        expression = to_fts_query(query)
+        if expression is None:
+            return []
         rows = self._conn.execute(
             "SELECT c.id FROM chunks c JOIN chunks_fts f ON f.rowid = c.id"
             " WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?",
-            (to_fts_query(query), limit),
+            (expression, limit),
         ).fetchall()
         return [int(r[0]) for r in rows]
 

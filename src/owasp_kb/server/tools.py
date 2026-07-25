@@ -14,6 +14,7 @@ from owasp_kb.core.kb import Kb
 
 MAX_EXCERPT_CHARS = 1200
 MAX_GET_CHARS = 30_000
+LARGE_CHECKLIST_ROWS = 100
 
 TOOL_TRIGGER_TOPICS = (
     "authentication", "passwords", "MFA", "sessions", "cookies", "JWT", "OAuth", "OIDC",
@@ -147,7 +148,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             version = next(p.version for p in kb.info().packs if p.name == pack)
         except (KeyError, ValueError) as exc:
             return _error(exc)
-        return {
+        response = {
             "pack": pack,
             "pack_version": version,
             "count": len(rows),
@@ -160,6 +161,17 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 for r in rows
             ],
         }
+        # No truncation: a gap report needs every requirement, and silently
+        # dropping rows from a compliance enumeration is worse than a large
+        # response. Measured, the full 345-requirement ASVS enumeration is
+        # ~140,000 characters.
+        if len(rows) > LARGE_CHECKLIST_ROWS:
+            response["note"] = (
+                f"{len(rows)} requirements returned in full (no truncation). This is a "
+                "large response; for a chapter-by-chapter workflow pass chapter='V6' or "
+                "section='V6.2' to keep each call small."
+            )
+        return response
 
     def owasp_related(id: str, rel: str | None = None) -> dict:
         """Find content related to an ASVS requirement id (V6.2.1), an ASVS
