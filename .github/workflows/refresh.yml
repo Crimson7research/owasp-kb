@@ -1,0 +1,59 @@
+name: refresh
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      # Optional: only raises the GitHub API rate limit for refresh_lock.py.
+      # Fetching content needs no token.
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: pip install -e '.[dev]'
+
+      - name: Bump pinned sources
+        id: bump
+        run: |
+          python scripts/refresh_lock.py | tee refresh-summary.txt
+          if grep -q NO_CHANGES refresh-summary.txt; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify the new content still builds
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          python -c "
+          from pathlib import Path
+          from owasp_kb.ingest.lock import load_lock
+          from owasp_kb.ingest.fetch import fetch_all
+          fetch_all(load_lock('sources.lock.yml'), Path('data'))
+          "
+          python -m owasp_kb.ingest.build --sources data --out dist/owasp-kb-lite.sqlite
+
+      - name: Open a pull request
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/refresh-sources
+          title: "chore: refresh pinned OWASP sources"
+          body-path: refresh-summary.txt
+          commit-message: "chore: refresh pinned OWASP sources"
+          labels: content-refresh
