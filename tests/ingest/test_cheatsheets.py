@@ -23,14 +23,18 @@ def _ingest(conn, directory=FIXTURES):
 
 
 def test_ingests_every_markdown_file(conn):
-    assert _ingest(conn) == 2
-    assert conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0] == 2
+    assert _ingest(conn) == 3
+    assert conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0] == 3
 
 
 def test_doc_key_is_filename_without_extension(conn):
     _ingest(conn)
     keys = {r[0] for r in conn.execute("SELECT doc_key FROM docs")}
-    assert keys == {"Authentication_Cheat_Sheet", "Session_Management_Cheat_Sheet"}
+    assert keys == {
+        "Authentication_Cheat_Sheet",
+        "Credential_Stuffing_Prevention_Cheat_Sheet",
+        "Session_Management_Cheat_Sheet",
+    }
 
 
 def test_registers_pack_as_corpus_with_commit_sha(conn):
@@ -69,7 +73,9 @@ def test_content_is_full_text_searchable(conn):
     hits = conn.execute(
         "SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH 'credential stuffing'"
     ).fetchall()
-    assert len(hits) == 1
+    # Two fixtures mention the phrase: the Authentication sheet and the
+    # Credential Stuffing sheet that IndexASVS_sample.md maps V6.2 to.
+    assert len(hits) == 2
 
 
 def test_source_url_points_at_the_pinned_commit(conn):
@@ -104,7 +110,7 @@ def test_reingest_is_idempotent(conn):
     _ingest(conn)
     before = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
     _ingest(conn)
-    assert conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0] == 3
     assert conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0] == before
 
 
