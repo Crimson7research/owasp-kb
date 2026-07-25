@@ -100,12 +100,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
-    """Create every non-vector table. Idempotent."""
+    """Create every non-vector table. Idempotent.
+
+    ``executescript`` commits any pending transaction on the connection first.
+    """
     conn.executescript(SCHEMA_SQL)
     conn.commit()
 
 
 def create_vec_schema(conn: sqlite3.Connection, dim: int) -> None:
-    """Create the vector table. Requires sqlite-vec to be loaded."""
+    """Create the vector table. Requires sqlite-vec to be loaded.
+
+    ``executescript`` commits any pending transaction on the connection first.
+    """
     conn.executescript(VEC_SCHEMA_SQL.format(dim=dim))
     conn.commit()
