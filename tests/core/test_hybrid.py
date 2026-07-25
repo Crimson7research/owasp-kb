@@ -13,9 +13,25 @@ needs_model = pytest.mark.skipif(
 )
 
 
-def test_rrf_fuse_prefers_items_ranked_well_by_both():
+def test_rrf_fuse_prefers_a_consistently_good_item_over_a_polarising_one():
+    """Consistency wins only once the spread is wide enough.
+
+    1/x is convex, so over a narrow spread the extremes beat the middle: for
+    [[a,b,c],[c,b,a]] the items ranked 1st-and-3rd score 124/3843 against b's
+    1/31 at k=60, and that holds for every k > 0. An earlier version of this
+    test asserted b came first, which is not a property RRF has. The real
+    guarantee is that an item ranked well by both lists beats one that a single
+    list buries.
+    """
+    fused = rrf_fuse([["polarising", "steady"], ["steady"] + [f"x{i}" for i in range(18)]
+                      + ["polarising"]], k=60)
+    assert fused[0] == "steady"
+
+
+def test_rrf_fuse_extremes_beat_the_middle_over_a_narrow_spread():
+    """Pins the convexity behaviour above so it is documented, not a surprise."""
     fused = rrf_fuse([["a", "b", "c"], ["c", "b", "a"]], k=60)
-    assert fused[0] == "b"
+    assert fused[-1] == "b"
 
 
 def test_rrf_fuse_includes_items_from_a_single_list():
