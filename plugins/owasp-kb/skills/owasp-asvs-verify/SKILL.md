@@ -14,9 +14,10 @@ Drive a structured assessment against ASVS, producing per-requirement verdicts w
 
 ## Process
 
-1. **Establish the target level.** Ask if unstated. L1 is opportunistic, L2 is the standard
-   for most applications, L3 is for high-value systems. ASVS 5.0.0 has 345 requirements:
-   70 at L1, 183 at L2, 92 at L3.
+1. **Establish the target level.** Ask if unstated. L1 is opportunistic, L2 is the standard for
+   most applications, L3 is for high-value systems. Levels are cumulative, so an assessment
+   covers: **L1 = 70 requirements, L2 = 253, L3 = 345**. `owasp_checklist(level=...)`
+   already returns the cumulative set.
 
 2. **Enumerate, do not sample.** Call `owasp_checklist(pack='asvs', chapter=..., level=...)`.
    An assessment that examines the best-matching few requirements is not an assessment.

@@ -116,8 +116,24 @@ class Kb:
         section: str | None = None,
         req_id: str | None = None,
         level: str | None = None,
+        level_exact: str | None = None,
     ) -> list[RequirementRow]:
-        """Enumerate requirements from a checklist pack in deterministic order."""
+        """Enumerate requirements from a checklist pack in deterministic order.
+
+        ``level`` is CUMULATIVE, matching how ASVS defines its levels: level='2'
+        returns the requirements an L2 assessment must verify, which is every L1
+        and L2 requirement (253 in ASVS 5.0.0), not only those tagged L2 (183).
+        Returning the tagged set would silently drop password minimums and every
+        other L1 control from a report labelled L2.
+
+        ``level_exact`` returns only the requirements tagged at that level, for
+        the rarer case of inspecting one tier.
+        """
+        if level is not None and level_exact is not None:
+            raise ValueError(
+                "pass level or level_exact, not both: level is cumulative "
+                "(L2 = L1 + L2), level_exact is a single tier"
+            )
         meta = get_pack(self._conn, pack)
         if meta.type != "checklist":
             raise ValueError(
@@ -133,11 +149,16 @@ class Kb:
             ("chapter_id", chapter),
             ("section_id", section),
             ("req_id", req_id),
-            ("level", level),
         ):
             if value is not None:
                 sql += f" AND {column} = ?"
                 params.append(value)
+        if level is not None:
+            sql += " AND CAST(level AS INTEGER) <= ?"
+            params.append(int(level))
+        elif level_exact is not None:
+            sql += " AND level = ?"
+            params.append(level_exact)
         # Numeric-aware ordering so V10 sorts after V9. Lexical ordering would put
         # V10.1.1 before V2.1.1 and silently corrupt any gap report.
         sql += (

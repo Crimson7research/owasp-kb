@@ -67,10 +67,19 @@ def test_full_index_has_the_expected_content(full):
     assert len(full.checklist("asvs")) == 345
 
 
-def test_level_filters_return_the_measured_counts(full):
+def test_level_filters_are_cumulative_as_asvs_defines_them(full):
+    """Levels are cumulative. An L2 assessment covers 253 requirements, not the
+    183 tagged L2 -- returning 183 would silently drop every L1 requirement from
+    a report labelled L2."""
     assert len(full.checklist("asvs", level="1")) == 70
-    assert len(full.checklist("asvs", level="2")) == 183
-    assert len(full.checklist("asvs", level="3")) == 92
+    assert len(full.checklist("asvs", level="2")) == 253
+    assert len(full.checklist("asvs", level="3")) == 345
+
+
+def test_level_exact_returns_the_tagged_tier_only(full):
+    assert len(full.checklist("asvs", level_exact="1")) == 70
+    assert len(full.checklist("asvs", level_exact="2")) == 183
+    assert len(full.checklist("asvs", level_exact="3")) == 92
 
 
 def test_full_index_uses_hybrid_retrieval(full):

@@ -168,14 +168,27 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         section: str | None = None,
         req_id: str | None = None,
         level: str | None = None,
+        level_exact: str | None = None,
     ) -> dict:
         """Enumerate verification requirements from a checklist pack such as ASVS,
-        filtered by chapter (V6), section (V6.2), requirement id (V6.2.1) or level
-        (1/2/3). Use this for assessments, gap analysis and compliance reports
-        where you need every applicable requirement rather than the best-matching
-        few."""
+        filtered by chapter (V6), section (V6.2), requirement id (V6.2.1) or level.
+
+        level is CUMULATIVE, as ASVS defines it: level='2' returns the 253
+        requirements an L2 assessment must verify, including all 70 L1 ones.
+        level='1' returns 70, level='3' returns all 345. Use level_exact only to
+        inspect a single tier (level_exact='2' returns the 183 tagged L2).
+
+        Use this for assessments, gap analysis and compliance reports where you
+        need every applicable requirement rather than the best-matching few."""
         try:
-            rows = kb.checklist(pack, chapter=chapter, section=section, req_id=req_id, level=level)
+            rows = kb.checklist(
+                pack,
+                chapter=chapter,
+                section=section,
+                req_id=req_id,
+                level=level,
+                level_exact=level_exact,
+            )
             version = next(p.version for p in kb.info().packs if p.name == pack)
         except (KeyError, ValueError) as exc:
             return _error(exc)

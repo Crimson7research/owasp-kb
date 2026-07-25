@@ -35,7 +35,8 @@ Produce a complete, citable gap analysis at a target ASVS level.
 ## Rules
 
 - Report the total requirement count and confirm your table has that many rows. A silently
-  truncated gap report reads as full coverage. At L2 that is 183 requirements.
+  truncated gap report reads as full coverage. Levels are cumulative: at L2 that is 253
+  requirements (every L1 requirement plus every L2 one), not the 183 tagged L2.
 - Do not soften a `GAP` into a partial pass. Partial compliance is a gap with a note.
 - State that level counts come from the pinned ASVS release, so a future release may shift
   them.

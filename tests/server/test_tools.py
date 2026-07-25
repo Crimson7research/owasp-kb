@@ -183,6 +183,23 @@ def test_checklist_never_truncates_its_rows(tools):
     assert len(result["requirements"]) == result["count"]
 
 
+def test_checklist_level_is_cumulative_through_the_tool(tools):
+    result = tools["owasp_checklist"]("asvs", level="2")
+    assert {r["req_id"] for r in result["requirements"]} == {"V1.1.1", "V6.2.1", "V6.2.2"}
+
+
+def test_checklist_description_states_cumulative_levels(tools):
+    """The description is what the agent reads; '183 at L2' invited the wrong call."""
+    doc = tools["owasp_checklist"].__doc__.lower()
+    assert "cumulative" in doc
+    assert "253" in doc
+
+
+def test_checklist_rejects_both_level_arguments_via_the_tool(tools):
+    result = tools["owasp_checklist"]("asvs", level="2", level_exact="2")
+    assert "error" in result
+
+
 # -- related ----------------------------------------------------------
 
 

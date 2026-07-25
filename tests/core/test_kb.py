@@ -129,8 +129,26 @@ def test_checklist_filters_by_chapter(kb):
     assert {r.req_id for r in kb.checklist("asvs", chapter="V6")} == {"V6.2.1", "V6.2.2"}
 
 
-def test_checklist_filters_by_level(kb):
-    assert [r.req_id for r in kb.checklist("asvs", level="1")] == ["V6.2.1"]
+def test_checklist_level_is_cumulative(kb):
+    """An ASVS L2 assessment verifies L1 and L2 requirements. Exact-match would
+    return only the L2-tagged ones and omit password minimums from a report
+    labelled L2."""
+    assert {r.req_id for r in kb.checklist("asvs", level="1")} == {"V6.2.1"}
+    assert {r.req_id for r in kb.checklist("asvs", level="2")} == {"V1.1.1", "V6.2.1", "V6.2.2"}
+
+
+def test_checklist_level_exact_returns_only_that_tier(kb):
+    assert {r.req_id for r in kb.checklist("asvs", level_exact="2")} == {"V1.1.1", "V6.2.2"}
+    assert {r.req_id for r in kb.checklist("asvs", level_exact="1")} == {"V6.2.1"}
+
+
+def test_checklist_rejects_both_level_arguments(kb):
+    with pytest.raises(ValueError, match="level_exact"):
+        kb.checklist("asvs", level="2", level_exact="2")
+
+
+def test_checklist_level_composes_with_chapter(kb):
+    assert {r.req_id for r in kb.checklist("asvs", chapter="V6", level="2")} == {"V6.2.1", "V6.2.2"}
 
 
 def test_checklist_filters_by_section_and_req_id(kb):
