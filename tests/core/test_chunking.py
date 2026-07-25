@@ -132,3 +132,37 @@ def test_token_est_is_populated():
 def test_slugify_matches_github_anchor_style():
     assert slugify("Password Storage") == "password-storage"
     assert slugify("OAuth 2.0 & OIDC") == "oauth-20--oidc"
+
+
+def test_repeated_headings_get_disambiguated_anchors():
+    """sections carries UNIQUE(doc_id, anchor), so two 'Limitations' subsections
+    under different parents must not collapse into one row and mis-cite each
+    other's content. GitHub disambiguates the same way."""
+    doc = (
+        "# D\n\n## X-Frame-Options\n\nxfo intro\n\n### Limitations\n\nxfo limits\n\n"
+        "## CSP frame-ancestors\n\ncsp intro\n\n### Limitations\n\ncsp limits\n"
+    )
+    chunks = chunk_markdown(doc, title="D")
+    limitation_chunks = [c for c in chunks if c.anchor.startswith("limitations")]
+    assert [c.anchor for c in limitation_chunks] == ["limitations", "limitations-1"]
+    by_anchor = {c.anchor: c for c in limitation_chunks}
+    assert by_anchor["limitations"].heading_path == "D > X-Frame-Options > Limitations"
+    assert by_anchor["limitations-1"].heading_path == "D > CSP frame-ancestors > Limitations"
+    assert "xfo limits" in by_anchor["limitations"].text
+    assert "csp limits" in by_anchor["limitations-1"].text
+
+
+def test_anchors_are_unique_per_document():
+    doc = "# D\n\n" + "".join(f"## S{i}\n\n### Do\n\ntext {i}\n\n" for i in range(5))
+    chunks = chunk_markdown(doc, title="D")
+    do_anchors = [c.anchor for c in chunks if c.anchor.startswith("do")]
+    assert do_anchors == ["do", "do-1", "do-2", "do-3", "do-4"]
+    assert len(set(do_anchors)) == len(do_anchors)
+
+
+def test_an_oversized_section_keeps_one_anchor_across_its_chunks():
+    """Disambiguation is per section, not per chunk."""
+    body = "\n\n".join(f"Paragraph {i} " + "word " * 120 for i in range(12))
+    chunks = chunk_markdown(f"# D\n\n## Big\n\n{body}\n", title="D", max_tokens=400)
+    assert len({c.anchor for c in chunks}) == 1
+    assert chunks[0].anchor == "big"

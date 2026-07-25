@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 
 from owasp_kb.core.models import Chunk
 
@@ -99,17 +100,29 @@ def chunk_markdown(
         ancestors[depth] = heading_text
         sections.append((depth, heading_text, []))
 
+    # Assign anchors in document order, disambiguating repeats the way GitHub does
+    # (-1, -2, ...). Uniqueness is mandatory, not cosmetic: sections carries
+    # UNIQUE(doc_id, anchor), so colliding anchors would collapse distinct
+    # subsections into one row and cite the wrong heading_path for their content.
+    # Real corpus: 9 documents collide, one with 12 sections all slugifying to "do".
+    seen: Counter[str] = Counter()
+    anchors: list[str] = []
+    for depth, heading_text, _ in sections:
+        base = slugify(heading_text) if depth > 1 else slugify(title)
+        seen[base] += 1
+        anchors.append(base if seen[base] == 1 else f"{base}-{seen[base] - 1}")
+
     chunks: list[Chunk] = []
     path_stack: dict[int, str] = {1: title}
     ord_counter = 0
-    for depth, heading_text, lines in sections:
+    for index, (depth, heading_text, lines) in enumerate(sections):
         body = "\n".join(lines).strip()
         path_stack = {d: h for d, h in path_stack.items() if d < depth}
         path_stack[depth] = heading_text
         heading_path = " > ".join(path_stack[d] for d in sorted(path_stack))
         if not body:
             continue
-        anchor = slugify(heading_text) if depth > 1 else slugify(title)
+        anchor = anchors[index]
         for part in _split_oversized(body, max_tokens):
             chunks.append(
                 Chunk(
