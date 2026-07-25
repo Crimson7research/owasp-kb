@@ -1,0 +1,97 @@
+# Licensing
+
+This is a practical reading for people deciding whether and how they can use,
+modify, or redistribute this project — **not legal advice.** If a licensing
+question actually matters to you (a commercial redistribution, a client
+deliverable, a fork you plan to publish), read the full texts in
+[LICENSE](../LICENSE) and [LICENSE-DATA](../LICENSE-DATA) yourself, or ask a
+lawyer.
+
+## Both upstream repos are CC-BY-SA-4.0
+
+The two projects this repository ingests content from:
+
+- [OWASP/ASVS](https://github.com/OWASP/ASVS)
+- [OWASP/CheatSheetSeries](https://github.com/OWASP/CheatSheetSeries)
+
+both license their content **CC-BY-SA-4.0** ("Attribution-ShareAlike"),
+verified directly via the GitHub licence API on each repository rather than
+assumed from an OWASP-wide default. Neither project's content is MIT, Apache,
+or public domain — anything derived from either carries the same license
+forward, by the terms of ShareAlike, whether or not that derivation is
+obvious.
+
+## Why redistribution and adaptation both apply here
+
+Two separate CC-BY-SA-4.0 obligations are in play, not one:
+
+- **Baking the content into a distributable image is redistribution.** The
+  `owasp-kb:lite` and `owasp-kb:full` images ship the actual ASVS and Cheat
+  Sheet Series text, verbatim, inside the SQLite file each image bakes in at
+  `/opt/owasp-kb/owasp-kb.sqlite`. Anyone who pulls or receives that image
+  receives a copy of the licensed content, which is exactly what
+  "redistribution" means under the license — the attribution requirement
+  applies in full, regardless of the fact that it arrives inside a database
+  file rather than as loose markdown.
+
+- **The built SQLite index is itself an adaptation, so ShareAlike applies to
+  it independently.** The index is not the source content unmodified — it is
+  chunked at heading boundaries, cross-linked against the other pack via the
+  `links` edge table, re-keyed by requirement id and doc anchor, and (in the
+  `full` variant) embedded into a vector representation. That is
+  transformation, not mere repackaging, and CC-BY-SA-4.0's ShareAlike clause
+  requires anything built *from* the licensed material to carry forward the
+  same license — the derived index is CC-BY-SA-4.0 in its own right, not
+  merely "contains CC-BY-SA-4.0 content." This is why [LICENSE-DATA](../LICENSE-DATA)
+  exists as a top-level file alongside [LICENSE](../LICENSE), rather than the
+  project simply linking to the upstream repos and calling the licensing
+  question closed.
+
+## The code/data split
+
+Two licenses cover two disjoint things in this repository, and neither covers
+the other:
+
+- **[LICENSE](../LICENSE) (MIT)** covers this project's own source code only:
+  the ingest pipeline (`ingest/`), the domain model and retrieval logic
+  (`core/`), the MCP server (`server/`), and the Claude Code plugin and skills
+  (`plugins/`). None of that code is derived from OWASP's content — it is
+  original tooling written to serve that content.
+- **[LICENSE-DATA](../LICENSE-DATA) (CC-BY-SA-4.0)** covers the OWASP content
+  itself as fetched, and the SQLite index built from it, wherever either
+  appears — inside `dist/*.sqlite`, inside the baked images, or in any
+  redistribution of either.
+
+Each Docker image's OCI labels state this split directly
+(`org.opencontainers.image.licenses="MIT AND CC-BY-SA-4.0"`), so the split is
+visible from the image metadata alone, without reading this document.
+
+## What a redistributor must do
+
+Anyone redistributing an `owasp-kb` image, or the index file it bakes in,
+should at minimum:
+
+1. **Preserve attribution** to both upstream projects — name them, link to
+   their repositories, and state their license (CC-BY-SA-4.0) — this
+   repository's [NOTICE](../NOTICE) file is one way to satisfy this and can be
+   carried forward as-is.
+2. **Carry the CC-BY-SA-4.0 license forward** for the content and the index
+   specifically (not necessarily for any of your own original code built
+   around it) — a straightforward reading is to keep [LICENSE-DATA](../LICENSE-DATA)
+   alongside the redistributed artifact.
+3. **State what changed**, if anything, beyond what this project already
+   states (chunking, cross-linking, embedding) — CC-BY-SA-4.0 asks that
+   modifications be indicated.
+4. **Not imply OWASP endorsement** — see the trademark note below,
+   independent of the copyright license entirely.
+
+## Trademark disclaimer
+
+OWASP® is a registered trademark of the OWASP Foundation. This project is
+**not affiliated with, endorsed by, or sponsored by** the OWASP Foundation.
+The project name leads with "owasp" only because that is what the content is
+— the Application Security Verification Standard and the Cheat Sheet Series,
+both OWASP Foundation projects — not because of any relationship with the
+Foundation itself. This matters specifically because the naming choice could
+otherwise read as an implied affiliation; the disclaimer exists precisely to
+foreclose that reading, and is repeated in [NOTICE](../NOTICE).

@@ -71,10 +71,9 @@ Claude Code:
 The embedder is the entire size difference (~446 MB). It also measurably
 improves ranking: mean rank of the expected document across four paraphrased
 queries goes from 3.0 (lexical) to 2.2 (hybrid) on the real corpus — see
-[docs/architecture.md](docs/architecture.md) and
-[docs/decisions/0004-lite-and-full-variants.md](docs/decisions/0004-lite-and-full-variants.md)
-for the full measurement and how the acceptance bar was corrected along the
-way.
+[docs/architecture.md](docs/architecture.md) and ADR
+`docs/decisions/0004-lite-and-full-variants.md` for the full measurement and
+how the acceptance bar was corrected along the way.
 
 ## Install
 
