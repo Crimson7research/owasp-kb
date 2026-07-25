@@ -17,6 +17,9 @@ _CHAPTER_HEADING = re.compile(r"^##\s+(V\d+):")
 _CS_LINK = re.compile(r"\]\((?:.*/)?([A-Za-z0-9_]+_Cheat_Sheet)\.md\)")
 _BE_KEY = re.compile(r"^v5\.0\.be-(\d+\.\d+\.\d+)$")
 _RELEASE_REF = re.compile(r"v5\.0\.0-(\d+\.\d+\.\d+)")
+_V4_REF = re.compile(r"v4\.0\.3-(\d+\.\d+\.\d+)")
+_V5_KEY = re.compile(r"^v5\.0\.0-(\d+\.\d+\.\d+)$")
+_NIST_ROW = re.compile(r"^\|\s*\*\*(\d+\.\d+\.\d+)\*\*\s*\|\s*([^|]*?)\s*\|")
 
 
 def _insert(conn: sqlite3.Connection, rows: list[tuple], source: str) -> int:
@@ -121,3 +124,93 @@ def ingest_cwe_links(
             len(raw),
         )
     return added, dropped
+
+
+def ingest_supersedes_links(
+    conn: sqlite3.Connection, mapping_path: str | Path
+) -> tuple[int, int]:
+    """Map v5 requirements to the v4.0.3 requirements they replace.
+
+    Upstream values are prose, e.g. 'MODIFIED, MOVED FROM v4.0.3-2.1.1, COVERS
+    v4.0.3-2.1.6', so every v4 reference in the value is extracted. Requirements
+    marked only ADDED have no predecessor and produce no edge.
+    Returns (added, dropped).
+    """
+    raw = yaml.safe_load(Path(mapping_path).read_text(encoding="utf-8")) or {}
+    known = {r[0] for r in conn.execute("SELECT req_id FROM requirements")}
+    source = "mapping_v5.0.0_to_v4.0.3.yml"
+    rows: list[tuple] = []
+    dropped = 0
+
+    for key, value in raw.items():
+        match = _V5_KEY.match(str(key))
+        if not match:
+            continue
+        req_id = f"V{match.group(1)}"
+        if req_id not in known:
+            dropped += 1
+            continue
+        text = " ".join(str(v) for v in value.values()) if isinstance(value, dict) else str(value)
+        for v4 in dict.fromkeys(_V4_REF.findall(text)):
+            rows.append(("requirement", req_id, "requirement", f"4.0.3-{v4}",
+                         "supersedes", source))
+
+    added = _insert(conn, rows, source)
+    if dropped:
+        log.warning(
+            "dropped %d v4 mapping entries whose v5 requirement ids are absent from this "
+            "release", dropped,
+        )
+    return added, dropped
+
+
+def ingest_nist_links(conn: sqlite3.Connection, nist_path: str | Path) -> tuple[int, int]:
+    """Map requirements to NIST SP 800-63B sections, composed via the v4 mapping.
+
+    nist.md is dated 07-Nov-2024 and keyed on v4.0.3 requirement ids, so a v5
+    requirement reaches NIST only through its 'supersedes' edges. Run
+    ingest_supersedes_links first. Coverage is partial by construction.
+    Returns (added, skipped).
+    """
+    text = Path(nist_path).read_text(encoding="utf-8")
+    source = "nist.md"
+
+    v4_to_nist: dict[str, str] = {}
+    for line in text.splitlines():
+        match = _NIST_ROW.match(line)
+        if not match:
+            continue
+        section = match.group(2).strip()
+        if section:
+            v4_to_nist[match.group(1)] = section
+
+    edges = conn.execute(
+        "SELECT from_id, to_id FROM links WHERE rel = 'supersedes'"
+    ).fetchall()
+    if not edges:
+        log.warning(
+            "no 'supersedes' edges present, so %d NIST rows cannot be attached to v5 "
+            "requirement ids; run ingest_supersedes_links first", len(v4_to_nist),
+        )
+        return 0, len(v4_to_nist)
+
+    rows: list[tuple] = []
+    matched_v4: set[str] = set()
+    for edge in edges:
+        v4_id = str(edge["to_id"]).removeprefix("4.0.3-")
+        section = v4_to_nist.get(v4_id)
+        if section is None:
+            continue
+        matched_v4.add(v4_id)
+        rows.append((
+            "requirement", edge["from_id"], "nist",
+            f"NIST SP 800-63B {section}", "nist", source,
+        ))
+
+    added = _insert(conn, rows, source)
+    skipped = len(v4_to_nist) - len(matched_v4)
+    log.info(
+        "NIST links: %d edges added, %d nist.md rows unmatched (mapping is keyed on "
+        "v4.0.3, so coverage is partial)", added, skipped,
+    )
+    return added, skipped
