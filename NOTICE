@@ -1,0 +1,35 @@
+owasp-kb
+Copyright (c) 2026 Yimura
+
+This project is not affiliated with, endorsed by, or sponsored by the OWASP
+Foundation. OWASP® and the OWASP logo are registered trademarks of the OWASP
+Foundation. The project name leads with "owasp" only to describe its subject
+matter — the pinned OWASP content it packages and serves.
+
+## Third-party content
+
+This project packages, and its built container images bake in, content from
+two upstream OWASP projects. Both are licensed CC-BY-SA-4.0, verified via the
+GitHub licence API on each upstream repository:
+
+- OWASP Application Security Verification Standard (ASVS)
+  https://github.com/OWASP/ASVS
+  License: CC-BY-SA-4.0
+
+- OWASP Cheat Sheet Series
+  https://github.com/OWASP/CheatSheetSeries
+  License: CC-BY-SA-4.0
+
+Baking this content into a distributable image is redistribution, and the
+SQLite index built from it — chunked, cross-linked, and re-served through the
+MCP tools — is an adaptation under the Creative Commons framework. The index
+therefore remains CC-BY-SA-4.0 in its own right; see LICENSE-DATA for the
+full legal text of that license. The MIT license in LICENSE covers only the
+project's own source code (the ingest pipeline, the MCP server, the plugin
+and skills), never the upstream content or the index derived from it.
+
+For the exact pinned version, release tag or commit SHA of each upstream
+source in any given build, see `sources.lock.yml`, or call the `kb_info` MCP
+tool against a running server — it reports the loaded pack versions directly
+from the index that was actually built, which is the authoritative source
+once an image has shipped.
