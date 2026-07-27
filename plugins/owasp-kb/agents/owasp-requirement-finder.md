@@ -57,6 +57,29 @@ Leave `cwe` null; the verifier fills it. Leave `file` and `line` null only for
 The `REPORT COMPLETE` line required below goes after the JSON block, on its own
 line. Keep the JSON itself parseable — the sentinel is not part of it.
 
+## Excluded material
+
+You may be given a list of **excluded** paths — prior security assessments of this same
+target, written by someone else.
+
+```
+EXCLUDED -- these exist; acknowledge them, never open them:
+  docs/security/asvs-5.0.0-l2-firmware.md
+```
+
+Do not open them, grep them, or cite them. Another assessment's conclusion is not evidence,
+and reading one makes you likely to confirm it rather than test it. If a verdict would depend
+on excluded material, return `INSUFFICIENT EVIDENCE` and say that a verdict here would depend
+on excluded material — do not name the file, and do not open it to check. Naming it puts the
+path in your evidence, and `owasp_roster` rejects a finding that cites an excluded path.
+
+Everything else is readable, including design documentation, architecture notes and threat
+models. Those are primary evidence, and ASVS documentation requirements cannot be answered
+without them: `V7.1.1` asks whether a timeout is *documented*.
+
+`owasp_roster` rejects any finding citing an excluded path, so a contaminated verdict fails
+at assembly rather than reaching the report.
+
 ## Finishing
 
 End your report with the single line `REPORT COMPLETE`. A reply without it is

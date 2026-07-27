@@ -40,9 +40,13 @@ assumption in the report header** so it is visible and disputable rather than si
 5. **Evidence depth** *(default: code and configuration)* — is configuration and
    documentation acceptable evidence, or code only?
 
-6. **Known accepted risks** — is there a risk register, deferral log or prior assessment?
+6. **Known accepted risks** — is there a risk register or deferral log?
    Without it you will re-litigate decisions already made; with it, those become
    `GAP (accepted)` rather than news.
+
+   If the only record of accepted risk is inside a prior assessment, it is excluded like
+   any other: ask the user which findings are already accepted rather than reading it.
+   A verdict of `GAP (accepted)` rests on the user's statement, not on the document.
 
 7. **Output shape** *(default: full requirement table)* — full table or gaps only?
    Audience: engineers fixing it, or a client reading it?
@@ -57,6 +61,17 @@ the work happens in subagents so that no verdict is graded by the agent that pro
 
 1. **Agree the scope** (above). This gates everything — a wrong scope wastes every agent
    dispatched after it.
+
+   **Find prior assessments before anything else runs.** Look for existing security
+   assessments of this target — `docs/security/`, files named for ASVS, audit, pentest or
+   security review. List their paths, tell the user they exist, and confirm they are to be
+   excluded rather than used as source material for the report you are about to produce.
+
+   Pass that list to every agent you dispatch, and to `owasp_roster` as `excluded`. Agents
+   must know these files exist and must not open them: another assessment's conclusion is not
+   evidence, and an agent that reads one tends to confirm it rather than test it. Design
+   documentation is *not* excluded — it is primary evidence, and documentation-class
+   requirements cannot be answered without it.
 
 2. **Build the inventory.** Dispatch `owasp-scope-inventory` once per concern —
    endpoints, middleware, identity, storage, cryptography, client surface — in parallel.
@@ -88,11 +103,16 @@ the work happens in subagents so that no verdict is graded by the agent that pro
      the remediation citation.
    - Escalate to a **second** verifier only where the first returned `unclear`.
 
-6. **Assemble with `owasp_roster`.** Pass your `chapter_states` and every finding. Do not
-   tally by hand — the tool places every requirement in exactly one verdict, marks
-   anything you did not report as `INSUFFICIENT EVIDENCE`, and tells you whether the
-   roster is complete. If it returns `complete: false` or an error, fix the inputs; do not
-   report around it.
+6. **Assemble with `owasp_roster`.** Pass your `chapter_states` and every finding,
+   including each orchestrator's `not_applicable` entries — those are findings with an
+   N/A verdict, not omissions. Dropping them re-files a determined N/A as
+   INSUFFICIENT EVIDENCE. Do not tally by hand — the tool places every requirement in
+   exactly one verdict, marks anything you did not report as `INSUFFICIENT EVIDENCE`, and
+   tells you whether the roster is complete. If it returns `complete: false` or an error,
+   fix the inputs; do not report around it.
+
+   Pass `excluded=` the prior assessments found during scoping. A finding citing one is
+   rejected, and the roster will name it.
 
 7. **Cite the exact ASVS version** from `kb_info`.
 
@@ -110,8 +130,8 @@ uncertain ones into `MET` or `GAP`; carrying them through is the point:
 | `MET` | Control present and read |
 | `GAP` | Control absent or inadequate, verified |
 | `GAP (unconfirmed)` | Reported, but verification was inconclusive twice |
-| `N/A (verified)` | Chapter exempt, and a refuter failed to disprove it |
-| `N/A (unverified)` | Chapter exempt, refutation inconclusive |
+| `N/A (verified)` | Chapter **or requirement** exempt, and a refuter searched and returned `exemption_holds` |
+| `N/A (unverified)` | Chapter **or requirement** exempt, refutation inconclusive |
 | `INSUFFICIENT EVIDENCE` | Could not be determined |
 
 Every `GAP` carries the remediation citation as `doc_key#anchor` — the verifier produces

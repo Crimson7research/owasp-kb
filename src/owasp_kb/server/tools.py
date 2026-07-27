@@ -307,6 +307,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         pack: str = "asvs",
         chapter_states: dict | None = None,
         findings: list | None = None,
+        excluded: list | None = None,
         level: str | None = None,
         require_verification: bool = True,
         detail: bool = False,
@@ -324,9 +325,15 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         sharing a (file, line, cwe) are merged, keeping every requirement they
         cover.
 
-        A GAP with no verifier trace is rejected: dispatch owasp-finding-verifier
-        for it, or record it as 'GAP (unconfirmed)'. Pass require_verification=False
-        only for a deliberately quick pass.
+        A claim asserting a checked outcome is rejected without its adversary's
+        trace: a GAP needs owasp-finding-verifier, an 'N/A (verified)' needs
+        owasp-exemption-refuter. Record it as 'GAP (unconfirmed)' or
+        'N/A (unverified)' instead if it was not checked. Pass
+        require_verification=False only for a deliberately quick pass.
+
+        excluded lists prior assessment reports found in the target. Any finding
+        citing one is rejected -- another assessment's conclusion is not evidence.
+        Acknowledge such reports exist and do not open them.
 
         Returns counts, per-chapter totals, the entries needing attention
         (INSUFFICIENT EVIDENCE, N/A (unverified), GAP (unconfirmed)) and each
@@ -363,6 +370,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 requirements=requirements,
                 findings=parsed,
                 chapter_states=chapter_states or {},
+                excluded=excluded,
                 require_verification=require_verification,
                 detail=detail,
             )

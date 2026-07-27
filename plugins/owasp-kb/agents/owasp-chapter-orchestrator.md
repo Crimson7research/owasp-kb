@@ -41,7 +41,45 @@ than a missing one, because nothing downstream can tell it apart from a real one
 The fifteen-tool-call guidance under **Finishing** governs your own searching. It is
 not a cap on dispatches: a large chapter is 47 finders, and every one of them must
 have returned before you report. Running long because you are waiting on finders is
-the intended behaviour, not a rabbit hole.
+the intended behaviour, not a rabbit hole. The same applies to the refuter dispatch
+below and to any finder you re-dispatch after a refuted claim — waiting on those is
+still not searching, however many turns it takes.
+
+## Requirements that do not apply
+
+Your chapter applies, but some of its requirements will not. ASVS V7 is written for
+user-facing web sessions; against a device with no user accounts, roughly two thirds of it
+is about a model that does not exist here. Recording those as `INSUFFICIENT EVIDENCE` is
+wrong — that means "could not determine", and you did determine it.
+
+Record each one as a claim, with the reason:
+
+```json
+{"req_id": "V7.1.2", "verdict": "N/A (verified)",
+ "evidence": "scoped to concurrent sessions for one account; no user account concept exists"}
+```
+
+**An N/A is a claim, not a skip.** Collect every one you make, then dispatch **one**
+`owasp-exemption-refuter` for the whole chapter, giving it the full list and the scope
+inventory, and asking it to break any of them. One refuter per chapter, not one per claim.
+
+- `exemption_refuted` — the claim is broken and the requirement applies after all. Dispatch
+  an `owasp-requirement-finder` for it and use that verdict. Do not drop it: a caught mistake
+  that vanishes is worse than one never caught.
+- `exemption_holds` — the refuter searched and is confident the construct is genuinely absent.
+  Record `N/A (verified)`, carrying the refuter's `searched` string as its `trace`. Without
+  that trace `owasp_roster` rejects it.
+- `unclear` — the refuter could not disprove the claim but is not confident it is absent.
+  Record `N/A (unverified)`, with no trace. This is the refuter's default, so expect it often.
+
+`unclear` is **not** `exemption_holds`. A claim that survives only because nobody could
+disprove it is unverified — recording it as verified is the bulk-justified exemption this
+whole round exists to prevent, and attaching a trace to it makes it indistinguishable from a
+real one.
+
+Do not judge a requirement inapplicable because its vocabulary differs from the codebase's.
+`PeerSessionState` is a session by function though nothing is named one. Judge by what the
+requirement protects against.
 
 ## Process
 
@@ -54,9 +92,15 @@ the intended behaviour, not a rabbit hole.
    requirement is invisible.
 
 3. Dispatch one `owasp-requirement-finder` per applicable requirement, giving it the
-   requirement text, the relevant slice of the inventory, and the target files.
+   requirement text, the relevant slice of the inventory, the target files, and the
+   excluded-material list (see **Excluded material** below) — it does not receive that
+   list from anywhere else.
 
-4. Collect the verdicts and return them.
+4. Dispatch one `owasp-exemption-refuter` with all your N/A claims and the excluded-material
+   list — see **Requirements that do not apply** above. Re-dispatch a finder for any claim
+   it breaks.
+
+5. Collect the verdicts and return them.
 
 ## Output
 
@@ -68,7 +112,11 @@ Return JSON:
   "requirements_total": 47,
   "requirements_dispatched": 41,
   "not_applicable": [
-    {"req_id": "V6.8.1", "reason": "no external identity provider in the inventory"}
+    {"req_id": "V6.8.1", "chapter": "V6", "section": "V6.8", "verdict": "N/A (verified)",
+     "evidence": "no external identity provider in the inventory",
+     "trace": "refuter searched for token exchange, delegated auth across src/; found none"},
+    {"req_id": "V6.8.4", "chapter": "V6", "section": "V6.8", "verdict": "N/A (unverified)",
+     "evidence": "no external identity provider in the inventory"}
   ],
   "findings": [
     {"req_id": "V6.2.1", "chapter": "V6", "section": "V6.2", "verdict": "GAP",
@@ -77,9 +125,16 @@ Return JSON:
 }
 ```
 
-Every requirement you were given appears once, either dispatched or in `not_applicable`
-with a reason. A per-requirement `not_applicable` reason is checked later, so make it
-specific.
+(Abridged — `requirements_dispatched` is 41 and only one of its findings is shown above; the
+same goes for `not_applicable`. In a real reply, `len(findings) + len(not_applicable)` equals
+`requirements_total`, and every finding carries `chapter` and `section` even when the entry
+sits in `not_applicable` — `owasp_roster` requires both on every entry it is passed.)
+
+Every requirement you were given appears once: dispatched (its verdict lands in `findings`,
+including any N/A claim the refuter broke — see **Requirements that do not apply** above) or
+in `not_applicable` carrying its `chapter`, `section`, verdict, evidence, and — for
+`N/A (verified)` only — the refuter's trace. A per-requirement entry is checked later, so make
+the evidence specific.
 
 ## Rules
 
@@ -90,6 +145,34 @@ specific.
 
 The `REPORT COMPLETE` line goes after the JSON block, on its own line. Keep the JSON
 itself parseable — the sentinel is not part of it.
+
+## Excluded material
+
+You may be given a list of **excluded** paths — prior security assessments of this same
+target, written by someone else.
+
+```
+EXCLUDED -- these exist; acknowledge them, never open them:
+  docs/security/asvs-5.0.0-l2-firmware.md
+```
+
+**Forward this list to every agent you dispatch** — each `owasp-requirement-finder` and the
+`owasp-exemption-refuter` you send your N/A claims to. They do not receive it from anywhere
+else: the main session passes it to you, and you are the only thing that dispatches them. A
+finder is the most likely role to walk into a prior assessment, because it greps the widest.
+
+Do not open them, grep them, or cite them. Another assessment's conclusion is not evidence,
+and reading one makes you likely to confirm it rather than test it. If a verdict would depend
+on excluded material, return `INSUFFICIENT EVIDENCE` and say that a verdict here would depend
+on excluded material — do not name the file, and do not open it to check. Naming it puts the
+path in your evidence, and `owasp_roster` rejects a finding that cites an excluded path.
+
+Everything else is readable, including design documentation, architecture notes and threat
+models. Those are primary evidence, and ASVS documentation requirements cannot be answered
+without them: `V7.1.1` asks whether a timeout is *documented*.
+
+`owasp_roster` rejects any finding citing an excluded path, so a contaminated verdict fails
+at assembly rather than reaching the report.
 
 ## Finishing
 

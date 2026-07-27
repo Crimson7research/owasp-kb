@@ -117,6 +117,22 @@ ASSESSMENT_SKILLS = {"owasp-asvs-verify", "owasp-asvs-gap-report"}
 
 
 @pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_scoping_discovers_prior_assessments(skill):
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    lowered = body.lower()
+    assert "prior assessment" in lowered
+    assert "excluded" in lowered
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_exclusion_list_reaches_the_roster(skill):
+    """Discovering the reports and then not passing them to owasp_roster leaves
+    the check inert -- an instruction with no consumer, again."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "excluded=" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
 def test_assessment_skills_agree_scope_before_starting(skill):
     """The scoping interaction users valued was the agent's own judgement, not the
     skill, so it would not reliably recur."""
@@ -195,6 +211,15 @@ def test_no_agent_can_write(name):
     tools = meta["tools"]
     assert "Write" not in tools
     assert "Edit" not in tools
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
+def test_every_agent_carries_the_exclusion_rule(name):
+    """A prior assessment in the target is another agent's conclusion. Every role
+    that reads the codebase can stumble on one -- the verifiers did."""
+    _, body = _agent(name)
+    assert "EXCLUDED" in body
+    assert "never open" in body.lower()
 
 
 def test_refuter_has_no_mcp_access():
@@ -277,6 +302,15 @@ def test_verify_skill_documents_the_uncertain_verdicts():
         assert verdict in body
 
 
+@pytest.mark.parametrize("skill", ["owasp-asvs-verify", "owasp-asvs-gap-report"])
+def test_the_skills_consume_the_orchestrator_not_applicable_array(skill):
+    """The orchestrator emits N/A claims with refuter traces. If the assembly step
+    passes only `findings`, every one of them is silently re-filed as
+    INSUFFICIENT EVIDENCE and the whole refutation round changes nothing."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "not_applicable" in body
+
+
 def test_gap_report_dispatches_the_same_roles_as_verify():
     verify = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text()
     gap = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text()
@@ -320,6 +354,58 @@ def test_orchestrator_rejects_a_finder_reply_with_no_sentinel():
     _, body = _agent("owasp-chapter-orchestrator")
     assert "REPORT COMPLETE" in body
     assert "INSUFFICIENT EVIDENCE" in body
+
+
+def test_orchestrator_records_inapplicable_requirements():
+    """Twelve V7 requirements were judged inapplicable with reasons and dropped
+    on the floor, surfacing as INSUFFICIENT EVIDENCE -- 'could not determine'
+    standing in for 'determined, does not apply'. See #23."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    assert "N/A (verified)" in body
+    assert "N/A (unverified)" in body
+
+
+def test_orchestrator_batches_its_na_claims_to_one_refuter():
+    _, body = _agent("owasp-chapter-orchestrator")
+    lowered = body.lower()
+    assert "owasp-exemption-refuter" in body
+    assert "one refuter" in lowered or "a single refuter" in lowered
+
+
+def test_orchestrator_maps_each_refuter_verdict_to_exactly_one_outcome():
+    """`unclear` reading as both 'cannot break' and 'inconclusive' let an
+    undisprovable claim be recorded as verified, with the refuter's grep line as
+    its trace -- the bulk-justified exemption, rebuilt."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    for literal in ("exemption_refuted", "exemption_holds", "unclear"):
+        assert literal in body, f"{literal} is not named in the orchestrator"
+    assert "`unclear` is **not** `exemption_holds`" in body
+
+
+def test_the_orchestrator_forwards_the_exclusion_list_to_what_it_dispatches():
+    """Finders and the batched refuter are dispatched by the orchestrator, not by
+    the main session, so the orchestrator is the only thing that can give them the
+    list. Their own exclusion sections are unreachable otherwise."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    assert "Forward this list to every agent you dispatch" in body
+    assert "owasp-requirement-finder" in body
+
+
+def test_a_refuted_na_claim_returns_to_the_finder_queue():
+    """A broken claim is a requirement that does apply after all. Dropping it
+    would turn a caught mistake into a silent omission."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    assert "refuted" in body.lower()
+    assert "owasp-requirement-finder" in body
+
+
+def test_refuter_handles_a_batch_of_requirement_claims():
+    """One refuter per chapter, given every N/A claim at once, rather than one
+    agent per claim -- twelve for V7 alone, over a hundred for a full run."""
+    _, body = _agent("owasp-exemption-refuter")
+    lowered = body.lower()
+    assert "batch" in lowered or "list of claims" in lowered
+    assert "req_id" in body
 
 
 MIN_TURNS = {

@@ -8,6 +8,7 @@ verdicts; this module decides whether the roster is complete.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 
 VERDICTS = (
     "MET",
@@ -17,6 +18,12 @@ VERDICTS = (
     "INSUFFICIENT EVIDENCE",
     "GAP (unconfirmed)",
 )
+
+# A GAP or GAP (unconfirmed) asserts a specific defect; without a file and line it
+# would reach the report pointing at nothing. N/A and INSUFFICIENT EVIDENCE have no
+# location by design -- a requirement that does not apply, or was never checked,
+# points at nothing on purpose.
+GAP_VERDICTS = frozenset({"GAP", "GAP (unconfirmed)"})
 
 
 @dataclass(frozen=True)
@@ -132,12 +139,28 @@ class RosterError(ValueError):
 
 UNCERTAIN_VERDICTS = frozenset({"INSUFFICIENT EVIDENCE", "N/A (unverified)", "GAP (unconfirmed)"})
 
+# A verdict that asserts someone checked it must carry that check. GAP without a
+# verifier shipped 172 unverified findings (#15); N/A without a refuter is the
+# bulk-justified exemption that reached 67% in the single-agent baseline (#5).
+CLAIMS_NEEDING_AN_ADVERSARY = MappingProxyType(
+    {
+        "GAP": "owasp-finding-verifier",
+        "N/A (verified)": "owasp-exemption-refuter",
+    }
+)
+
+# A verdict that concludes nothing cannot import a conclusion from a prior report,
+# and the role prompts tell an agent to say when a verdict would depend on excluded
+# material. Scanning those for the path it was just shown rejects honesty.
+NON_ASSERTING_VERDICTS = frozenset({"INSUFFICIENT EVIDENCE", "N/A (unverified)"})
+
 
 def build_roster(
     *,
     requirements: list[dict],
     findings: list[Finding],
     chapter_states: dict[str, str],
+    excluded: list[str] | None = None,
     require_verification: bool = True,
     detail: bool = False,
 ) -> dict:
@@ -148,11 +171,28 @@ def build_roster(
     disappearing, and a finding citing a requirement outside scope is an error
     rather than something quietly reconciled.
 
-    ``require_verification`` rejects a GAP carrying no verifier trace. The first
-    real run shipped 172 unverified findings because the skill asked for a
-    verifier and nothing required its result -- an instruction with no consumer
-    gets skipped. Downgrading to 'GAP (unconfirmed)' is the honest way past this;
+    ``require_verification`` rejects a claim that asserts a checked outcome but
+    carries no trace from whoever checked it: a GAP without a verifier, or an
+    'N/A (verified)' without a refuter. The first real run shipped 172 unverified
+    findings because the skill asked for a verifier and nothing required its
+    result -- an instruction with no consumer gets skipped. Downgrading to
+    'GAP (unconfirmed)' or 'N/A (unverified)' is the honest way past this;
     require_verification=False is the deliberate one.
+
+    ``excluded`` lists prior assessment reports found in the target. A finding
+    citing one in its file, evidence, trace or remediation is rejected: another
+    assessment's conclusion is not evidence. This catches contamination that
+    reached the report. It does not catch anchoring -- an agent that read a prior
+    report and then went looking for confirming code produces a finding citing
+    only source. Only the role prompts address that.
+
+    ``NON_ASSERTING_VERDICTS`` -- 'INSUFFICIENT EVIDENCE' and 'N/A (unverified)' --
+    are exempt from this scan. Both conclude nothing, so neither can import a false
+    conclusion from a prior report, and the role prompts tell an agent to name that
+    a verdict would depend on excluded material without naming the file itself --
+    scanning those for the path it was just shown would reject the honest answer.
+    A GAP or a verified N/A still asserts something a prior report could have
+    supplied, so those stay in scope for the check.
 
     The response reports counts, per-chapter totals and the entries needing
     attention (``UNCERTAIN_VERDICTS``) rather than every entry, and each
@@ -161,6 +201,21 @@ def build_roster(
     109,038-character response. Pass ``detail=True`` for the full
     per-requirement entry list.
     """
+    if excluded is not None:
+        if isinstance(excluded, str):
+            raise RosterError(
+                "excluded must be a list of paths, not a single string: a string is "
+                f"matched character by character and rejects everything. Pass ['{excluded}']."
+            )
+        non_strings = [p for p in excluded if not isinstance(p, str)]
+        if non_strings:
+            raise RosterError(
+                f"excluded contains non-path entries {non_strings!r}; every entry must "
+                "be a path string"
+            )
+        # A blank entry matches every finding, which is never what anyone means.
+        excluded = [p.strip() for p in excluded if p.strip()]
+
     known = {r["req_id"]: r for r in requirements}
 
     missing_chapters = {r["chapter"] for r in requirements} - set(chapter_states)
@@ -177,6 +232,12 @@ def build_roster(
             raise RosterError(
                 f"unknown verdict {finding.verdict!r}; expected one of {', '.join(VERDICTS)}"
             )
+        if finding.verdict in GAP_VERDICTS and finding.location_key is None:
+            req_ids = ", ".join(cover.req_id for cover in finding.covers)
+            raise RosterError(
+                f"{finding.verdict} for {req_ids} has no file/line; a gap with no "
+                "location would reach the report pointing at nothing"
+            )
         for cover in finding.covers:
             if cover.req_id not in known:
                 raise RosterError(
@@ -185,20 +246,57 @@ def build_roster(
                 )
             verdict_of[cover.req_id] = (finding.verdict, index)
 
-    if require_verification:
-        unverified = [
-            cover.req_id
-            for finding in merged
-            if finding.verdict == "GAP" and not finding.trace
-            for cover in finding.covers
-        ]
-        if unverified:
-            shown = ", ".join(unverified[:5])
-            more = f" and {len(unverified) - 5} more" if len(unverified) > 5 else ""
+    if excluded:
+        contaminated: list[tuple[str, str]] = []
+        for finding in merged:
+            if finding.verdict in NON_ASSERTING_VERDICTS:
+                continue
+            cited = " ".join(
+                part
+                for part in (
+                    finding.file,
+                    finding.evidence,
+                    finding.trace,
+                    finding.remediation,
+                )
+                if part
+            )
+            for path in excluded:
+                if path in cited:
+                    contaminated.extend((cover.req_id, path) for cover in finding.covers)
+        if contaminated:
+            first_path: dict[str, str] = {}
+            for req_id, path in contaminated:
+                first_path.setdefault(req_id, path)
+            pairs = list(first_path.items())
+            shown = "; ".join(f"{req_id} cites {path}" for req_id, path in pairs[:3])
+            more = f" and {len(pairs) - 3} more" if len(pairs) > 3 else ""
             raise RosterError(
-                f"{len(unverified)} GAP finding(s) have no verifier trace ({shown}{more}). "
-                "Dispatch owasp-finding-verifier for each, or mark them "
-                "'GAP (unconfirmed)' to record them as unverified."
+                f"{len(pairs)} requirement(s) cite an excluded prior assessment "
+                f"({shown}{more}). A prior report is someone else's conclusion, not "
+                "evidence. Re-derive the finding from source, or drop it."
+            )
+
+    if require_verification:
+        unverified: list[tuple[str, str]] = []
+        for finding in merged:
+            adversary = CLAIMS_NEEDING_AN_ADVERSARY.get(finding.verdict)
+            if adversary is None or finding.trace:
+                continue
+            unverified.extend((cover.req_id, adversary) for cover in finding.covers)
+        if unverified:
+            by_role: dict[str, list[str]] = {}
+            for req_id, adversary in unverified:
+                by_role.setdefault(adversary, []).append(req_id)
+            clauses = []
+            for adversary, req_ids in sorted(by_role.items()):
+                shown = ", ".join(req_ids[:5])
+                more = f" and {len(req_ids) - 5} more" if len(req_ids) > 5 else ""
+                clauses.append(f"{adversary} for {shown}{more}")
+            raise RosterError(
+                f"{len(unverified)} requirement(s) assert a checked outcome with no "
+                f"trace. Dispatch {'; '.join(clauses)}, or record them as "
+                "'GAP (unconfirmed)' or 'N/A (unverified)' to mark them unverified."
             )
 
     entries = []

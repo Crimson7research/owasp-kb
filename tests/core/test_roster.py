@@ -1,6 +1,8 @@
 import pytest
 
 from owasp_kb.core.roster import (
+    CLAIMS_NEEDING_AN_ADVERSARY,
+    VERDICTS,
     Finding,
     RosterError,
     build_roster,
@@ -169,9 +171,192 @@ def test_a_refutation_beats_a_confirmation_for_findings():
 
 
 def _f(req_id, chapter, section, verdict="GAP", **kw):
-    return Finding(
-        req_id=req_id, chapter=chapter, section=section, verdict=verdict, evidence="e", **kw
+    kw.setdefault("evidence", "e")
+    return Finding(req_id=req_id, chapter=chapter, section=section, verdict=verdict, **kw)
+
+
+PRIOR = "docs/security/asvs-5.0.0-l2-firmware.md"
+
+
+@pytest.mark.parametrize("field", ["evidence", "trace", "remediation"])
+def test_an_excluded_path_is_caught_in_any_cited_field(field):
+    """Citing it in prose is the same contamination as citing it as the location."""
+    kwargs = {"file": "a.py", "line": 1, "cwe": "CWE-1", "trace": "t"}
+    kwargs[field] = f"as recorded in {PRIOR}"
+    with pytest.raises(RosterError, match="excluded"):
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", **kwargs)],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+            excluded=[PRIOR],
+        )
+
+
+def test_an_insufficient_evidence_finding_may_name_the_excluded_path():
+    """The prompts tell an agent to say when a verdict would depend on excluded
+    material. A verdict that concludes nothing cannot import a conclusion, and
+    rejecting it punishes the honest answer."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[
+            _f(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                verdict="INSUFFICIENT EVIDENCE",
+                evidence=f"a verdict here would depend on {PRIOR}, which was not opened",
+            )
+        ],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        excluded=[PRIOR],
     )
+    assert roster["counts"]["INSUFFICIENT EVIDENCE"] >= 1
+
+
+def test_an_asserting_verdict_still_cannot_cite_the_excluded_path():
+    """The exemption is narrow. A GAP or a verified N/A asserts something a prior
+    report could have supplied, so it stays in scope."""
+    with pytest.raises(RosterError, match="excluded"):
+        build_roster(
+            requirements=REQS,
+            findings=[
+                _f(
+                    "V6.2.1",
+                    "V6",
+                    "V6.2",
+                    verdict="GAP",
+                    file="a.py",
+                    line=1,
+                    cwe="CWE-1",
+                    trace=f"confirmed against {PRIOR}",
+                )
+            ],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+            excluded=[PRIOR],
+        )
+
+
+def test_the_exclusion_error_names_the_path_and_the_way_out():
+    """A prior report in the target repo is someone else's conclusion. The
+    verifiers that found one caught themselves by disposition; this is the
+    control that does not rely on disposition -- and the message it raises
+    must name both the path and the requirement, and point at the way out."""
+    with pytest.raises(RosterError) as excinfo:
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", file=PRIOR, line=413, cwe="CWE-1", trace="t")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+            excluded=[PRIOR],
+        )
+    message = str(excinfo.value)
+    assert PRIOR in message
+    assert "V6.2.1" in message
+    assert "re-derive" in message.lower()
+
+
+def test_an_empty_exclusion_list_changes_nothing():
+    """The default path must be untouched -- most targets have no prior report."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[_f("V6.2.1", "V6", "V6.2", file="a.py", line=1, cwe="CWE-1", trace="t")],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        excluded=[],
+    )
+    assert roster["complete"] is True
+
+
+def test_readable_docs_are_not_caught_by_the_exclusion():
+    """docs/ is not excluded wholesale. ASVS documentation-class requirements --
+    V7.1.1 is literally 'verify the timeout is documented' -- are unanswerable if
+    design docs cannot be cited."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[
+            _f(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                verdict="GAP",
+                file="a.py",
+                line=1,
+                cwe="CWE-1",
+                trace="no timeout stated in docs/ble-app-architecture.md",
+            )
+        ],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        excluded=[PRIOR],
+    )
+    assert roster["counts"]["GAP"] == 1
+
+
+def test_the_exclusion_error_truncates_after_three_requirements():
+    """One contaminated finding routinely covers several requirements. The
+    message names a few and counts the rest; nothing currently checks either."""
+    reqs = [
+        {"req_id": f"V6.2.{i}", "chapter": "V6", "section": "V6.2", "level": "1"}
+        for i in range(1, 6)
+    ]
+    findings = [
+        _f(f"V6.2.{i}", "V6", "V6.2", file=PRIOR, line=i, cwe="CWE-1", trace="t")
+        for i in range(1, 6)
+    ]
+    with pytest.raises(RosterError) as excinfo:
+        build_roster(
+            requirements=reqs,
+            findings=findings,
+            chapter_states={"V6": "APPLIES"},
+            excluded=[PRIOR],
+        )
+    message = str(excinfo.value)
+    assert message.startswith("5 requirement(s)")
+    assert message.count(" cites ") == 3
+    assert "and 2 more" in message
+
+
+def test_contamination_is_reported_before_a_missing_trace():
+    """Both are wrong, but re-deriving from source is the first move; being told
+    to dispatch a verifier for a finding you must discard wastes the dispatch."""
+    with pytest.raises(RosterError, match="excluded"):
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", file=PRIOR, line=413, cwe="CWE-1")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+            excluded=[PRIOR],
+        )
+
+
+def test_a_bare_string_for_excluded_is_rejected():
+    """A string is iterable character by character, so 'docs/x.md' would match
+    almost anything -- exactly the footgun a single prior report invites."""
+    with pytest.raises(RosterError) as excinfo:
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", file="a.py", line=1, cwe="CWE-1", trace="t")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+            excluded=PRIOR,
+        )
+    assert f"['{PRIOR}']" in str(excinfo.value)
+
+
+def test_a_non_string_entry_in_excluded_is_rejected():
+    with pytest.raises(RosterError, match="non-path"):
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", file="a.py", line=1, cwe="CWE-1", trace="t")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+            excluded=[None],
+        )
+
+
+def test_a_blank_entry_in_excluded_behaves_as_no_exclusion():
+    """'' is a substring of everything; it must not become exclude-everything."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[_f("V6.2.1", "V6", "V6.2", file="a.py", line=1, cwe="CWE-1", trace="t")],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        excluded=[""],
+    )
+    assert roster["complete"] is True
 
 
 REQS = [
@@ -501,3 +686,274 @@ def test_a_normal_roster_declares_verification_was_required():
         chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
     )
     assert roster["verification_required"] is True
+
+
+# -- N/A (verified) needs a refuter trace (#23) ----------------------------
+
+
+def test_a_verified_na_without_a_refuter_trace_is_rejected():
+    """An N/A is a claim, exactly like a chapter exemption. Twelve V7
+    requirements were judged inapplicable with good reasons and had nowhere to
+    go; giving them a home must not also give them a free pass."""
+    with pytest.raises(RosterError, match="refuter"):
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", verdict="N/A (verified)")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+
+
+def test_the_na_rejection_names_the_requirement_and_the_way_out():
+    with pytest.raises(RosterError) as excinfo:
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", verdict="N/A (verified)")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+    message = str(excinfo.value)
+    assert "V6.2.1" in message
+    assert "owasp-exemption-refuter" in message
+    assert "N/A (unverified)" in message
+
+
+def test_a_verified_na_with_a_refuter_trace_is_accepted():
+    roster = build_roster(
+        requirements=REQS,
+        findings=[
+            _f(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                verdict="N/A (verified)",
+                trace="searched for user/account/session constructs; none exist",
+            )
+        ],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+    )
+    assert roster["counts"]["N/A (verified)"] == 2  # the finding plus exempt chapter V7
+
+
+def test_an_unverified_na_needs_no_trace_and_surfaces_for_attention():
+    """The honest way past the check. It must stay usable, and it must announce
+    itself rather than passing as a checked claim."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[_f("V6.2.1", "V6", "V6.2", verdict="N/A (unverified)")],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+    )
+    assert roster["counts"]["N/A (unverified)"] == 1
+    assert "V6.2.1" in {e["req_id"] for e in roster["needs_attention"]}
+
+
+def test_both_claim_types_are_reported_together():
+    """A chapter can produce an untraced GAP and an untraced N/A at once. The
+    caller should learn about both in one error, not discover the second only
+    after fixing the first -- and each requirement must be attributed to the
+    adversary that can actually act on it, not lumped under both."""
+    with pytest.raises(RosterError) as excinfo:
+        build_roster(
+            requirements=REQS,
+            findings=[
+                _f("V6.2.1", "V6", "V6.2", verdict="GAP", file="a.py", line=1, cwe="CWE-1"),
+                _f("V6.2.2", "V6", "V6.2", verdict="N/A (verified)"),
+            ],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+    message = str(excinfo.value)
+    verifier_clause = [c for c in message.split(";") if "owasp-finding-verifier" in c][0]
+    refuter_clause = [c for c in message.split(";") if "owasp-exemption-refuter" in c][0]
+    assert "V6.2.1" in verifier_clause
+    assert "V6.2.2" not in verifier_clause
+    assert "V6.2.2" in refuter_clause
+    assert "V6.2.1" not in refuter_clause
+
+
+def test_the_count_is_requirements_not_findings_or_roles():
+    """dedupe_findings merges findings sharing a location, so one untraced GAP
+    routinely covers several requirements. The agent has to act on each of them,
+    so that is what the message counts -- not findings, and not adversaries."""
+    with pytest.raises(RosterError) as excinfo:
+        build_roster(
+            requirements=REQS,
+            findings=[
+                _f("V6.2.1", "V6", "V6.2", verdict="GAP", file="a.py", line=1, cwe="CWE-1"),
+                _f("V6.2.2", "V6", "V6.2", verdict="GAP", file="a.py", line=1, cwe="CWE-1"),
+            ],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+    message = str(excinfo.value)
+    assert message.startswith("2 requirement(s)")
+    assert "V6.2.1" in message
+    assert "V6.2.2" in message
+
+
+def test_an_empty_trace_is_no_trace():
+    """An agent that emits `"trace": ""` rather than omitting the field claims a
+    check it never ran. A falsy trace must fail like a missing one, or #15
+    returns through a JSON default."""
+    with pytest.raises(RosterError, match="owasp-finding-verifier"):
+        build_roster(
+            requirements=REQS,
+            findings=[
+                _f(
+                    "V6.2.1",
+                    "V6",
+                    "V6.2",
+                    verdict="GAP",
+                    file="a.py",
+                    line=1,
+                    cwe="CWE-1",
+                    trace="",
+                )
+            ],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+
+
+def test_every_claim_needing_an_adversary_is_a_real_verdict():
+    """A typo in a key switches the rule off silently for that verdict -- an
+    instruction with no consumer, again."""
+    assert set(CLAIMS_NEEDING_AN_ADVERSARY) <= set(VERDICTS)
+
+
+def test_na_findings_never_merge_with_each_other():
+    """Twelve N/A claims share (file=None, line=None, cwe=None). Merging on that
+    would collapse them into a single finding covering all twelve requirements,
+    losing every individual reason."""
+    merged = dedupe_findings(
+        [
+            _f("V7.1.2", "V7", "V7.1", verdict="N/A (verified)"),
+            _f("V7.2.3", "V7", "V7.2", verdict="N/A (verified)"),
+            _f("V7.4.5", "V7", "V7.4", verdict="N/A (verified)"),
+        ]
+    )
+    assert len(merged) == 3
+    assert [f.covers[0].req_id for f in merged] == ["V7.1.2", "V7.2.3", "V7.4.5"]
+
+
+# -- a GAP with no location is rejected; N/A keeps its exemption (#23 spec) --
+
+
+def test_a_gap_with_no_location_is_rejected():
+    """Now that locationless findings are a first-class shape (N/A verdicts have
+    no file/line by design), a GAP that lost its location must not slip through
+    the same door -- it would reach the report as a verified gap pointing at
+    nothing."""
+    with pytest.raises(RosterError, match="V6.2.1"):
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", verdict="GAP", trace="t")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+
+
+def test_a_gap_unconfirmed_with_no_location_is_rejected():
+    """The self-declaring escape hatch from require_verification does not also
+    excuse a missing location."""
+    with pytest.raises(RosterError, match="V6.2.1"):
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", verdict="GAP (unconfirmed)")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+
+
+def test_an_na_verified_with_no_location_is_still_accepted():
+    """N/A (verified) has no location by design: a requirement that does not
+    apply has nowhere to point. The GAP-location check must not catch it too."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[_f("V6.2.1", "V6", "V6.2", verdict="N/A (verified)", trace="t")],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+    )
+    assert roster["counts"]["N/A (verified)"] == 2  # the finding plus exempt chapter V7
+
+
+# -- regression: the V7 run that motivated all of this (#23) ---------------
+
+V7_INAPPLICABLE = [
+    ("V7.1.2", "V7.1", "no user account concept exists"),
+    ("V7.1.3", "V7.1", "no federated identity or SSO system exists"),
+    ("V7.2.1", "V7.2", "no application-level session token exists"),
+    ("V7.2.2", "V7.2", "no self-contained or reference token is used"),
+    ("V7.2.3", "V7.2", "no reference token exists to evaluate for entropy"),
+    ("V7.2.4", "V7.2", "no authentication event exists to trigger regeneration"),
+    ("V7.4.2", "V7.4", "no user accounts exist to be disabled or deleted"),
+    ("V7.4.3", "V7.4", "no multi-session-per-account model exists"),
+    ("V7.4.4", "V7.4", "no authenticated pages exist"),
+    ("V7.4.5", "V7.4", "no admin role exists"),
+    ("V7.5.2", "V7.5", "no feature to view or terminate other sessions"),
+    ("V7.6.1", "V7.6", "no IdP or relying-party relationship exists"),
+]
+
+
+# The 6 applicable requirements the same V7 run found gaps in, each with a
+# verifier trace, and the one finder whose reply was cut off short of
+# REPORT COMPLETE and had to be recorded as INSUFFICIENT EVIDENCE rather than
+# discarded or guessed at.
+V7_GAPS = [
+    ("V7.1.1", "V7.1", "src/session.c", 88, "CWE-613"),
+    ("V7.3.1", "V7.3", "src/session.c", 140, "CWE-384"),
+    ("V7.3.2", "V7.3", "src/session.c", 156, "CWE-330"),
+    ("V7.4.1", "V7.4", "src/session.c", 201, "CWE-613"),
+    ("V7.5.1", "V7.5", "src/session.c", 240, "CWE-306"),
+    ("V7.6.2", "V7.6", "src/session.c", 275, "CWE-290"),
+]
+
+V7_TRUNCATED = ("V7.2.5", "V7.2")
+
+
+def test_the_v7_run_resolves_its_inapplicable_requirements():
+    """The first end-to-end fan-out recorded the 12 inapplicable requirements as
+    INSUFFICIENT EVIDENCE because nothing else could hold them. This is the full
+    scenario the spec describes: the same run also confirmed 6 gaps and had one
+    finder cut off mid-reply, so both adversary rules -- the refuter's for N/A
+    and the verifier's for GAP -- are exercised over one requirement set, and the
+    roster must still resolve every requirement and report complete."""
+    requirements = (
+        [{"req_id": r, "chapter": "V7", "section": s, "level": "2"} for r, s, _ in V7_INAPPLICABLE]
+        + [{"req_id": r, "chapter": "V7", "section": s, "level": "2"} for r, s, _, _, _ in V7_GAPS]
+        + [{"req_id": V7_TRUNCATED[0], "chapter": "V7", "section": V7_TRUNCATED[1], "level": "2"}]
+    )
+    na_findings = [
+        Finding(
+            req_id=req_id,
+            chapter="V7",
+            section=section,
+            verdict="N/A (verified)",
+            evidence=reason,
+            trace="refuter searched for the construct and could not find it",
+        )
+        for req_id, section, reason in V7_INAPPLICABLE
+    ]
+    gap_findings = [
+        Finding(
+            req_id=req_id,
+            chapter="V7",
+            section=section,
+            verdict="GAP",
+            evidence="finder located the gap",
+            file=file,
+            line=line,
+            cwe=cwe,
+            trace="verifier confirmed: source-to-sink trace present",
+        )
+        for req_id, section, file, line, cwe in V7_GAPS
+    ]
+    truncated_finding = Finding(
+        req_id=V7_TRUNCATED[0],
+        chapter="V7",
+        section=V7_TRUNCATED[1],
+        verdict="INSUFFICIENT EVIDENCE",
+        evidence="finder's reply did not end with REPORT COMPLETE; discarded and not re-dispatched",
+    )
+    roster = build_roster(
+        requirements=requirements,
+        findings=na_findings + gap_findings + [truncated_finding],
+        chapter_states={"V7": "APPLIES"},
+    )
+    assert roster["counts"]["GAP"] == 6
+    assert roster["counts"]["N/A (verified)"] == 12
+    assert roster["counts"]["INSUFFICIENT EVIDENCE"] == 1
+    assert roster["complete"] is True
+    assert {e["req_id"] for e in roster["needs_attention"]} == {V7_TRUNCATED[0]}

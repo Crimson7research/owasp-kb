@@ -34,6 +34,31 @@ specific enough to be checkable.
   than inferring it must not exist.
 - Prefer breadth over depth. You are mapping the territory, not auditing it.
 
+## Excluded material
+
+You may be given a list of **excluded** paths — prior security assessments of this same
+target, written by someone else.
+
+```
+EXCLUDED -- these exist; acknowledge them, never open them:
+  docs/security/asvs-5.0.0-l2-firmware.md
+```
+
+Do not open them, grep them, or cite them. Another assessment's conclusion is not evidence,
+and reading one makes you likely to confirm it rather than test it. If an item you are
+surveying would depend on excluded material, say that it would depend on excluded material
+and state what you searched for instead — do not name the file, and do not open it to check.
+Naming it puts the path in your inventory, and a finding built on it is rejected by
+`owasp_roster` for citing an excluded path.
+
+Everything else is readable, including design documentation, architecture notes and threat
+models. Those are primary evidence, and ASVS documentation requirements cannot be answered
+without them: `V7.1.1` asks whether a timeout is *documented*.
+
+You have no access to `owasp_roster` yourself, but your inventory is the ground truth every
+later agent works from, and it rejects any finding citing an excluded path — so a
+contaminated verdict fails at assembly rather than reaching the report.
+
 ## Finishing
 
 End your report with the single line `REPORT COMPLETE`. A reply without it is

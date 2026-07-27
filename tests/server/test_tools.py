@@ -393,6 +393,29 @@ def test_roster_tool_description_states_it_enforces_completeness(tools):
     assert "insufficient evidence" in doc
 
 
+def test_roster_tool_rejects_a_finding_citing_an_excluded_report(tools):
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states={"V1": "APPLIES", "V6": "APPLIES"},
+        excluded=["docs/security/prior-audit.md"],
+        findings=[
+            {
+                "req_id": "V1.1.1",
+                "chapter": "V1",
+                "section": "V1.1",
+                "verdict": "GAP",
+                "evidence": "see docs/security/prior-audit.md",
+                "file": "a.py",
+                "line": 1,
+                "cwe": "CWE-1",
+                "trace": "t",
+            }
+        ],
+    )
+    assert "error" in result
+    assert "docs/security/prior-audit.md" in result["error"]
+
+
 def test_roster_tool_response_is_json_serialisable(tools):
     """MCP transports JSON; a dataclass leaking through would fail at runtime."""
     import json
