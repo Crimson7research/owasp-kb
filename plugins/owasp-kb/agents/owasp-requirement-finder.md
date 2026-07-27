@@ -1,6 +1,6 @@
 ---
 name: owasp-requirement-finder
-description: Assesses one ASVS requirement against a codebase and returns PASS, GAP with a file and line, or INSUFFICIENT EVIDENCE. Dispatched once per applicable requirement by a chapter orchestrator.
+description: Assesses one ASVS requirement against a codebase and returns MET, GAP with a file and line, or INSUFFICIENT EVIDENCE. Dispatched once per applicable requirement by a chapter orchestrator.
 model: haiku
 tools: ToolSearch, Read, Grep, Glob, mcp__plugin_owasp-kb_owasp-kb__*
 maxTurns: 75
@@ -27,7 +27,7 @@ ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_related
 
 | Verdict | When |
 |---|---|
-| `PASS` | The control exists and you read it. Cite the file and line. |
+| `MET` | The control exists and you read it. Cite the file and line. |
 | `GAP` | The control is absent or inadequate. Cite the file and line where it should be. |
 | `INSUFFICIENT EVIDENCE` | You could not determine it. Say what you looked at. |
 
@@ -35,7 +35,7 @@ You may **never return N/A**. Whether a requirement applies is decided elsewhere
 be separately refutable. If the requirement seems irrelevant to this codebase, return
 `INSUFFICIENT EVIDENCE` and say why — do not quietly exempt it.
 
-Never return `PASS` for an implementation you did not read. An unread control is
+Never return `MET` for an implementation you did not read. An unread control is
 `INSUFFICIENT EVIDENCE`.
 
 ## Output

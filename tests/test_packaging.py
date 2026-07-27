@@ -448,3 +448,21 @@ def test_assessment_skills_check_the_completion_sentinel(skill):
     dispatcher has to check for the sentinel or it cannot tell them apart."""
     body = (SKILLS_DIR / skill / "SKILL.md").read_text()
     assert "REPORT COMPLETE" in body
+
+
+def test_the_finder_emits_only_verdicts_the_roster_accepts():
+    """The finder was told to return PASS; owasp_roster accepts MET; nothing
+    translated. Both vocabularies were internally consistent, so 465 tests and
+    five review rounds missed it and the first real end-to-end run hit it
+    immediately. Seams need their own tests. See #25."""
+    from owasp_kb.core.roster import VERDICTS
+
+    meta, body = _agent("owasp-requirement-finder")
+    text = f"{body} {meta['description']}"
+    for rejected in ("PASS", "FAIL"):
+        assert not re.search(rf"\b{rejected}\b", text), (
+            f"the finder names {rejected!r}, which owasp_roster rejects; "
+            f"it accepts {', '.join(VERDICTS)}"
+        )
+    assert "MET" in body
+    assert "MET" in meta["description"]
