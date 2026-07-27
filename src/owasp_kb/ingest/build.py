@@ -37,6 +37,7 @@ class BuildReport:
     nist_links: int = 0
     nist_skipped: int = 0
     vectors: int = 0
+    truncated_chunks: int = 0
     integrity_failures: list[str] = field(default_factory=list)
 
 
@@ -103,6 +104,13 @@ def build_index(
         report.vectors = index_vectors(conn, Embedder())
 
     report.chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+
+    from owasp_kb.core.embed import MAX_LENGTH
+
+    report.truncated_chunks = conn.execute(
+        "SELECT COUNT(*) FROM chunks WHERE token_est > ?", (MAX_LENGTH,)
+    ).fetchone()[0]
+
     report.integrity_failures = run_checks(
         conn,
         expected_requirements=expected_requirements,
@@ -153,13 +161,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     log.info(
-        "built %s: %d requirements, %d documents, %d chunks, %d guidance links, "
+        "built %s: %d requirements, %d documents, %d chunks (%d truncated), %d guidance links, "
         "%d CWE links (%d dropped), %d supersedes links, %d NIST links (%d unmatched), "
         "%d vectors",
         args.out,
         report.requirements,
         report.documents,
         report.chunks,
+        report.truncated_chunks,
         report.guidance_links,
         report.cwe_links,
         report.cwe_dropped,

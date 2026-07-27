@@ -1,4 +1,4 @@
-from owasp_kb.core.chunking import chunk_markdown, slugify
+from owasp_kb.core.chunking import DEFAULT_MAX_TOKENS, chunk_markdown, slugify
 
 DOC = """# Authentication Cheat Sheet
 
@@ -166,3 +166,13 @@ def test_an_oversized_section_keeps_one_anchor_across_its_chunks():
     chunks = chunk_markdown(f"# D\n\n## Big\n\n{body}\n", title="D", max_tokens=400)
     assert len({c.anchor for c in chunks}) == 1
     assert chunks[0].anchor == "big"
+
+
+def test_default_max_tokens_fits_the_embedder_window():
+    """The default matches bge-small's 512-token window exactly. Larger chunks
+    have their tails silently dropped from the vector index; smaller ones
+    over-fragment and measurably worsen ranking (400 moved hybrid mean rank
+    from 2.2 to 2.8)."""
+    from owasp_kb.core.embed import MAX_LENGTH
+
+    assert DEFAULT_MAX_TOKENS == MAX_LENGTH

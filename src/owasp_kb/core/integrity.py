@@ -6,6 +6,19 @@ import sqlite3
 
 EXPECTED_REL_TYPES = {"guidance", "cwe", "supersedes", "nist"}
 
+# Mirrors embed.MAX_LENGTH (bge-small-en-v1.5's 512-token window). Duplicated
+# rather than imported so this module stays free of any embedder coupling --
+# it runs in the lite path too, where onnxruntime is not installed.
+EMBEDDER_MAX_TOKENS = 512
+
+# Chunks longer than the embedder's window have their tails truncated at
+# embedding time, invisible to vector search. Some residual is unavoidable --
+# a single oversized fenced code block cannot be split without corrupting it --
+# but a regression in the chunker would show up as a jump here. Measured 4.6%
+# at the current default; the floor sits above that with room for upstream
+# content drift, and well below the 11.9% the old 800-token default produced.
+MAX_TRUNCATED_CHUNK_SHARE = 0.08
+
 # Floors, not targets — set well below the measured real counts so ordinary
 # upstream drift does not trip them, while a collapse to near-zero does.
 # Measured against the pinned sources: guidance 167, cwe 204, supersedes 265,
@@ -80,6 +93,19 @@ def run_checks(
             f"no {rel!r} links were produced; owasp_related advertises this "
             "relationship, so zero edges means the mapping failed to resolve"
         )
+
+    total_chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    if total_chunks:
+        truncated = conn.execute(
+            "SELECT COUNT(*) FROM chunks WHERE token_est > ?", (EMBEDDER_MAX_TOKENS,)
+        ).fetchone()[0]
+        share = truncated / total_chunks
+        if share > MAX_TRUNCATED_CHUNK_SHARE:
+            failures.append(
+                f"{truncated} of {total_chunks} chunks ({share:.1%}) exceed the embedder's "
+                f"{EMBEDDER_MAX_TOKENS}-token window and would be truncated; expected at "
+                f"most {MAX_TRUNCATED_CHUNK_SHARE:.0%}"
+            )
 
     if check_edge_floors:
         for rel, minimum in sorted(MIN_EDGES_PER_REL.items()):

@@ -139,6 +139,18 @@ def test_a_collapsed_relationship_count_is_flagged(conn):
     assert any("only 2 'cwe' links" in f for f in failures)
 
 
+def test_detects_too_many_oversized_chunks(conn):
+    _all_rels(conn)
+    sid = conn.execute("SELECT id FROM sections LIMIT 1").fetchone()[0]
+    for _ in range(50):
+        conn.execute(
+            "INSERT INTO chunks (section_id, text, token_est) VALUES (?, 'x', 9999)", (sid,)
+        )
+    conn.commit()
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    assert any("truncated" in f or "token window" in f for f in failures)
+
+
 def test_failures_are_human_readable_strings(conn):
     failures = run_checks(conn, expected_requirements=999, check_edge_floors=False)
     assert failures

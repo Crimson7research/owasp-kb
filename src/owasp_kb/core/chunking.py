@@ -11,7 +11,15 @@ _FENCE = re.compile(r"^\s*(```|~~~)")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _SLUG_STRIP = re.compile(r"[^\w\s-]")
 
-DEFAULT_MAX_TOKENS = 800
+# Sized to the embedder's context window, not chosen freely: bge-small
+# truncates at 512 tokens, so anything larger has its tail silently dropped
+# from the vector index. Measured on the real corpus against retrieval rank:
+#   800 -> 11.9% truncated, hybrid mean rank 2.2
+#   512 -> 4.6% truncated,  hybrid mean rank 2.2   <- chosen
+#   400 -> 2.4% truncated,  hybrid mean rank 2.8   (worse: over-fragmented)
+# Going below the window trades truncation for fragmentation and loses more
+# than it gains, so match the window rather than undercut it.
+DEFAULT_MAX_TOKENS = 512
 SPLIT_DEPTHS = (2, 3)
 
 
