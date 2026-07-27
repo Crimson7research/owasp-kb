@@ -76,6 +76,12 @@ no verdict is graded by the agent that produced it.
    chapter id, the target level and the inventory. It pulls its own requirements and
    dispatches a finder per applicable requirement.
 
+   **Check every returned report ends with `REPORT COMPLETE`.** Without it the agent
+   was cut off — it exhausted its turns, or it backgrounded its own children and
+   returned early. Both produce text that reads like an answer. Discard it and
+   re-dispatch with narrower guidance, or record `INSUFFICIENT EVIDENCE`. A status
+   line is not a result.
+
 5. **Verify, exemptions first.**
    - One `owasp-exemption-refuter` per `EXEMPT` chapter. A refuted exemption returns the
      chapter to scope: go back to step 4 for it. This is a finding in its own right.

@@ -305,3 +305,60 @@ def test_gap_report_carries_the_uncertain_verdicts_through():
     body = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text()
     for verdict in ("N/A (unverified)", "INSUFFICIENT EVIDENCE", "GAP (unconfirmed)"):
         assert verdict in body
+
+
+def test_orchestrator_must_not_background_its_finders():
+    """It dispatched 10 finders in the background, returned early, and recovered
+    0 verdicts -- see #21. Backgrounding is an observed failure, not a hypothetical."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    lowered = body.lower()
+    assert "do not run them in the background" in lowered
+    assert "wait for them" in lowered
+
+
+def test_orchestrator_rejects_a_finder_reply_with_no_sentinel():
+    _, body = _agent("owasp-chapter-orchestrator")
+    assert "REPORT COMPLETE" in body
+    assert "INSUFFICIENT EVIDENCE" in body
+
+
+MIN_TURNS = {
+    "owasp-scope-inventory": 75,
+    "owasp-requirement-finder": 75,
+    "owasp-exemption-refuter": 75,
+    "owasp-finding-verifier": 75,
+    "owasp-chapter-orchestrator": 200,
+}
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
+def test_the_turn_cap_is_a_rabbit_hole_threshold_not_a_budget(name):
+    """A cap that a successful run can hit measures the wrong thing. Two inventory
+    agents finished their investigation and were cut off at the moment of writing
+    up, one turn short -- see #20."""
+    meta, _ = _agent(name)
+    assert meta["maxTurns"] >= MIN_TURNS[name]
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
+def test_every_agent_emits_a_completion_sentinel(name):
+    """A truncated agent, an agent that returned early, and a finished agent all
+    produce plausible text. Nothing else tells them apart."""
+    _, body = _agent(name)
+    assert "REPORT COMPLETE" in body
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
+def test_every_agent_is_told_to_land_before_the_cap(name):
+    """The cap should only fire for genuine runaways. A role that self-reports at
+    fifteen tool calls never reaches it in normal work."""
+    _, body = _agent(name)
+    assert "fifteen tool calls" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_assessment_skills_check_the_completion_sentinel(skill):
+    """A status line and a report read alike coming back up the fan-out. The
+    dispatcher has to check for the sentinel or it cannot tell them apart."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "REPORT COMPLETE" in body
