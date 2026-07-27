@@ -71,9 +71,11 @@ binary over stdio; nothing about the server is Claude-Code-specific.
   `prompts.py` defines the three MCP prompts.
 
 - **`plugin/`** (`plugins/owasp-kb/`) — the Claude Code plugin: the manifest,
-  the `.mcp.json` that launches the container, and the four skills. Consumed
-  directly by Claude Code via the marketplace, and indirectly by Codex/OpenCode
-  via the install scripts, which copy the same skill directories elsewhere.
+  the `.mcp.json` that launches the container, the four skills, and the five
+  agent definitions the two assessment skills dispatch (see [The assessment
+  layer](#the-assessment-layer)). Consumed directly by Claude Code via the
+  marketplace, and indirectly by Codex/OpenCode via the install scripts, which
+  copy the same skill directories elsewhere.
 
 **`Kb` is the facade.** Every query the server can answer — search, outline,
 get, checklist, related, info — is a method on `owasp_kb.core.kb.Kb`, taking a
@@ -163,10 +165,11 @@ where it came from. Rules that matter beyond the obvious:
   `sections.anchor` carries `UNIQUE(doc_id, anchor)`; a collision would
   silently merge two subsections' content under one citation.
 - **Oversized sections are split further** on blank-line boundaries, never
-  inside a fence, targeting `DEFAULT_MAX_TOKENS = 800` (a `len(text)//4`
+  inside a fence, targeting `DEFAULT_MAX_TOKENS = 512` (a `len(text)//4`
   estimate, not a real tokenizer count — cheap and sufficient for a split
-  threshold). This is why 13.6% of chunks still exceed the embedder's real
-  512-token limit: the worst offender is 97% a single fenced code block,
+  threshold), matching the embedder's context window exactly. 4.6% of chunks
+  still exceed that limit, against an 8% build gate: the worst offender is 97%
+  a single fenced code block,
   which cannot be split further without breaking the fence invariant above.
   BM25 has no length limit and covers what the embedder cannot see.
 - **ASVS requirements are not split at all** — each is ingested as exactly one
@@ -188,3 +191,209 @@ where it came from. Rules that matter beyond the obvious:
   message after it. This is also the first thing to check if a server process
   starts and then immediately exits (see the troubleshooting table in
   [docs/install.md](install.md)).
+
+## The assessment layer
+
+Everything above serves knowledge. The other half of the product *uses* it: an
+ASVS assessment run as a fan-out of subagents rather than by one agent working
+down a checklist. Two of the four skills (`owasp-asvs-verify`,
+`owasp-asvs-gap-report`) drive it; the five roles it dispatches are defined in
+`plugins/owasp-kb/agents/`; and the rules it cannot be trusted to follow are
+enforced in `owasp_roster` (`core/roster.py`), a tool with no retrieval in it at
+all.
+
+### Why a fan-out exists
+
+The single-agent version was measured against a real target (an ESP32 firmware
+codebase, 385 source files, 253 requirements at L2, a 544-line report):
+
+| | |
+|---|---|
+| MET 21 (8.3%) / FAIL 62 (24.5%) / **N/A 170 (67.2%)** | verdict distribution |
+| **~8 sentences** | the total justification behind all 170 N/A verdicts |
+| 29 / 19 / 18 | requirements retired by a *single* sentence, for V10 / V3 / V7 |
+| checklist 33, related 50, `kb_info` 1, search 0, outline 0, get 0 | **2 of 6 tools used** |
+| 0 of 62 | findings carrying a remediation citation |
+
+Two thirds of the output was the part nobody checked, and the agent that wrote
+those exemptions was the same one that accepted them. The design goal that
+follows is one sentence: **no verdict is graded by the agent that produced it.**
+Exemptions are challenged before findings are, because the FAILs already carry
+evidence a reader can check and the N/A verdicts carry none — a silently
+under-scoped report that reads as complete is the failure this project exists to
+prevent.
+
+The fan-out is **not** a token optimisation, and was not justified as one. The
+sum of 17 per-chapter L2 `owasp_checklist` calls is 75,626 chars against 74,666
+for one unfiltered call — fanning out costs slightly more in total. What it buys
+is peak context per agent: the largest single chapter is 10,481 chars against
+the whole set's 74,666, roughly a 7× reduction, and each agent's context holds
+one chapter's problem instead of seventeen.
+
+### The five roles
+
+| Role | Model | Tools | Sees | Produces |
+|---|---|---|---|---|
+| `owasp-scope-inventory` | haiku | `Read, Grep, Glob` | one concern of the codebase | facts, no security judgement |
+| `owasp-chapter-orchestrator` | sonnet | `ToolSearch, Task, Read, Grep, mcp__…__*` | one chapter, the level, the inventory | that chapter's verdicts |
+| `owasp-requirement-finder` | haiku | `ToolSearch, Read, Grep, Glob, mcp__…__*` | one requirement's text, the relevant inventory slice | `MET`, `GAP` with file and line, or `INSUFFICIENT EVIDENCE` |
+| `owasp-exemption-refuter` | sonnet | `Read, Grep, Glob` | the exemption *claim* only | `exemption_refuted` / `exemption_holds` / `unclear`, always with `searched` |
+| `owasp-finding-verifier` | sonnet | `ToolSearch, Read, Grep, Glob, mcp__…__*` | the claim and its location | `confirmed` / `refuted` / `unclear`, plus source→sink trace, CWE and remediation |
+
+The `tools:` line is the enforcement mechanism, not documentation of intent —
+see ADR [0009](decisions/0009-agent-definitions-over-skill-prose.md). Four
+asymmetries in it are deliberate, and each is pinned by a test in
+`tests/test_packaging.py`:
+
+- **No role may write.** Not one of the five declares `Write` or `Edit`. An
+  assessment reads a codebase; nothing about it needs to change one.
+- **The refuter has no MCP access and is never given the requirement text.**
+  Handing it either invites re-deriving the original reasoning. Its question is
+  narrower than "is this chapter satisfied": *does this codebase contain the
+  thing being exempted, under any name?* — a session is still a session if the
+  code calls it a peer context. Blindness is the point, so it is a missing
+  capability rather than an instruction.
+- **The finder may never return N/A.** Whether a requirement applies is decided
+  elsewhere and must be separately refutable. A requirement that looks
+  irrelevant gets `INSUFFICIENT EVIDENCE` with a reason, never a quiet
+  exemption. In the baseline, exemption and finding came out of the same
+  reasoning in one pass — which is how 67% of verdicts went unchecked.
+- **Only the orchestrator holds `Task`.** The shape of the fan-out is a
+  capability, not a convention: no other role can widen it.
+
+The scope inventory and the refuter get no MCP access because neither needs the
+standard — one reports what exists, the other searches for a construct. The
+other three reach the knowledge base directly for every claim they make, rather
+than receiving requirement text through a prompt where it could be truncated or
+paraphrased upstream.
+
+### The dispatch shape
+
+```
+  main session (owasp-asvs-verify)
+    │  scope interview; find prior assessments; triage 17 chapters
+    │  APPLIES / EXEMPT centrally — one judgement over seventeen items
+    │
+    ├── owasp-scope-inventory  × 6 concerns          (parallel, no KB)
+    │     endpoints · middleware · identity · storage · crypto · client
+    │
+    ├── owasp-chapter-orchestrator  × APPLIES chapter
+    │     │  owasp_checklist for its own requirements
+    │     ├── owasp-requirement-finder  × applicable requirement  (up to 47)
+    │     └── owasp-exemption-refuter   × 1, batched over the chapter's
+    │            requirement-level N/A claims
+    │
+    ├── owasp-exemption-refuter  × EXEMPT chapter    (adversary)
+    ├── owasp-finding-verifier   × GAP               (adversary)
+    │
+    └── owasp_roster(...)  → the report
+```
+
+A full L2 run against the measured target is ≈168 agents (6 inventory + 10
+orchestrators + 83 finders + 7 refuters + 62 verifiers).
+
+**Orchestrators dispatch synchronously and wait.** Parallel batches within a
+turn are fine; backgrounding is not. A real run dispatched 10 finders in the
+background, returned "waiting for the remaining 6 background finder agents" as
+its answer, and recovered **0 of 10 verdicts** — while sitting at 45 tool calls
+against a cap of 60, so no cap would have caught it. Sequential dispatch costs
+wall-clock, which this design ranks lowest; losing every verdict costs the
+assessment. Flattening the tree instead was rejected because the main session's
+context would then hold every finding, which is the problem the fan-out exists
+to solve; having finders write verdicts to files was rejected because it
+requires granting `Write`.
+
+Two guards exist where code cannot reach into a subagent:
+
+- **The `REPORT COMPLETE` sentinel.** Every role ends its reply with it, and a
+  reply without it is discarded as cut off however complete it looks. This tests
+  for *the presence of a finished answer* rather than for any particular way of
+  failing to produce one, which is why it catches both truncation and an early
+  return with a status line.
+- **`maxTurns` as a rabbit-hole detector, not a budget.** 75 for the four leaf
+  roles, 200 for the orchestrator (a large chapter is 47 finders, each of which
+  must return first). Set at roughly 3× observed need, so reaching a cap means
+  something went wrong rather than that the work was large. Note that a turn is
+  not a tool call — one agent made 37 tool calls inside 20 turns, because
+  parallel calls batch into one turn.
+
+### The verdict model
+
+`owasp_roster` places every requirement in exactly one of six verdicts
+(`VERDICTS` in `core/roster.py`):
+
+| Verdict | Meaning | Adversary required |
+|---|---|---|
+| `MET` | control present and read | — |
+| `GAP` | control absent or inadequate | **`owasp-finding-verifier`** trace |
+| `GAP (unconfirmed)` | reported, verification inconclusive twice | — (lands in `needs_attention`) |
+| `N/A (verified)` | exempt, and a refuter searched and returned `exemption_holds` | **`owasp-exemption-refuter`** trace |
+| `N/A (unverified)` | exempt, refutation inconclusive | — (lands in `needs_attention`) |
+| `INSUFFICIENT EVIDENCE` | could not be determined | — (lands in `needs_attention`) |
+
+The rule generalises as `CLAIMS_NEEDING_AN_ADVERSARY`: **a verdict that asserts
+someone checked something must carry that check.** `GAP (unconfirmed)` and
+`N/A (unverified)` are the honest ways past it, and both surface in
+`needs_attention` rather than reading as settled. `require_verification=False`
+is the deliberate way past it, and the response says so.
+
+Resolution is deterministic, in code rather than prose. One refutation outweighs
+any number of confirmations — finding the exempted construct is positive
+evidence, failing to find it is not — and an errored adversary escalates rather
+than counting as agreement. Findings dedupe on `(file, line, cwe)`; a finding
+with no location never merges with another. `unclear` is not `exemption_holds`:
+a claim that survives only because nobody could disprove it is unverified, and
+attaching the refuter's `searched` line to it as a trace would make it
+indistinguishable from a real exemption.
+
+One seam has already failed this way. The finder's prompt named `PASS` for what
+the roster calls `MET`, with nothing translating between them, so every passing
+requirement would have been rejected at assembly. Each vocabulary was internally
+consistent, which is why the full suite and five review rounds missed it and the
+first real end-to-end run hit it in the first minute. Both sides now say `MET`,
+and a test asserts the finder cannot name a verdict the roster rejects (#25).
+
+### Where enforcement lives
+
+This is the load-bearing decision of the whole layer, and ADR
+[0010](decisions/0010-enforce-invariants-in-code.md) records it: the invariants
+are enforced **in `owasp_roster`, at the assembly point every assessment must
+pass through**, not asserted in the prompts. `build_roster` raises `RosterError`
+on:
+
+- a verdict outside `VERDICTS`;
+- a `GAP` or `GAP (unconfirmed)` with no file and line — a gap with no location
+  reaches the report pointing at nothing;
+- a finding citing a requirement outside the assessed set — scope and findings
+  disagreeing is an error, not something to reconcile quietly;
+- a chapter with no applicability state — every chapter is `APPLIES` or an N/A
+  state;
+- a claim needing an adversary that carries no trace;
+- a finding citing an excluded prior assessment in its `file`, `evidence`,
+  `trace` or `remediation` (ADR
+  [0011](decisions/0011-prior-assessments-excluded.md)).
+
+And a requirement nobody reported becomes `INSUFFICIENT EVIDENCE` rather than
+disappearing — completeness is decided by the tool, not asserted by the agent.
+
+The reason for putting it here rather than in the role prompts is empirical.
+Six defects in this project's own history were prompts saying something that
+nothing downstream required: the skill asked for cheat-sheet guidance while the
+output table had no guidance column, so 62 findings shipped with 0 remediation
+citations (#8); 172 findings shipped unverified (#15); three of five roles could
+not load the MCP tools their prompts told them to load (#19); agents returned an
+opening sentence and it read as an answer (#20); an orchestrator returned a
+status line as a result (#21); and the finder emits a verdict word the roster
+does not accept (#25). Of those, #15 and #19 turned out to be caused by the tool
+allowlists rather than by an unconsumed instruction — the "no downstream
+consumer" frame was applied to #15 and then retracted by its author — but the
+conclusion is the same either way: an instruction with no consumer gets skipped,
+and a required field cannot be.
+
+The limit is worth stating plainly. This catches what reaches the report; it
+does not catch what an agent read and was anchored by. An agent that opens an
+excluded prior assessment and then writes a finding citing only source code is
+indistinguishable from one that never opened it, and on the first real run under
+these rules a finder grepped and quoted an excluded file — the orchestrator's
+own diligence kept it out of the report, which is exactly the disposition-based
+catching that the code checks exist to stop relying on.

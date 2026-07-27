@@ -1,6 +1,9 @@
 # Tools
 
-Six MCP tools, all built in `server/tools.py` from methods on `core/kb.Kb`.
+Seven MCP tools, built in `server/tools.py`. Six wrap methods on `core/kb.Kb`;
+the seventh, `owasp_roster`, wraps `core/roster.build_roster` instead — it
+assembles verdicts an assessment already produced rather than reading the
+knowledge base itself.
 Every tool description is written as a trigger list rather than a summary —
 see [docs/discoverability.md](discoverability.md) for why. This document
 covers the mechanics: signatures, argument semantics, return shapes, error
@@ -168,39 +171,64 @@ Prefer passing an anchor from `owasp_outline` — the largest cheat sheet is
 ```
 owasp_checklist(pack: str = "asvs", chapter: str | None = None,
                  section: str | None = None, req_id: str | None = None,
-                 level: str | None = None) -> dict
+                 level: str | None = None, level_exact: str | None = None) -> dict
 ```
 
 Enumerates requirements from a `checklist` pack, filtered by any combination
-of `chapter` (`"V6"`), `section` (`"V6.2"`), `req_id` (`"V6.2.1"`), and `level`
-(`"1"`/`"2"`/`"3"`). Rows come back in numeric-aware chapter/section/id order
-(`V10` after `V9`, not before `V2`) rather than lexical order, since lexical
-order would silently corrupt any gap report that assumes ascending ids.
+of `chapter` (`"V6"`), `section` (`"V6.2"`), and `req_id` (`"V6.2.1"`). Rows
+come back in numeric-aware chapter/section/id order (`V10` after `V9`, not
+before `V2`) rather than lexical order, since lexical order would silently
+corrupt any gap report that assumes ascending ids.
 
-**Return shape:**
+**`level` is cumulative**, matching how ASVS itself defines its levels:
+`level="2"` returns every requirement an L2 assessment must verify — all L1
+requirements plus everything newly introduced at L2 (253 of 345 in ASVS
+5.0.0), not only the 183 individually tagged L2. Returning just the tagged
+set would silently drop password minimums and every other L1 control from a
+report labelled L2. `level="1"` returns 70; `level="3"` returns all 345.
+`level_exact` is the rarer single-tier query — `level_exact="2"` returns
+exactly the 183 requirements tagged L2, nothing inherited from L1. Passing
+both `level` and `level_exact` is an error (see below).
+
+**Return shape**, grouped by chapter then section so each name is stated once
+rather than once per row (measured 27% smaller on the full 345-requirement
+enumeration, with no row dropped):
 ```json
 {
-  "pack": "asvs", "pack_version": "5.0.0", "count": 183,
-  "requirements": [
-    {"req_id": "V6.2.1", "level": "2", "chapter": "V6", "chapter_name": "Cryptography",
-     "section": "V6.2", "section_name": "Algorithms", "text": "..."}
+  "pack": "asvs", "pack_version": "5.0.0", "count": 345,
+  "chapters": [
+    {
+      "id": "V6", "name": "Authentication",
+      "sections": [
+        {
+          "id": "V6.2", "name": "Password Security",
+          "requirements": [
+            {"id": "V6.2.1", "L": "1",
+             "text": "Verify that user set passwords are at least 8 characters..."}
+          ]
+        }
+      ]
+    }
   ]
 }
 ```
+Walk `chapters[].sections[].requirements[]`; the top-level `count` is the total
+and nothing is ever truncated.
 
 **No truncation.** Unlike `owasp_search` and `owasp_get`, this response is
 never cut short: a gap report or assessment needs every applicable
 requirement, and silently dropping rows from a compliance enumeration is a
 worse failure than a large response. Measured, the full unfiltered ASVS
 enumeration is roughly **140,000 characters**. Rather than truncate it, a
-response with more than 100 rows carries an additional `"note"` field steering
-the caller toward a chapter- or section-at-a-time workflow (`chapter='V6'`,
-`section='V6.2'`) instead of silently sampling a small subset of a
-compliance-relevant list.
+response with more than 100 rows carries an additional `"note"` field naming
+every chapter id and steering the caller toward calling once per chapter and
+keeping a running tally that must sum to the total, instead of silently
+sampling a small subset of a compliance-relevant list.
 
 **Error cases:**
 - Unknown `pack` → same message as `owasp_search`.
 - `pack` is `corpus`-typed → `{"error": "pack 'cheatsheets' is of type 'corpus'; owasp_checklist only applies to checklist packs. Use owasp_search or owasp_outline for corpus packs."}`.
+- Both `level` and `level_exact` given → `{"error": "pass level or level_exact, not both: level is cumulative (L2 = L1 + L2), level_exact is a single tier"}`.
 
 ## `owasp_related`
 
@@ -253,3 +281,150 @@ nothing is not itself an error the way an unknown `pack` or `doc_key` is,
 since `owasp_related` is also legitimately callable with a fresh, uncached
 `doc_key` from a search hit — treating that as a hard failure would be overly
 strict for a tool meant to be chained after `owasp_search`).
+
+## `owasp_roster`
+
+```
+owasp_roster(pack: str = "asvs", chapter_states: dict | None = None,
+             findings: list | None = None, excluded: list | None = None,
+             level: str | None = None, require_verification: bool = True,
+             detail: bool = False) -> dict
+```
+
+Assembles the verdicts an assessment produced into a complete, checked
+roster. Call this at the end of an assessment instead of tallying by hand:
+every requirement in scope lands in exactly one of six verdicts, and one you
+never reported a finding for becomes `INSUFFICIENT EVIDENCE` rather than
+silently vanishing. Unlike the other six tools, it does not read the
+knowledge base for content — it takes the verdicts the caller already
+determined and checks them for completeness and internal consistency. It
+wraps `core/roster.build_roster`, not a method on `Kb`.
+
+- `pack` — the `checklist` pack the requirements belong to (`"asvs"`).
+- `chapter_states` — maps every chapter id in scope (`"V6"`) to `"APPLIES"` or
+  an N/A verdict (`"N/A (verified)"` / `"N/A (unverified)"`). A chapter with
+  no entry is an error — see below.
+- `findings` — a list of dicts, each with `req_id`, `chapter`, `section`,
+  `verdict` (one of the six in `VERDICTS`), `evidence`, and optionally
+  `file`, `line`, `cwe`, `remediation`, `trace`. Findings that share a
+  `(file, line, cwe)` triple are merged into one entry that covers every
+  requirement any of them named — dropping the second would silently cost a
+  chapter its coverage in the roster.
+- `excluded` — paths to prior assessment reports found in the target. A
+  finding whose `file`, `evidence`, `trace`, or `remediation` mentions one is
+  rejected (see below); verdicts that assert nothing (`INSUFFICIENT EVIDENCE`,
+  `N/A (unverified)`) are exempt from the scan, since they cannot import a
+  conclusion they never drew.
+- `level` — same cumulative ASVS level filter as `owasp_checklist`, applied to
+  the scope the roster is checked against.
+- `require_verification` — default `True`. A `GAP` or an `N/A (verified)`
+  asserts a checked outcome; without a `trace` from that check's adversary
+  (`owasp-finding-verifier` for a `GAP`, `owasp-exemption-refuter` for an
+  `N/A (verified)`) the whole call is rejected. Record `GAP (unconfirmed)` or
+  `N/A (unverified)` instead when the check did not happen — those are the
+  honest way past this, not a workaround. Pass `False` only for a
+  deliberately quick, unverified pass; `verification_required: false` then
+  appears in the response so a waived roster cannot look identical to a
+  verified one.
+- `detail` — default `False`. When `True`, adds an `entries` list with every
+  requirement's own verdict and `finding_id`, not just the chapter/verdict
+  totals.
+
+**Return shape:**
+```json
+{
+  "count": 3,
+  "counts": {"GAP": 1, "MET": 1, "N/A (verified)": 1},
+  "by_chapter": {
+    "V6": {"GAP": 1, "MET": 1},
+    "V2": {"N/A (verified)": 1}
+  },
+  "needs_attention": [],
+  "findings": [
+    {"id": 0, "verdict": "MET", "location": null, "cwe": null, "covers": ["V6.2.2"]},
+    {"id": 1, "verdict": "GAP", "location": "app/auth/validators.py:41",
+     "cwe": "CWE-521", "covers": ["V6.2.1"]},
+    {"id": 2, "verdict": "N/A (verified)", "location": null, "cwe": null,
+     "covers": ["V2.1.1"]}
+  ],
+  "complete": true,
+  "verification_required": true
+}
+```
+`findings` reports identity and resolution only — `id`, `verdict`, `location`
+(`"{file}:{line}"` or `null`), `cwe`, and `covers` (the requirement ids the
+merged finding accounts for). The `evidence`, `trace`, and `remediation` the
+caller supplied are never echoed back: on a full assessment, echoing them was
+measured at 72% of a 109,038-character response. `needs_attention` lists the
+full entry (`req_id`, `chapter`, `section`, `level`, `verdict`, `finding_id`)
+for every requirement landing on an `UNCERTAIN_VERDICTS` state
+(`INSUFFICIENT EVIDENCE`, `N/A (unverified)`, `GAP (unconfirmed)`) — the ones
+a reader needs to look at regardless of `detail`. Pass `detail=True` for the
+full per-requirement `entries` list instead of just chapter totals.
+
+**Error cases.** All return `{"error": "..."}` rather than raising — real
+messages, captured by calling `build_roster` directly:
+
+- `excluded` passed as a bare string instead of a list (matched character by
+  character, which rejects everything):
+  ```
+  excluded must be a list of paths, not a single string: a string is matched
+  character by character and rejects everything. Pass ['prior-report.md'].
+  ```
+- `excluded` containing a non-string entry:
+  ```
+  excluded contains non-path entries [42, None]; every entry must be a path string
+  ```
+- A chapter present in the scope with no entry in `chapter_states`:
+  ```
+  no applicability state for chapter(s) V2; every chapter must be APPLIES or an N/A state
+  ```
+- A finding's `verdict` is not one of the six in `VERDICTS`:
+  ```
+  unknown verdict 'MAYBE'; expected one of MET, GAP, N/A (verified), N/A (unverified), INSUFFICIENT EVIDENCE, GAP (unconfirmed)
+  ```
+- A `GAP` (or `GAP (unconfirmed)`) with no `file`/`line` — a gap pointing
+  nowhere is unactionable:
+  ```
+  GAP for V6.2.1 has no file/line; a gap with no location would reach the report pointing at nothing
+  ```
+- A finding citing a `req_id` outside the assessed scope:
+  ```
+  finding cites V9.9.9, which is not in the assessed set; scope and findings disagree
+  ```
+- A finding citing an excluded prior assessment report — the tool names the
+  requirement and the path:
+  ```
+  1 requirement(s) cite an excluded prior assessment (V6.2.1 cites reports/prior-assessment.md). A prior report is someone else's conclusion, not evidence. Re-derive the finding from source, or drop it.
+  ```
+- `require_verification=True` (the default) and a `GAP` or `N/A (verified)`
+  carries no `trace` — grouped by which adversary is missing:
+  ```
+  1 requirement(s) assert a checked outcome with no trace. Dispatch owasp-finding-verifier for V6.2.1, or record them as 'GAP (unconfirmed)' or 'N/A (unverified)' to mark them unverified.
+  ```
+  and, for an unverified exemption:
+  ```
+  1 requirement(s) assert a checked outcome with no trace. Dispatch owasp-exemption-refuter for V6.2.1, or record them as 'GAP (unconfirmed)' or 'N/A (unverified)' to mark them unverified.
+  ```
+
+**Worked example:**
+```
+owasp_roster(
+    chapter_states={"V6": "APPLIES", "V2": "APPLIES"},
+    findings=[
+        {"req_id": "V6.2.2", "chapter": "V6", "section": "V6.2", "verdict": "MET",
+         "evidence": "change-password endpoint requires current + new password"},
+        {"req_id": "V6.2.1", "chapter": "V6", "section": "V6.2", "verdict": "GAP",
+         "evidence": "minimum password length is 6, not 8",
+         "file": "app/auth/validators.py", "line": 41, "cwe": "CWE-521",
+         "remediation": "ASVS 5.0.0 V6.2.1: raise MIN_PASSWORD_LENGTH to 8",
+         "trace": "owasp-finding-verifier: confirmed -- validators.py:41 sets MIN_PASSWORD_LENGTH = 6"},
+        {"req_id": "V2.1.1", "chapter": "V2", "section": "V2.1", "verdict": "N/A (verified)",
+         "evidence": "no input validation rule documentation exists or is required for this internal tool",
+         "trace": "owasp-exemption-refuter: exemption_holds -- searched docs/, README.md, no validation-rule doc of any kind"},
+    ],
+)
+```
+returns the return-shape example above verbatim: `count: 3`, one `GAP`, one
+`MET`, one `N/A (verified)`, `needs_attention: []`, and `complete: true` —
+every requirement passed to it landed in exactly one verdict.

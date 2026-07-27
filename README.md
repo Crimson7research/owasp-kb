@@ -22,8 +22,9 @@ requirement id or cheat sheet anchor — not a paraphrase of what it remembers.
 
 ## Tools
 
-Six tools cover search, navigation, checklist enumeration, and cross-references
-between the two knowledge bases:
+Seven tools cover search, navigation, checklist enumeration, cross-references
+between the two knowledge bases, and assembling assessment verdicts into a
+checked roster:
 
 | Tool | Purpose |
 |---|---|
@@ -33,6 +34,7 @@ between the two knowledge bases:
 | `owasp_get` | Full text of a document, or one section by anchor. |
 | `owasp_checklist` | Enumerate ASVS requirements filtered by chapter, section, id, or level — the tool for assessments and gap reports that need every applicable requirement, not the best-matching few. |
 | `owasp_related` | Cross-reference a requirement, section, chapter, or cheat sheet doc_key across `guidance`, `cwe`, `supersedes`, and `nist` relationships. |
+| `owasp_roster` | Assemble an assessment's verdicts into a complete, checked roster — every requirement lands in exactly one of six verdicts, and a claim of a checked outcome (a `GAP` or a verified `N/A`) is rejected without its adversary's trace. Call this at the end of an assessment instead of tallying by hand. |
 
 Full argument semantics, return shapes, error cases, and worked examples are in
 [docs/tools.md](docs/tools.md).

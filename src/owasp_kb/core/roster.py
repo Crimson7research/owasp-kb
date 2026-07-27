@@ -174,8 +174,10 @@ def build_roster(
     ``require_verification`` rejects a claim that asserts a checked outcome but
     carries no trace from whoever checked it: a GAP without a verifier, or an
     'N/A (verified)' without a refuter. The first real run shipped 172 unverified
-    findings because the skill asked for a verifier and nothing required its
-    result -- an instruction with no consumer gets skipped. Downgrading to
+    findings with the verifier dispatched zero times -- its allowlist omitted the
+    MCP tools it was told to load, and the fan-out it belonged to had already
+    collapsed for the same reason (#19). Either way nothing required its result,
+    which is why nothing noticed. Downgrading to
     'GAP (unconfirmed)' or 'N/A (unverified)' is the honest way past this;
     require_verification=False is the deliberate one.
 

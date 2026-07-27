@@ -99,9 +99,10 @@ No server change is required. The path is entirely in `ingest/`:
    mapping incident recorded in that module's docstring and in
    [docs/build.md](build.md).
 
-No step above touches `server/`. The six tools already generalize over any
+No step above touches `server/`. The seven tools already generalize over any
 pack that satisfies the contract; a correctly-shaped new pack is immediately
-queryable by all of them (`owasp_checklist` only if `type = 'checklist'`).
+queryable by all of them (`owasp_checklist` and `owasp_roster` only if
+`type = 'checklist'`, since both enumerate a requirement set).
 
 ## Deliberate omissions
 
