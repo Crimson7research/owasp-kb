@@ -32,7 +32,7 @@ check() {
     fi
 }
 
-for tool in kb_info owasp_search owasp_outline owasp_get owasp_checklist owasp_related; do
+for tool in kb_info owasp_search owasp_outline owasp_get owasp_checklist owasp_related owasp_roster; do
     check "\"$tool\"" "tool $tool advertised"
 done
 for prompt in asvs_chapter_review cheatsheet asvs_gap_report; do

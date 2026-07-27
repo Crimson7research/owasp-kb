@@ -27,6 +27,7 @@ TOOL_NAMES = {
     "owasp_get",
     "owasp_checklist",
     "owasp_related",
+    "owasp_roster",
 }
 
 
@@ -110,3 +111,197 @@ def test_skills_only_reference_real_tools(skill):
     body = (SKILLS_DIR / skill / "SKILL.md").read_text()
     referenced = set(re.findall(r"\b(owasp_\w+|kb_info)\b", body))
     assert referenced <= TOOL_NAMES, f"unknown tools referenced: {referenced - TOOL_NAMES}"
+
+
+ASSESSMENT_SKILLS = {"owasp-asvs-verify", "owasp-asvs-gap-report"}
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_assessment_skills_agree_scope_before_starting(skill):
+    """The scoping interaction users valued was the agent's own judgement, not the
+    skill, so it would not reliably recur."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text().lower()
+    assert "scope" in body
+    assert "deployment context" in body or "who can reach it" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_assessment_skills_use_cumulative_level_counts(skill):
+    """Levels are cumulative: an L2 assessment is 253 requirements, not 183."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "253" in body
+    assert "183 at L2" not in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_assessment_skills_require_a_remediation_citation(skill):
+    """A real run fetched CWEs 47 times and guidance twice, because the output
+    table had a CWE column and no guidance column. An instruction with no
+    downstream consumer does not get followed."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text().lower()
+    assert "remediation" in body
+    assert "owasp_get" in body
+
+
+def test_every_tool_named_in_a_skill_process_has_an_output_consumer():
+    """Guard against reintroducing an instruction nothing downstream needs."""
+    body = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text().lower()
+    assert "owasp_get" in body
+    table_line = next(line for line in body.splitlines() if "output a table" in line)
+    assert "remediation" in table_line
+
+
+AGENTS_DIR = Path("plugins/owasp-kb/agents")
+
+EXPECTED_AGENTS = {
+    "owasp-scope-inventory",
+    "owasp-chapter-orchestrator",
+    "owasp-requirement-finder",
+    "owasp-exemption-refuter",
+    "owasp-finding-verifier",
+}
+
+MCP_AGENTS = {
+    "owasp-chapter-orchestrator",
+    "owasp-requirement-finder",
+    "owasp-finding-verifier",
+}
+
+
+def _agent(name: str) -> tuple[dict, str]:
+    text = (AGENTS_DIR / f"{name}.md").read_text()
+    assert text.startswith("---\n"), f"{name} has no frontmatter"
+    _, raw, body = text.split("---", 2)
+    return yaml.safe_load(raw), body
+
+
+def test_all_five_agents_exist():
+    assert {p.stem for p in AGENTS_DIR.glob("*.md")} == EXPECTED_AGENTS
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
+def test_agent_declares_name_description_and_tools(name):
+    """The tool allowlist is the enforcement mechanism, not documentation."""
+    meta, _ = _agent(name)
+    assert meta["name"] == name
+    assert len(meta["description"]) > 60
+    assert meta["tools"], "an agent without a tool allowlist is unconstrained"
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
+def test_no_agent_can_write(name):
+    """Every role reads and reports. None edits the target codebase."""
+    meta, _ = _agent(name)
+    tools = meta["tools"]
+    assert "Write" not in tools
+    assert "Edit" not in tools
+
+
+def test_refuter_has_no_mcp_access():
+    """It receives the exemption claim only. Handing it the requirement invites
+    re-deriving the original reasoning it is meant to challenge."""
+    meta, body = _agent("owasp-exemption-refuter")
+    assert "ToolSearch" not in meta["tools"]
+    assert "mcp__" not in meta["tools"]
+    assert "mcp__" not in body
+
+
+@pytest.mark.parametrize("name", sorted(MCP_AGENTS))
+def test_mcp_agents_are_granted_the_mcp_server(name):
+    """``tools:`` is a strict allowlist and it filters MCP tools out: 'The
+    subagent can't edit files, write files, or use any MCP tools.' Granting
+    ToolSearch without granting the server means ToolSearch has nothing to
+    surface, and the agent correctly concludes the knowledge base is
+    unreachable. The fan-out collapsed on its first real run for exactly this
+    reason -- see #19. Telling an agent to ToolSearch for a tool it is not
+    permitted to hold is the whole bug."""
+    meta, _ = _agent(name)
+    assert "mcp__plugin_owasp-kb_owasp-kb__*" in meta["tools"]
+
+
+@pytest.mark.parametrize("name", sorted(MCP_AGENTS))
+def test_mcp_agents_are_told_the_tools_are_deferred(name):
+    """The owasp-kb tools are absent from a subagent's initial surface. An agent
+    not told to ToolSearch for them concludes they do not exist and improvises."""
+    meta, body = _agent(name)
+    assert "ToolSearch" in meta["tools"]
+    assert "ToolSearch" in body
+    assert "select:mcp__plugin_owasp-kb_owasp-kb__" in body
+
+
+def test_finder_cannot_return_not_applicable():
+    """Exemption is decided elsewhere and must be separately refutable."""
+    _, body = _agent("owasp-requirement-finder")
+    assert "INSUFFICIENT EVIDENCE" in body
+    assert "never return N/A" in body
+
+
+def test_refuter_defaults_to_unclear_not_holds():
+    _, body = _agent("owasp-exemption-refuter")
+    for token in ("exemption_refuted", "exemption_holds", "unclear"):
+        assert token in body
+    assert "default to `unclear`" in body.lower()
+
+
+def test_verifier_must_produce_a_trace():
+    _, body = _agent("owasp-finding-verifier")
+    assert "source" in body.lower() and "sink" in body.lower()
+
+
+def test_verify_skill_dispatches_the_agent_roles():
+    body = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text()
+    for agent in (
+        "owasp-scope-inventory",
+        "owasp-chapter-orchestrator",
+        "owasp-exemption-refuter",
+        "owasp-finding-verifier",
+    ):
+        assert agent in body, f"{agent} not dispatched"
+
+
+def test_verify_skill_uses_the_roster_tool_rather_than_tallying_by_hand():
+    body = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text()
+    assert "owasp_roster" in body
+
+
+def test_verify_skill_treats_an_exemption_as_a_refutable_claim():
+    body = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text().lower()
+    assert "exempt" in body
+    assert "refut" in body
+
+
+def test_verify_skill_documents_the_uncertain_verdicts():
+    """A report that cannot say 'I could not determine this' says PASS instead."""
+    body = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text()
+    for verdict in ("N/A (unverified)", "INSUFFICIENT EVIDENCE", "GAP (unconfirmed)"):
+        assert verdict in body
+
+
+def test_gap_report_dispatches_the_same_roles_as_verify():
+    verify = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text()
+    gap = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text()
+    for agent in (
+        "owasp-scope-inventory",
+        "owasp-chapter-orchestrator",
+        "owasp-exemption-refuter",
+        "owasp-finding-verifier",
+    ):
+        assert agent in verify and agent in gap
+
+
+def test_gap_report_uses_the_roster_tool():
+    body = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text()
+    assert "owasp_roster" in body
+
+
+def test_gap_report_requires_a_remediation_citation_per_gap():
+    body = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text().lower()
+    assert "remediation" in body
+    assert "#anchor" in body
+
+
+def test_gap_report_carries_the_uncertain_verdicts_through():
+    """Collapsing them into MET or GAP would hide exactly what fan-out buys."""
+    body = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text()
+    for verdict in ("N/A (unverified)", "INSUFFICIENT EVIDENCE", "GAP (unconfirmed)"):
+        assert verdict in body

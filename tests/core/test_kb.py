@@ -3,7 +3,12 @@ import pytest
 from owasp_kb.core.db import connect
 from owasp_kb.core.kb import Kb
 from owasp_kb.core.schema import create_schema
-from owasp_kb.ingest.links import ingest_cwe_links, ingest_guidance_links
+from owasp_kb.ingest.links import (
+    ingest_cwe_links,
+    ingest_guidance_links,
+    ingest_nist_links,
+    ingest_supersedes_links,
+)
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 
@@ -28,6 +33,8 @@ def kb(tmp_path):
         "tests/fixtures/cwe_mapping_sample.json",
         be_to_release_path="tests/fixtures/mapping_be_to_500_sample.yml",
     )
+    ingest_supersedes_links(conn, "tests/fixtures/mapping_v5_to_v4_sample.yml")
+    ingest_nist_links(conn, "tests/fixtures/nist_sample.md")
     return Kb(conn)
 
 
@@ -44,6 +51,20 @@ def test_info_exposes_versions_for_citation(kb):
     versions = {p.name: p.version for p in kb.info().packs}
     assert versions["asvs"] == "5.0.0"
     assert versions["cheatsheets"] == "20260724"
+
+
+def test_info_reports_link_coverage(kb):
+    coverage = {c.rel: c for c in kb.info().link_coverage}
+    assert "guidance" in coverage
+    assert coverage["guidance"].total_requirements == 3
+
+
+def test_coverage_counts_requirements_reachable_through_roll_up(kb):
+    """guidance edges are keyed on section ids, so counting distinct from_id
+    would undercount the requirements that can actually reach one."""
+    coverage = {c.rel: c for c in kb.info().link_coverage}
+    # the fixture maps section V6.2 to cheat sheets; both V6.2.x requirements reach it
+    assert coverage["guidance"].requirements == 2
 
 
 # -- search -----------------------------------------------------------

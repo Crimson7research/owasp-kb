@@ -12,9 +12,22 @@ from owasp_kb.core.retrieval import build_retriever
 
 
 @dataclass(frozen=True)
+class LinkCoverage:
+    rel: str
+    edges: int
+    requirements: int
+    total_requirements: int
+
+    @property
+    def share(self) -> float:
+        return self.requirements / self.total_requirements if self.total_requirements else 0.0
+
+
+@dataclass(frozen=True)
 class KbInfo:
     packs: list[Pack]
     retrieval_mode: str
+    link_coverage: list[LinkCoverage]
 
 
 class Kb:
@@ -27,10 +40,52 @@ class Kb:
     # -- introspection ---------------------------------------------------
 
     def info(self) -> KbInfo:
-        return KbInfo(packs=list_packs(self._conn), retrieval_mode=self._retriever.mode)
+        return KbInfo(
+            packs=list_packs(self._conn),
+            retrieval_mode=self._retriever.mode,
+            link_coverage=self._link_coverage(),
+        )
 
     def _pack_names(self) -> list[str]:
         return [p.name for p in list_packs(self._conn)]
+
+    def _link_coverage(self) -> list[LinkCoverage]:
+        """Per-requirement coverage, counted the way related() resolves edges.
+
+        A requirement reaches an edge through its own id, its section id, or its
+        chapter id, so counting DISTINCT from_id would undercount guidance badly
+        -- guidance is keyed on sections, giving 78 rather than the 332
+        requirements that can actually reach it.
+        """
+        total = self._conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0]
+        rows = self._conn.execute(
+            """
+            SELECT l.rel AS rel,
+                   COUNT(*) AS edges,
+                   (SELECT COUNT(*) FROM requirements r
+                      WHERE EXISTS (
+                        SELECT 1 FROM links x
+                         WHERE x.rel = l.rel
+                           AND x.from_id IN (
+                                 r.req_id,
+                                 r.section_id,
+                                 r.chapter_id
+                               )
+                      )) AS reqs
+              FROM links l
+             GROUP BY l.rel
+             ORDER BY l.rel
+            """
+        ).fetchall()
+        return [
+            LinkCoverage(
+                rel=r["rel"],
+                edges=r["edges"],
+                requirements=r["reqs"],
+                total_requirements=total,
+            )
+            for r in rows
+        ]
 
     # -- search ----------------------------------------------------------
 

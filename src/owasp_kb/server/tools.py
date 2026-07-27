@@ -7,14 +7,21 @@ noun gets skipped. That is an observed failure mode, not a hypothetical one.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable
 from typing import Any
 
 from owasp_kb.core.kb import Kb
+from owasp_kb.core.roster import Finding, RosterError, build_roster
 
 MAX_EXCERPT_CHARS = 1200
 MAX_GET_CHARS = 30_000
 LARGE_CHECKLIST_ROWS = 100
+
+# Relationships whose upstream mappings predate ASVS 5.0.0 and therefore cover
+# only part of the requirement set. An empty owasp_related result for one of
+# these must not be read as "no such mapping exists".
+PARTIAL_COVERAGE_RELS = ("cwe", "nist", "supersedes")
 
 TOOL_TRIGGER_TOPICS = (
     "authentication",
@@ -80,13 +87,50 @@ def _error(exc: Exception) -> dict:
     return {"error": str(exc).strip("'")}
 
 
+def _grouped(rows) -> list[dict]:
+    """Group by chapter then section so names are stated once rather than per row.
+
+    Measured 27% smaller on the full 345-requirement enumeration with no row
+    dropped -- completeness is the point of this tool, so the saving comes from
+    removing repetition, never from omitting content. Kb.checklist already
+    returns rows in chapter -> section -> requirement order, so no pre-sort.
+    """
+    chapters = []
+    for chapter_id, chapter_rows in itertools.groupby(rows, key=lambda r: r.chapter_id):
+        chapter_rows = list(chapter_rows)
+        sections = []
+        for section_id, section_rows in itertools.groupby(chapter_rows, key=lambda r: r.section_id):
+            section_rows = list(section_rows)
+            sections.append(
+                {
+                    "id": section_id,
+                    "name": section_rows[0].section_name,
+                    "requirements": [
+                        {"id": r.req_id, "L": r.level, "text": r.text} for r in section_rows
+                    ],
+                }
+            )
+        chapters.append(
+            {
+                "id": chapter_id,
+                "name": chapter_rows[0].chapter_name,
+                "sections": sections,
+            }
+        )
+    return chapters
+
+
 def build_tools(kb: Kb) -> list[Callable[..., Any]]:
-    """Return the six tool callables bound to this Kb."""
+    """Return the seven tool callables bound to this Kb."""
 
     def kb_info() -> dict:
         """Report which OWASP knowledge base packs are loaded, their versions, and
         the active retrieval mode. Call this first if you are unsure what content
-        is available, or when you need exact version strings for citations."""
+        is available, or when you need exact version strings for citations.
+
+        Also reports per-relationship link coverage: cwe and nist are
+        partial because the upstream mappings predate ASVS 5.0.0, so a missing
+        edge is not evidence that none exists."""
         info = kb.info()
         return {
             "retrieval_mode": info.retrieval_mode,
@@ -99,6 +143,15 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                     "license": p.license,
                 }
                 for p in info.packs
+            ],
+            "link_coverage": [
+                {
+                    "rel": c.rel,
+                    "edges": c.edges,
+                    "requirements_covered": c.requirements,
+                    "total_requirements": c.total_requirements,
+                }
+                for c in info.link_coverage
             ],
         }
 
@@ -179,7 +232,11 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         inspect a single tier (level_exact='2' returns the 183 tagged L2).
 
         Use this for assessments, gap analysis and compliance reports where you
-        need every applicable requirement rather than the best-matching few."""
+        need every applicable requirement rather than the best-matching few.
+
+        Returns requirements grouped by chapter and section. Walk
+        chapters[].sections[].requirements[]; the top-level count is the total
+        and nothing is ever truncated."""
         try:
             rows = kb.checklist(
                 pack,
@@ -192,32 +249,24 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             version = next(p.version for p in kb.info().packs if p.name == pack)
         except (KeyError, ValueError) as exc:
             return _error(exc)
+        chapters = _grouped(rows)
         response = {
             "pack": pack,
             "pack_version": version,
             "count": len(rows),
-            "requirements": [
-                {
-                    "req_id": r.req_id,
-                    "level": r.level,
-                    "chapter": r.chapter_id,
-                    "chapter_name": r.chapter_name,
-                    "section": r.section_id,
-                    "section_name": r.section_name,
-                    "text": r.text,
-                }
-                for r in rows
-            ],
+            "chapters": chapters,
         }
         # No truncation: a gap report needs every requirement, and silently
         # dropping rows from a compliance enumeration is worse than a large
         # response. Measured, the full 345-requirement ASVS enumeration is
         # ~140,000 characters.
         if len(rows) > LARGE_CHECKLIST_ROWS:
+            chapter_ids = [c["id"] for c in chapters]
             response["note"] = (
-                f"{len(rows)} requirements returned in full (no truncation). This is a "
-                "large response; for a chapter-by-chapter workflow pass chapter='V6' or "
-                "section='V6.2' to keep each call small."
+                f"{len(rows)} requirements returned in full; nothing is truncated. This is "
+                "a large response. For a gap report, call once per chapter "
+                f"({', '.join(chapter_ids)}) and keep a running tally -- the totals must "
+                f"sum to {len(rows)}."
             )
         return response
 
@@ -228,12 +277,104 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         requirement), 'cwe', 'nist', 'supersedes'. Use this to go from "what is
         required" to "how do I do it"."""
         edges = kb.related(id, rel=rel)
-        return {
+        response = {
             "id": id,
             "edges": [
                 {"rel": e.rel, "to_kind": e.to_kind, "to_id": e.to_id, "source": e.source}
                 for e in edges
             ],
         }
+        if not edges:
+            # An empty list must not read as "no CWE applies". Upstream mappings
+            # predate ASVS 5.0.0, so absence is frequently our gap rather than a
+            # statement about the requirement.
+            coverage = {c.rel: c for c in kb.info().link_coverage}
+            gaps = [
+                f"{r} covers {coverage[r].requirements}/{coverage[r].total_requirements} "
+                f"requirements ({coverage[r].share:.0%})"
+                for r in (PARTIAL_COVERAGE_RELS if rel is None else [rel])
+                if r in coverage and coverage[r].share < 1.0
+            ]
+            if gaps:
+                response["note"] = (
+                    f"No edges found for {id}. Coverage is partial because the upstream "
+                    f"mappings predate ASVS 5.0.0: {'; '.join(gaps)}. Absence of an edge "
+                    "is NOT evidence that no such mapping exists for this requirement."
+                )
+        return response
 
-    return [kb_info, owasp_search, owasp_outline, owasp_get, owasp_checklist, owasp_related]
+    def owasp_roster(
+        pack: str = "asvs",
+        chapter_states: dict | None = None,
+        findings: list | None = None,
+        level: str | None = None,
+        require_verification: bool = True,
+        detail: bool = False,
+    ) -> dict:
+        """Assemble assessment verdicts into a complete, checked roster.
+
+        Call this at the end of an assessment instead of tallying by hand. Every
+        requirement is placed in exactly one verdict; any requirement you did not
+        report a finding for becomes INSUFFICIENT EVIDENCE rather than being
+        omitted, and the response states whether the roster is complete.
+
+        chapter_states maps each chapter id to 'APPLIES' or an N/A verdict.
+        findings is a list of dicts with req_id, chapter, section, verdict,
+        evidence, and optionally file, line, cwe, remediation, trace. Findings
+        sharing a (file, line, cwe) are merged, keeping every requirement they
+        cover.
+
+        A GAP with no verifier trace is rejected: dispatch owasp-finding-verifier
+        for it, or record it as 'GAP (unconfirmed)'. Pass require_verification=False
+        only for a deliberately quick pass.
+
+        Returns counts, per-chapter totals, the entries needing attention
+        (INSUFFICIENT EVIDENCE, N/A (unverified), GAP (unconfirmed)) and each
+        finding's id, verdict, location and covered requirements. It does not
+        echo back the evidence you supplied. Pass detail=True for the full
+        per-requirement entry list.
+        """
+        try:
+            requirements = [
+                {
+                    "req_id": r.req_id,
+                    "chapter": r.chapter_id,
+                    "section": r.section_id,
+                    "level": r.level,
+                }
+                for r in kb.checklist(pack, level=level)
+            ]
+            parsed = [
+                Finding(
+                    req_id=f["req_id"],
+                    chapter=f["chapter"],
+                    section=f["section"],
+                    verdict=f["verdict"],
+                    evidence=f.get("evidence", ""),
+                    file=f.get("file"),
+                    line=f.get("line"),
+                    cwe=f.get("cwe"),
+                    remediation=f.get("remediation"),
+                    trace=f.get("trace"),
+                )
+                for f in (findings or [])
+            ]
+            return build_roster(
+                requirements=requirements,
+                findings=parsed,
+                chapter_states=chapter_states or {},
+                require_verification=require_verification,
+                detail=detail,
+            )
+        except (KeyError, ValueError, RosterError) as exc:
+            return _error(exc)
+
+    return [
+        kb_info,
+        owasp_search,
+        owasp_outline,
+        owasp_get,
+        owasp_checklist,
+        owasp_related,
+        owasp_roster,
+    ]

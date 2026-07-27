@@ -5,12 +5,27 @@ import pytest
 from owasp_kb.core.db import connect
 from owasp_kb.core.kb import Kb
 from owasp_kb.core.schema import create_schema
-from owasp_kb.ingest.links import ingest_cwe_links, ingest_guidance_links
+from owasp_kb.ingest.links import (
+    ingest_cwe_links,
+    ingest_guidance_links,
+    ingest_nist_links,
+    ingest_supersedes_links,
+)
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 from owasp_kb.server.tools import TOOL_TRIGGER_TOPICS, build_tools
 
 MAX_RESPONSE_CHARS = 40_000
+
+
+def _flat(result):
+    """Every requirement in a grouped checklist response."""
+    return [
+        r
+        for chapter in result["chapters"]
+        for section in chapter["sections"]
+        for r in section["requirements"]
+    ]
 
 
 @pytest.fixture
@@ -33,13 +48,15 @@ def tools(tmp_path):
         "tests/fixtures/cwe_mapping_sample.json",
         be_to_release_path="tests/fixtures/mapping_be_to_500_sample.yml",
     )
+    ingest_supersedes_links(conn, "tests/fixtures/mapping_v5_to_v4_sample.yml")
+    ingest_nist_links(conn, "tests/fixtures/nist_sample.md")
     return {t.__name__: t for t in build_tools(Kb(conn))}
 
 
 # -- surface ----------------------------------------------------------
 
 
-def test_exactly_six_tools_are_exposed(tools):
+def test_exactly_seven_tools_are_exposed(tools):
     assert set(tools) == {
         "kb_info",
         "owasp_search",
@@ -47,6 +64,7 @@ def test_exactly_six_tools_are_exposed(tools):
         "owasp_get",
         "owasp_checklist",
         "owasp_related",
+        "owasp_roster",
     }
 
 
@@ -80,6 +98,11 @@ def test_kb_info_reports_mode_and_packs(tools):
     info = tools["kb_info"]()
     assert info["retrieval_mode"] == "lexical"
     assert {p["name"] for p in info["packs"]} == {"asvs", "cheatsheets"}
+
+
+def test_kb_info_exposes_link_coverage(tools):
+    coverage = {c["rel"]: c for c in tools["kb_info"]()["link_coverage"]}
+    assert coverage["guidance"]["total_requirements"] == 3
 
 
 def test_kb_info_exposes_versions_for_citation(tools):
@@ -155,7 +178,7 @@ def test_get_unknown_anchor_returns_an_error_listing_anchors(tools):
 
 def test_checklist_returns_rows_with_levels_and_version(tools):
     result = tools["owasp_checklist"]("asvs", chapter="V6")
-    assert [r["req_id"] for r in result["requirements"]] == ["V6.2.1", "V6.2.2"]
+    assert [r["id"] for r in _flat(result)] == ["V6.2.1", "V6.2.2"]
     assert result["pack_version"] == "5.0.0"
     assert result["count"] == 2
 
@@ -174,18 +197,18 @@ def test_large_checklist_is_returned_in_full_with_a_note(tools, tmp_path):
     """Completeness beats brevity for a compliance enumeration; the note steers
     the caller to filter rather than silently dropping rows."""
     result = tools["owasp_checklist"]("asvs")
-    assert result["count"] == len(result["requirements"])
+    assert result["count"] == len(_flat(result))
     assert "note" not in result  # the fixture has only 3 requirements
 
 
 def test_checklist_never_truncates_its_rows(tools):
     result = tools["owasp_checklist"]("asvs")
-    assert len(result["requirements"]) == result["count"]
+    assert len(_flat(result)) == result["count"]
 
 
 def test_checklist_level_is_cumulative_through_the_tool(tools):
     result = tools["owasp_checklist"]("asvs", level="2")
-    assert {r["req_id"] for r in result["requirements"]} == {"V1.1.1", "V6.2.1", "V6.2.2"}
+    assert {r["id"] for r in _flat(result)} == {"V1.1.1", "V6.2.1", "V6.2.2"}
 
 
 def test_checklist_description_states_cumulative_levels(tools):
@@ -198,6 +221,41 @@ def test_checklist_description_states_cumulative_levels(tools):
 def test_checklist_rejects_both_level_arguments_via_the_tool(tools):
     result = tools["owasp_checklist"]("asvs", level="2", level_exact="2")
     assert "error" in result
+
+
+def test_grouped_response_contains_every_requirement(tools):
+    """Completeness is the guarantee: the saving comes from removing repetition,
+    never from dropping rows."""
+    result = tools["owasp_checklist"]("asvs")
+    assert len(_flat(result)) == result["count"]
+
+
+def test_grouped_response_states_each_chapter_name_once(tools):
+    result = tools["owasp_checklist"]("asvs")
+    for chapter in result["chapters"]:
+        assert chapter["name"]
+        assert chapter["id"].startswith("V")
+        for section in chapter["sections"]:
+            assert section["name"]
+            assert section["requirements"]
+
+
+def test_grouped_response_preserves_requirement_order(tools):
+    result = tools["owasp_checklist"]("asvs")
+    assert [r["id"] for r in _flat(result)] == ["V1.1.1", "V6.2.1", "V6.2.2"]
+
+
+def test_checklist_note_names_the_chapters_and_the_expected_total(tools, monkeypatch):
+    """The note must be actionable: an agent needs a completion condition it can
+    check, not just a warning that the response is big."""
+    from owasp_kb.server import tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "LARGE_CHECKLIST_ROWS", 1)
+    result = tools["owasp_checklist"]("asvs")
+    note = result["note"]
+    assert "3" in note  # the expected total
+    assert "V1" in note and "V6" in note  # the chapter ids to iterate
+    assert "truncated" in note
 
 
 # -- related ----------------------------------------------------------
@@ -213,6 +271,20 @@ def test_related_unknown_id_returns_empty_edges_not_an_error(tools):
     result = tools["owasp_related"]("V99.9.9")
     assert result["edges"] == []
     assert "error" not in result
+
+
+def test_related_empty_result_explains_partial_coverage(tools):
+    """A bare [] reads as 'no CWE applies'; upstream coverage is 59%."""
+    result = tools["owasp_related"]("V1.1.1", rel="nist")
+    assert result["edges"] == []
+    assert "note" in result
+    assert "not evidence" in result["note"].lower()
+
+
+def test_related_with_edges_carries_no_note(tools):
+    result = tools["owasp_related"]("V6.2.1", rel="cwe")
+    assert result["edges"]
+    assert "note" not in result
 
 
 # -- size discipline --------------------------------------------------
@@ -236,3 +308,111 @@ def test_every_response_is_json_serialisable(tools):
     json.dumps(tools["owasp_search"]("password"))
     json.dumps(tools["owasp_checklist"]("asvs"))
     json.dumps(tools["owasp_related"]("V6.2.1"))
+
+
+# -- roster -------------------------------------------------------------
+
+
+def test_roster_tool_returns_a_complete_roster(tools):
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states={"V1": "APPLIES", "V6": "N/A (verified)"},
+        findings=[
+            {
+                "req_id": "V1.1.1",
+                "chapter": "V1",
+                "section": "V1.1",
+                "verdict": "GAP",
+                "evidence": "no canonicalisation",
+                "file": "src/in.py",
+                "line": 12,
+                "cwe": "CWE-174",
+                "trace": "untrusted path segment at src/in.py:12 reaches the filesystem call",
+            }
+        ],
+    )
+    assert result["complete"] is True
+    assert result["count"] == 3
+    assert sum(result["counts"].values()) == 3
+
+
+def test_roster_tool_reports_a_missing_chapter_state_as_an_error(tools):
+    """Scope and findings disagreeing must not be silently reconciled."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states={"V1": "APPLIES"},
+        findings=[],
+    )
+    assert "error" in result
+    assert "V6" in result["error"]
+
+
+def test_roster_tool_rejects_an_unverified_gap(tools):
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states={"V1": "APPLIES", "V6": "APPLIES"},
+        findings=[
+            {
+                "req_id": "V1.1.1",
+                "chapter": "V1",
+                "section": "V1.1",
+                "verdict": "GAP",
+                "evidence": "e",
+                "file": "a.py",
+                "line": 1,
+                "cwe": "CWE-1",
+            }
+        ],
+    )
+    assert "error" in result
+    assert "owasp-finding-verifier" in result["error"]
+
+
+def test_roster_tool_reports_a_malformed_finding_as_an_error(tools):
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states={"V1": "APPLIES", "V6": "APPLIES"},
+        findings=[{"req_id": "V1.1.1"}],
+    )
+    assert "error" in result
+
+
+def test_roster_tool_marks_unreported_requirements(tools):
+    """A requirement nobody reported must not vanish from the roster."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states={"V1": "APPLIES", "V6": "APPLIES"},
+        findings=[],
+    )
+    assert result["counts"]["INSUFFICIENT EVIDENCE"] == 3
+
+
+def test_roster_tool_description_states_it_enforces_completeness(tools):
+    doc = tools["owasp_roster"].__doc__.lower()
+    assert "complete" in doc
+    assert "insufficient evidence" in doc
+
+
+def test_roster_tool_response_is_json_serialisable(tools):
+    """MCP transports JSON; a dataclass leaking through would fail at runtime."""
+    import json
+
+    json.dumps(
+        tools["owasp_roster"](
+            pack="asvs",
+            chapter_states={"V1": "APPLIES", "V6": "APPLIES"},
+            findings=[
+                {
+                    "req_id": "V6.2.1",
+                    "chapter": "V6",
+                    "section": "V6.2",
+                    "verdict": "GAP",
+                    "evidence": "e",
+                    "file": "a.py",
+                    "line": 1,
+                    "cwe": "CWE-521",
+                    "trace": "t",
+                }
+            ],
+        )
+    )

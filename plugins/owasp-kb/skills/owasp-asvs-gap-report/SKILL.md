@@ -11,35 +11,132 @@ description: >
 
 Produce a complete, citable gap analysis at a target ASVS level.
 
+## Before starting: agree the scope
+
+A gap report especially needs scope and level agreed before starting — completeness only
+means something once the boundary is fixed. Ask these in **one message**, with the
+defaults marked, so the user can reply "defaults except scope: firmware/". If they decline
+to answer or say to just get on with it, proceed on the defaults — but **state every
+assumption in the report header** so it is visible and disputable rather than silent.
+
+1. **Scope** — which subtrees are in scope? List the candidates you can see. Anything
+   excluded gets stated as excluded, never silently unexamined.
+
+2. **Target level** — levels are cumulative:
+
+   | Level | Requirements | Cost | Justified when |
+   |---|---:|---|---|
+   | L1 | 70 | fastest | Any application. Opportunistic attackers, low-value data. A floor, not a target. |
+   | **L2** *(default)* | **253** | ~3.6× L1 | Anything handling personal data, credentials or transactions. Most systems should target this. |
+   | L3 | 345 | ~4.9× L1 | Payments, health, safety-critical. Expensive and rarely justified below that bar. |
+
+3. **Deployment context** — where does this run and who can reach it? Internet-facing,
+   LAN-only, air-gapped, physical access assumed? This is what makes a NOT APPLICABLE
+   verdict defensible rather than a guess.
+
+4. **Trust boundaries** — which interfaces accept data you do not control? Establishing
+   these first turns "is this requirement applicable" from a judgement call into a lookup.
+
+5. **Evidence depth** *(default: code and configuration)* — is configuration and
+   documentation acceptable evidence, or code only?
+
+6. **Known accepted risks** — is there a risk register, deferral log or prior assessment?
+   Without it you will re-litigate decisions already made; with it, those become
+   `GAP (accepted)` rather than news.
+
+7. **Output shape** *(default: full requirement table)* — full table or gaps only?
+   Audience: engineers fixing it, or a client reading it?
+
+Record the answers in the report header. A reader must be able to see what was assessed
+and what was deliberately left out.
+
 ## Process
 
-1. **Confirm scope and target level** before starting. A gap report against the wrong scope
-   is wasted work.
+The report runs as a fan-out, the same machinery as `owasp-asvs-verify`. You orchestrate;
+the work happens in subagents so that no verdict is graded by the agent that produced it.
 
-2. **Pull the complete requirement set.** Call `owasp_checklist(pack='asvs', level=<level>)`.
-   Completeness is the point — do not sample or summarise. **Do not answer from memory.**
-   The unfiltered response is around 140,000 characters, so work chapter at a time with the
-   `chapter` filter and keep a running tally.
+1. **Agree the scope** (above). This gates everything — a wrong scope wastes every agent
+   dispatched after it.
 
-3. **Classify every requirement** as `MET`, `GAP`, or `NOT APPLICABLE`, each with evidence:
-   a file and line reference, a configuration value, or an explicit reason.
+2. **Build the inventory.** Dispatch `owasp-scope-inventory` once per concern —
+   endpoints, middleware, identity, storage, cryptography, client surface — in parallel.
+   They report what exists; none of them judges it. Their combined output is the ground
+   truth every later agent works from, and it stops seventeen agents each rediscovering
+   the routing table.
 
-4. **For every GAP**, call `owasp_related(<req_id>)` and cite the cheat sheet section
-   describing the remediation, so the report is actionable rather than a list of failures.
+3. **Triage applicability yourself.** For each of the 17 ASVS chapters, decide from the
+   inventory whether it `APPLIES` or is `EXEMPT`, with a specific reason. Do this
+   centrally rather than dispatching it — it is one judgement over seventeen items, and
+   keeping it here is what lets you produce a complete roster.
 
-5. **Output**:
-   - A summary count per ASVS chapter: met / gap / not applicable.
-   - The full table: requirement id, level, status, evidence, remediation reference.
-   - The exact ASVS version and pack versions from `kb_info`.
+   **An exemption is a claim, not a skip.** Each one goes to a refuter in step 5.
+
+4. **Dispatch a `owasp-chapter-orchestrator` per `APPLIES` chapter**, giving it the
+   chapter id, the target level and the inventory. It pulls its own requirements and
+   dispatches a finder per applicable requirement.
+
+5. **Verify, exemptions first.**
+   - One `owasp-exemption-refuter` per `EXEMPT` chapter. A refuted exemption returns the
+     chapter to scope: go back to step 4 for it. This is a finding in its own right.
+   - One `owasp-finding-verifier` per `GAP`. It returns the source→sink trace, the CWE and
+     the remediation citation.
+   - Escalate to a **second** verifier only where the first returned `unclear`.
+
+6. **Assemble with `owasp_roster`.** Pass your `chapter_states` and every finding. Do not
+   tally by hand — the tool places every requirement in exactly one verdict, marks
+   anything you did not report as `INSUFFICIENT EVIDENCE`, and tells you whether the
+   roster is complete. If it returns `complete: false` or an error, fix the inputs; do not
+   report around it.
+
+7. **Cite the exact ASVS version** from `kb_info`.
+
+## Output
+
+Grouped by chapter, with a per-chapter count of met / gap / not applicable — this is the
+client-readable artefact — plus the full table: requirement id, level, verdict, evidence,
+CWE, remediation.
+
+Every requirement appears exactly once, in one of six states. Do not collapse the three
+uncertain ones into `MET` or `GAP`; carrying them through is the point:
+
+| Verdict | Meaning |
+|---|---|
+| `MET` | Control present and read |
+| `GAP` | Control absent or inadequate, verified |
+| `GAP (unconfirmed)` | Reported, but verification was inconclusive twice |
+| `N/A (verified)` | Chapter exempt, and a refuter failed to disprove it |
+| `N/A (unverified)` | Chapter exempt, refutation inconclusive |
+| `INSUFFICIENT EVIDENCE` | Could not be determined |
+
+Every `GAP` carries the remediation citation as `doc_key#anchor` — the verifier produces
+it; a `GAP` without one is incomplete, so say so rather than writing remediation from your
+own knowledge.
+
+Report the total requirement count and confirm the table has that many rows.
+`owasp_roster` now supplies both the count and the per-verdict tally, so this is a fact
+you report rather than a claim you make.
 
 ## Rules
 
-- Report the total requirement count and confirm your table has that many rows. A silently
-  truncated gap report reads as full coverage. Levels are cumulative: at L2 that is 253
-  requirements (every L1 requirement plus every L2 one), not the 183 tagged L2.
-- Do not soften a `GAP` into a partial pass. Partial compliance is a gap with a note.
+- Applicability, verdicts and remediation are the dispatched agents' job, not yours: the
+  inventory agents report facts only, chapter orchestrators and finders return the
+  per-requirement verdict, and refuters and verifiers are the only agents that overturn an
+  exemption or a reported gap. Your job is scope, chapter triage, dispatch and assembly —
+  never re-deriving a verdict a subagent already produced, and never answering from memory
+  in its place.
+- The finder and verifier reach the knowledge base directly for every claim they make:
+  `owasp_checklist` for requirement text and ids, `owasp_related` for the CWE and guidance
+  links, `owasp_outline` and `owasp_get` for the remediation section itself.
+  Do not answer from memory at any stage — every id, requirement text and remediation
+  citation must trace back to a tool call.
+- A `GAP` without a remediation citation is incomplete. The verifier produces it; if one is
+  missing, say so rather than writing remediation from your own knowledge.
+- Levels are cumulative: at L2 that is 253 requirements (every L1 requirement plus every
+  L2 one), not the 183 tagged L2.
 - State that level counts come from the pinned ASVS release, so a future release may shift
   them.
+- CWE coverage is partial — 204 of 345 requirements — because upstream publishes only a
+  bleeding-edge mapping. `owasp_related` returns a note saying so when a result is empty.
 
 ## If the knowledge base is unreachable
 
