@@ -382,9 +382,28 @@ names and descriptions rather than on rank.
 cwe_related(entry_id: str, ancestors: bool = False) -> dict
 ```
 
-The entry's edges: `cwe_child` (ChildOf, toward the abstract), `cwe_peer` (PeerOf)
-and `cwe_member` (a Category's members). With `ancestors=True`, the whole ChildOf
-chain nearest-first rather than direct parents only.
+The entry's edges: `cwe_child` (ChildOf, toward the abstract), `cwe_peer` (see below —
+**not** PeerOf) and `cwe_member` (a Category's members). With `ancestors=True`, the
+whole ChildOf chain nearest-first rather than direct parents only.
+
+**`cwe_peer` is a catch-all and its name is misleading.** The ingest maps every
+non-`ChildOf` `Related_Weakness` nature onto it, so "peer" is the minority reading.
+Of the 284 `cwe_peer` edges in CWE 4.20:
+
+| Nature | Edges | Share | What it means |
+|---|---|---|---|
+| `CanPrecede` | 143 | 50.4% | A **sequence**: this weakness can lead to that one |
+| `PeerOf` | 98 | 34.5% | Similar, at the same level |
+| `CanAlsoBe` | 27 | 9.5% | The same defect is sometimes classified as that one |
+| `Requires` | 13 | 4.6% | That weakness must also be present for this one to matter |
+| `StartsWith` | 3 | 1.1% | A sequence, at its start |
+
+The plurality is a *directed* relation, and the edge is stored in one direction only,
+so a `cwe_peer` from A to B does **not** imply one from B to A. An agent that reads
+`cwe_peer` as "these are equivalent, either id will do" is wrong half the time, and
+wrong about direction more often than that. Read it as "related somehow — go read
+both entries", and do not substitute one id for the other on the strength of it.
+The nature itself is not stored: if you need it, the entry text is the only source.
 
 **Return shape** (`CWE-789`, `ancestors=True`):
 ```json
@@ -408,16 +427,30 @@ are not all ingested, and an inner join would return nothing at all for it rathe
 than four member edges with a null abstraction.
 
 `truncated` says whether the ancestor walk stopped before running out of ancestors.
-It is `false` for every chain in the published catalogue (deepest is 13 against a cap
-of 20). **If it is ever `true`, the chain is missing its coarsest end** — which is
-exactly where the Pillar sits, so a shared-ancestor comparison read off a truncated
-chain is unsound in the one direction that matters.
+It is `false` for every entry in the published catalogue: the walk is bounded by
+`MAX_ANCESTOR_DEPTH = 20` (`core/kb.py`) and the deepest real walk is **5 levels**, so
+the cap has four times the headroom it needs. **If it is ever `true`, the chain is
+missing its coarsest end** — which is exactly where the Pillar sits, so a
+shared-ancestor comparison read off a truncated chain is unsound in the one direction
+that matters.
+
+"5 levels" is BFS depth, the thing the cap actually bounds; the longest simple
+`ChildOf` path happens to be 5 as well, but those are different measurements and
+"chain length" names neither. Mean depth is 2.39 over the 969 Weaknesses. For scale on
+how little slack a smaller cap would leave: at 4 the walk truncates for 19 entries, at
+3 for 107.
 
 **What the tool does not decide.** Whether a self-chosen id refines a mapped one,
 substitutes for it, or is simply unrelated is the caller's judgement. The measured
-asymmetry to reason with: **35% of weakness pairs share some ancestor and only 5%
+asymmetry to reason with: **28% of weakness pairs share some ancestor and only 4%
 share a non-Pillar one**, so a shared `Pillar` means almost nothing while a shared
 `Base` or `Class` is meaningful. A report should say which it found.
+
+Those two figures are random pairs of the 969 Weaknesses, ancestors taken
+transitively over `ChildOf` only, a node excluded from its own ancestor set — stated
+because the pair they replace (35%/5%) could not be reproduced under any methodology,
+precisely because none had been recorded. Rounded on purpose: a tenth of a percent
+would imply the sampling was pinned more tightly than it is.
 
 As with `cwe_get`, an id absent from the catalogue raises rather than returning `[]`
 — an empty edge list must be readable as "this entry records no relationships" and

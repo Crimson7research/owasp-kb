@@ -24,10 +24,24 @@ from owasp_kb.core.retrieval import build_retriever
 CATALOGUE_CHILD_REL = "cwe_child"
 CATALOGUE_RELS = (CATALOGUE_CHILD_REL, "cwe_peer", "cwe_member")
 
-# Measured on CWE 4.20 the longest ChildOf chain is 13, so 20 is headroom rather
-# than a real limit. It is not what makes the walk terminate -- the visited set is,
-# and it does so even on the cycles the graph contains. The cap only bounds the work
-# if a future release deepens the graph past 20.
+# Measured on CWE 4.20 the deepest ancestor walk is 5 levels, so 20 is wide headroom
+# rather than a real limit. It is not what makes the walk terminate -- the visited set
+# is, and it does so even on the cycles the graph contains. The cap only bounds the
+# work if a future release deepens the graph past 20.
+#
+# "5 levels" is BFS depth, which is what this constant bounds -- the loop below walks
+# a frontier, so one iteration is one level regardless of how many nodes it holds.
+# The longest simple ChildOf path is also 5, and the two metrics agreeing is luck, not
+# a property: they measure different things and "chain length" names neither. Quote
+# the metric, not the word. Mean BFS depth is 2.39 over the 969 Weaknesses (1.66 over
+# all 1,391 entries, because a Category has no ChildOf parent at all).
+#
+# This said 13 for three releases of this file, a figure that reproduces under no
+# methodology. Verified against the real catalogue through this exact code path, not a
+# reimplementation of it: at a cap of 5 no entry truncates, at 4 nineteen do, at 3 a
+# hundred and seven. tests/core/test_kb.py pins that with a realdata test, because the
+# two synthetic boundary tests build their chains *from this constant* and so cannot
+# fail when it shrinks.
 #
 # Where it does bite, it must say so, which is why CatalogueGraph carries a flag: a
 # chain silently cut below its Pillar looks exactly like a chain that shares a Base
@@ -343,10 +357,19 @@ class Kb:
         """Direct edges, or the whole ChildOf ancestor chain.
 
         Every node carries its abstraction, because a shared Pillar is not
-        evidence of anything -- 35% of weakness pairs share some ancestor and only
-        5% share a non-Pillar one. Walking is breadth-first with a visited set:
+        evidence of anything -- 28% of weakness pairs share some ancestor and only
+        4% share a non-Pillar one. Walking is breadth-first with a visited set:
         the graph has cycles through PeerOf, and 25 entries are Deprecated with
         parents that may be too.
+
+        Methodology for those two figures, recorded because the pair they replace
+        (35%/5%) reproduced under no variant anyone tried, and nothing here said
+        what had been sampled: **random pairs drawn from the 969 Weaknesses of CWE
+        4.20; ancestors computed transitively over cwe_child (ChildOf) only; a node
+        is excluded from its own ancestor set; Pillar means abstraction == 'Pillar',
+        of which there are 10.** 300k pairs gives 27.8% and 4.1%, a 6.8x asymmetry.
+        Rounded to 28% and 4% deliberately -- a figure quoted to a tenth invites the
+        belief that the methodology was pinned, and until this paragraph it was not.
 
         ``ancestors=True`` follows cwe_child only. The result is the set of
         ancestors, nearest first, not a tree: which child each edge was reached

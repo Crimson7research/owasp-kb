@@ -80,9 +80,11 @@ def test_a_weakness_carries_its_abstraction_and_a_category_does_not(ingested):
 
 
 def test_a_pillar_is_recorded_as_such(ingested):
-    """The Pillar finding depends on this: 35% of weakness pairs share some
-    ancestor but only 5% share a non-Pillar one, so abstraction is what lets a
-    caller tell a refinement from a coincidence."""
+    """The Pillar finding depends on this: 28% of weakness pairs share some
+    ancestor but only 4% share a non-Pillar one, so abstraction is what lets a
+    caller tell a refinement from a coincidence. See Kb.catalogue_related for the
+    methodology behind those two figures -- they replace a 35%/5% pair that
+    reproduced under no variant anyone tried."""
     row = ingested.execute(
         "SELECT abstraction FROM catalogue_entries WHERE entry_id='CWE-664'"
     ).fetchone()

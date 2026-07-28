@@ -446,4 +446,8 @@ before anyone counted how often "brute force" appears in the corpus. It appears
 same record: the recommended chunk size of 400 tokens cut truncation hardest
 (2.4%) but measurably degraded retrieval — hybrid mean rank 2.2 → 2.8 — so 512
 was chosen instead, at 4.6% truncation and no rank regression. In both cases
-the stated recommendation was wrong and the measurement was cheap.
+the stated recommendation was wrong and the measurement was cheap. (Those three
+truncation figures are one experiment on the pre-CWE 2,894-chunk corpus and are
+quoted as measured; on the shipped index 512 now truncates **2.90%**, 141 of
+4,869. Restating one arm of a comparison from a different corpus would break the
+comparison, which is the point of the anecdote.)

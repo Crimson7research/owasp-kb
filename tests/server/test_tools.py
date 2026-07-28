@@ -435,8 +435,8 @@ def test_cwe_related_ancestors_follows_child_edges_only(tools):
 
 def test_the_ancestor_chains_of_the_real_case_overlap_only_at_a_pillar(tools):
     """The finding that kept a refinement verdict out of the tools: CWE-789 and
-    CWE-120 do share an ancestor, but it is a Pillar, and 35% of random weakness
-    pairs share some ancestor against 5% sharing a non-Pillar one.
+    CWE-120 do share an ancestor, but it is a Pillar, and 28% of random weakness
+    pairs share some ancestor against 4% sharing a non-Pillar one.
 
     Measured chains: CWE-789 -> 770 -> 400/665 -> 664, and CWE-120 -> 119 -> 118
     -> 664. Both intermediate Class entries are in the fixture for this reason."""

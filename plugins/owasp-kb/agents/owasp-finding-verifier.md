@@ -144,8 +144,8 @@ Two things make a departure from the mapping defensible, and both are now eviden
 
 `cwe_related(id, ancestors=True)` gives the ChildOf chain with each node's abstraction. Comparing
 your id's chain with the mapped one tells you how far apart they are — but read it carefully: a
-shared **Pillar** means almost nothing, since 35% of weakness pairs share some ancestor and only
-5% share a non-Pillar one. A shared Base or Class is meaningful. State which you found; do not
+shared **Pillar** means almost nothing, since 28% of weakness pairs share some ancestor and only
+4% share a non-Pillar one. A shared Base or Class is meaningful. State which you found; do not
 report "related" on a Pillar overlap.
 
 **Check `truncated` on that response before you conclude anything from it.** When it is `true`

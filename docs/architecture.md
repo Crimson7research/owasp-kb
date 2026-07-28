@@ -145,8 +145,14 @@ one pack's internal structure:
 | `supersedes` | requirement → its v4.0.3 predecessor | `mapping_v5.0.0_to_v4.0.3.yml` | 265 |
 | `nist` | requirement → a NIST SP 800-63B section | `nist.md`, composed through `supersedes` | 48 |
 | `cwe_child` | `CWE-nnn` → its ChildOf parent | `cwec_v4.20.xml` | 1,160 |
-| `cwe_peer` | `CWE-nnn` → a PeerOf weakness | `cwec_v4.20.xml` | 284 |
+| `cwe_peer` | `CWE-nnn` → a related weakness, any non-`ChildOf` nature | `cwec_v4.20.xml` | 284 |
 | `cwe_member` | a CWE Category → its members | `cwec_v4.20.xml` | 4,260 |
+
+`cwe_peer`'s name promises more than it carries: the ingest maps every non-`ChildOf`
+nature onto it, and the plurality of the 284 is `CanPrecede` (143) — a directed
+sequence relation — not `PeerOf` (98). The nature is not preserved in `links`, and the
+edge is written in one direction only, so neither symmetry nor similarity can be read
+off the `rel`. See [docs/tools.md](tools.md) for the full breakdown.
 
 The `cwe_*` three are traversed by `cwe_related`, not `owasp_related`: the latter
 disambiguates its `id` argument by counting dots in an ASVS requirement id, so a
@@ -180,9 +186,9 @@ where it came from. Rules that matter beyond the obvious:
 - **Oversized sections are split further** on blank-line boundaries, never
   inside a fence, targeting `DEFAULT_MAX_TOKENS = 512` (a `len(text)//4`
   estimate, not a real tokenizer count — cheap and sufficient for a split
-  threshold), matching the embedder's context window exactly. 4.6% of chunks
-  still exceed that limit, against an 8% build gate: the worst offender is 97%
-  a single fenced code block,
+  threshold), matching the embedder's context window exactly. 2.90% of chunks
+  still exceed that limit (141 of 4,869), against an 8% build gate: the worst
+  offender is 97% a single fenced code block,
   which cannot be split further without breaking the fence invariant above.
   BM25 has no length limit and covers what the embedder cannot see.
 - **ASVS requirements are not split at all** — each is ingested as exactly one

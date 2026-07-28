@@ -375,9 +375,15 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             entry = kb.catalogue_entry(entry_id)
         except KeyError as exc:
             return _error(exc)
-        # Not truncated: measured on CWE 4.20 the longest description is 505
+        # Not truncated: measured on CWE 4.20 the longest description is 1,231
         # characters and the longest extended description 3,677, so the whole entry
         # is smaller than one cheat-sheet section.
+        #
+        # 1,231 is CWE-361, a Category: a Category has no Description element, so its
+        # Summary is what lands in this column, and Summaries run longer than
+        # Descriptions. The longest Weakness description is 505 -- which is the figure
+        # this comment used to give for the whole catalogue, understating by 2.4x by
+        # measuring only half of what cwe_get can return.
         return {
             "entry_id": entry.entry_id,
             "kind": entry.kind,
@@ -446,9 +452,17 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
 
         Deciding whether a cited id refines a mapped one or substitutes for it is
         your judgement, not this tool's: comparing two chains, a shared Pillar
-        means almost nothing (35% of weakness pairs share some ancestor, only 5%
+        means almost nothing (28% of weakness pairs share some ancestor, only 4%
         share a non-Pillar one) while a shared Base or Class is meaningful. Say
         which you found and why in the report.
+
+        cwe_peer is a catch-all, not PeerOf, and reading it as similarity is a
+        mistake. It carries every non-ChildOf Related_Weakness nature: of 284 edges,
+        CanPrecede 143, PeerOf 98, CanAlsoBe 27, Requires 13, StartsWith 3. The
+        plurality is CanPrecede, a *sequence* relation, and it is stored in one
+        direction only -- so a cwe_peer edge does not imply the reverse edge exists,
+        and "these two are peers" is not what most of them say. Treat it as "these
+        are related somehow, go read both entries" and do not infer symmetry.
 
         An id absent from the catalogue is an error, as it is for cwe_get: an
         empty edge list must mean "this entry records no relationships" and never

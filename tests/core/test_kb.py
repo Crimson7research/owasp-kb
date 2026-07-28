@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from owasp_kb.core.db import connect
@@ -389,10 +391,16 @@ def test_a_cycle_in_the_graph_terminates_the_walk(catalogue_conn):
 
 
 def test_an_ancestor_chain_deeper_than_the_cap_is_reported_as_truncated(catalogue_conn):
-    """No real chain reaches the cap -- measured maximum 13 against 20 -- but a chain
+    """No real walk reaches the cap -- deepest is 5 levels against 20 -- but a chain
     cut silently below its Pillar looks exactly like one that shares a Base or a
     Class, which is the false 'related' the whole design exists to avoid. So the
-    guard is exercised on a synthetic chain rather than left untested."""
+    guard is exercised on a synthetic chain rather than left untested.
+
+    This test cannot fail if MAX_ANCESTOR_DEPTH shrinks: the chain is built from the
+    constant, so both move together. Shrinking it to 4 leaves the real catalogue
+    truncating 19 entries with the whole suite green. That is what
+    test_no_real_catalogue_entry_truncates_its_ancestor_walk is for; do not read this
+    test as pinning the cap."""
     chain = _synthetic_chain(catalogue_conn, edges=MAX_ANCESTOR_DEPTH + 5)
     graph = Kb(catalogue_conn).catalogue_related(chain[0], ancestors=True)
     assert graph.truncated is True
@@ -421,3 +429,38 @@ def test_a_cycle_at_the_cap_boundary_is_not_reported_as_truncated(catalogue_conn
     graph = Kb(catalogue_conn).catalogue_related(chain[0], ancestors=True)
     assert [e.to_id for e in graph.edges] == chain[1:]
     assert graph.truncated is False
+
+
+REAL_CATALOGUE = Path("data/cwe/cwec_v4.20.xml")
+
+
+@pytest.mark.realdata
+def test_no_real_catalogue_entry_truncates_its_ancestor_walk(tmp_path):
+    """Pins MAX_ANCESTOR_DEPTH against the data instead of against itself.
+
+    The two synthetic boundary tests above build their chains *from* the constant
+    (``edges=MAX_ANCESTOR_DEPTH`` and ``+ 5``), so shrinking it shrinks the chains in
+    lockstep and both stay green. Measured: MAX_ANCESTOR_DEPTH = 4 survives the entire
+    suite while 19 real entries silently truncate, and 3 survives while 107 do. The
+    suite enforced a floor of 3 -- incidentally, via the fixture's own 3-deep chain --
+    for a catalogue that needs 5.
+
+    Truncation is the one failure mode here that corrupts the claim rather than losing
+    data: a chain cut below its Pillar reads exactly like one sharing a Base. So the
+    assertion is over every entry, not a sample.
+    """
+    if not REAL_CATALOGUE.exists():
+        pytest.skip(f"no catalogue at {REAL_CATALOGUE}; run the fetch step first")
+    conn = connect(tmp_path / "real-cwe.sqlite")
+    create_schema(conn)
+    ingest_cwe(conn, REAL_CATALOGUE, version="4.20", license="LicenseRef-CWE-TOU")
+    kb = Kb(conn)
+    ids = [r["entry_id"] for r in conn.execute("SELECT entry_id FROM catalogue_entries")]
+    assert len(ids) > 1000, f"only {len(ids)} entries ingested; the catalogue did not parse"
+    truncated = [i for i in ids if kb.catalogue_related(i, ancestors=True).truncated]
+    assert not truncated, (
+        f"MAX_ANCESTOR_DEPTH = {MAX_ANCESTOR_DEPTH} truncates the ancestor walk for "
+        f"{len(truncated)} of {len(ids)} real entries, e.g. {sorted(truncated)[:5]}. "
+        "Every one of those reports a chain missing its coarsest end, which reads as "
+        "a shared Base where there is none."
+    )
