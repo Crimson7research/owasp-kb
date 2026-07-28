@@ -133,7 +133,11 @@ def _grouped(rows) -> list[dict]:
 
 
 def build_tools(kb: Kb) -> list[Callable[..., Any]]:
-    """Return the seven tool callables bound to this Kb."""
+    """Return every tool callable bound to this Kb.
+
+    The cwe_ tools are not owasp_-prefixed: CWE is MITRE's, and that prefix exists
+    because the other tools serve OWASP material.
+    """
 
     def _resolve_citation(finding: dict) -> str | None:
         """The section text a finding's remediation cites, or None if it cites nothing.
@@ -335,6 +339,79 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 )
         return response
 
+    def cwe_get(entry_id: str) -> dict:
+        """Look up one CWE weakness or category by id — its name, abstraction,
+        status and description.
+
+        Call this before citing a CWE id that OWASP's ASVS mapping does not
+        carry, which is the common case: of 95 ids cited in one real assessment,
+        42 were not from the mapping. An id that is not in the catalogue is an
+        error, not an empty result.
+
+        status matters. CWE-320 'Key Management Errors' is Obsolete and eight
+        ASVS requirements map to it, so substituting a live, specific weakness
+        there is an improvement you can now evidence rather than assert.
+
+        abstraction is the weakness's level -- Pillar, Class, Base, Variant or
+        Compound -- and is null for a category, which has no level. It is stated
+        rather than omitted so a comparison of two cited ids can see that one of
+        them has nothing to compare.
+        """
+        try:
+            entry = kb.catalogue_entry(entry_id)
+        except KeyError as exc:
+            return _error(exc)
+        # Not truncated: measured on CWE 4.20 the longest description is 505
+        # characters and the longest extended description 3,677, so the whole entry
+        # is smaller than one cheat-sheet section.
+        return {
+            "entry_id": entry.entry_id,
+            "kind": entry.kind,
+            "name": entry.name,
+            "abstraction": entry.abstraction,
+            "status": entry.status,
+            "description": entry.description,
+            "extended_description": entry.extended_description,
+        }
+
+    def cwe_related(entry_id: str, ancestors: bool = False) -> dict:
+        """Relationships for a CWE id: parents, peers, or a category's members.
+
+        ancestors=True returns the whole ChildOf chain rather than direct parents,
+        each node carrying its abstraction. On every edge, abstraction is the
+        target's (to_id) and not the id you asked about, and it is null where the
+        target is outside this catalogue.
+
+        Deciding whether a cited id refines a mapped one or substitutes for it is
+        your judgement, not this tool's: comparing two chains, a shared Pillar
+        means almost nothing (35% of weakness pairs share some ancestor, only 5%
+        share a non-Pillar one) while a shared Base or Class is meaningful. Say
+        which you found and why in the report.
+
+        An id absent from the catalogue is an error, as it is for cwe_get: an
+        empty edge list must mean "this entry records no relationships" and never
+        "no such id", or a mis-cited number passes silently.
+        """
+        try:
+            kb.catalogue_entry(entry_id)
+            edges = kb.catalogue_related(entry_id, ancestors=ancestors)
+        except KeyError as exc:
+            return _error(exc)
+        return {
+            "entry_id": entry_id,
+            "ancestors": ancestors,
+            "edges": [
+                {
+                    "rel": e.rel,
+                    "to_kind": e.to_kind,
+                    "to_id": e.to_id,
+                    "abstraction": e.abstraction,
+                    "source": e.source,
+                }
+                for e in edges
+            ],
+        }
+
     def owasp_roster(
         pack: str = "asvs",
         chapter_states: dict | None = None,
@@ -466,4 +543,6 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         owasp_checklist,
         owasp_related,
         owasp_roster,
+        cwe_get,
+        cwe_related,
     ]

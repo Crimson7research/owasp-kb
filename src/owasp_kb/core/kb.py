@@ -6,9 +6,30 @@ import difflib
 import sqlite3
 from dataclasses import dataclass
 
-from owasp_kb.core.models import OutlineNode, RelatedEdge, RequirementRow, SearchHit
+from owasp_kb.core.models import (
+    CatalogueEntry,
+    OutlineNode,
+    RelatedEdge,
+    RequirementRow,
+    SearchHit,
+)
 from owasp_kb.core.registry import Pack, get_pack, list_packs, pack_id
 from owasp_kb.core.retrieval import build_retriever
+
+# The three rels ingest/packs/cwe.py writes for the CWE graph. Named here rather
+# than imported from that module because core must not depend on ingest -- the
+# shipped server never loads it. The duplication is pinned by
+# test_the_kb_catalogue_rels_match_what_the_ingest_writes: if the two lists drift,
+# catalogue_related returns nothing at all rather than failing.
+CATALOGUE_CHILD_REL = "cwe_child"
+CATALOGUE_RELS = (CATALOGUE_CHILD_REL, "cwe_peer", "cwe_member")
+
+# Measured on CWE 4.20 the longest ChildOf chain is 13, so 20 is headroom rather
+# than a real limit. It is not what makes the walk terminate -- the visited set is,
+# and it does so even on the cycles the graph contains. The cap only bounds the work
+# if a future release deepens the graph past 20, where it would truncate a chain;
+# that is preferred to an unbounded loop over a shape nobody has measured.
+MAX_ANCESTOR_DEPTH = 20
 
 
 @dataclass(frozen=True)
@@ -264,3 +285,106 @@ class Kb:
             RelatedEdge(rel=r["rel"], to_kind=r["to_kind"], to_id=r["to_id"], source=r["source"])
             for r in rows
         ]
+
+    # -- catalogue packs -------------------------------------------------
+
+    def catalogue_entry(self, entry_id: str) -> CatalogueEntry:
+        """One catalogue entry by id, or KeyError naming it.
+
+        An id is in the catalogue or it is not -- unlike an anchor, there is no
+        useful list of alternatives to suggest.
+        """
+        row = self._conn.execute(
+            "SELECT entry_id, kind, name, abstraction, status, description,"
+            " extended_description FROM catalogue_entries WHERE entry_id = ?",
+            (entry_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(
+                f"unknown catalogue id {entry_id!r}. Every Weakness and Category of the "
+                "loaded catalogue is present, so an id that is missing is either a View "
+                "(deliberately not ingested -- a View is a perspective on the catalogue, "
+                "not a definition of a weakness) or not a real id at this catalogue "
+                "version. Check the number before citing it."
+            )
+        return CatalogueEntry(
+            entry_id=row["entry_id"],
+            kind=row["kind"],
+            name=row["name"],
+            abstraction=row["abstraction"],
+            status=row["status"],
+            description=row["description"],
+            extended_description=row["extended_description"],
+        )
+
+    def catalogue_related(self, entry_id: str, *, ancestors: bool = False) -> list[RelatedEdge]:
+        """Direct edges, or the whole ChildOf ancestor chain.
+
+        Every node carries its abstraction, because a shared Pillar is not
+        evidence of anything -- 35% of weakness pairs share some ancestor and only
+        5% share a non-Pillar one. Walking is breadth-first with a visited set:
+        the graph has cycles through PeerOf, and 25 entries are Deprecated with
+        parents that may be too.
+
+        ``ancestors=True`` follows cwe_child only. The result is the set of
+        ancestors, nearest first, not a tree: which child each edge was reached
+        from is dropped, because the question a caller asks of a chain is how
+        coarse its shared node is.
+        """
+        if ancestors:
+            return self._catalogue_ancestors(entry_id)
+        return self._catalogue_edges([entry_id], rels=CATALOGUE_RELS)
+
+    def _catalogue_edges(self, from_ids: list[str], *, rels: tuple[str, ...]) -> list[RelatedEdge]:
+        """Edges out of any of ``from_ids``, with each target's abstraction.
+
+        The join to catalogue_entries is a LEFT JOIN, and that is the whole
+        correctness of this method: CWE keeps edges pointing outside any subset of
+        itself, so an inner join drops them silently. CWE-320's four Has_Member
+        targets are all absent from the test catalogue and three of the five ids in
+        an ancestor walk from CWE-120 are too -- an inner join answers "no members"
+        for an Obsolete Category that eight ASVS requirements cite, which is the
+        answer a caller is trying to get away from. A missing target yields
+        abstraction=None instead.
+        """
+        if not from_ids:
+            return []
+        from_placeholders = ",".join("?" * len(from_ids))
+        rel_placeholders = ",".join("?" * len(rels))
+        rows = self._conn.execute(
+            "SELECT l.rel AS rel, l.to_kind AS to_kind, l.to_id AS to_id,"
+            " l.source AS source, e.abstraction AS abstraction"
+            "  FROM links l"
+            "  LEFT JOIN catalogue_entries e ON e.entry_id = l.to_id"
+            f" WHERE l.from_id IN ({from_placeholders}) AND l.rel IN ({rel_placeholders})"
+            " ORDER BY l.rel, l.to_id",
+            (*from_ids, *rels),
+        ).fetchall()
+        return [
+            RelatedEdge(
+                rel=r["rel"],
+                to_kind=r["to_kind"],
+                to_id=r["to_id"],
+                source=r["source"],
+                abstraction=r["abstraction"],
+            )
+            for r in rows
+        ]
+
+    def _catalogue_ancestors(self, entry_id: str) -> list[RelatedEdge]:
+        """Breadth-first over cwe_child, nearest ancestors first."""
+        edges: list[RelatedEdge] = []
+        visited = {entry_id}
+        frontier = [entry_id]
+        for _ in range(MAX_ANCESTOR_DEPTH):
+            if not frontier:
+                break
+            parents = self._catalogue_edges(frontier, rels=(CATALOGUE_CHILD_REL,))
+            frontier = []
+            for edge in parents:
+                if edge.to_id in visited:
+                    continue
+                visited.add(edge.to_id)
+                edges.append(edge)
+                frontier.append(edge.to_id)
+        return edges

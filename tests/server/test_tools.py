@@ -13,6 +13,7 @@ from owasp_kb.ingest.links import (
 )
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
+from owasp_kb.ingest.packs.cwe import ingest_cwe
 from owasp_kb.server.tools import TOOL_TRIGGER_TOPICS, build_tools
 
 MAX_RESPONSE_CHARS = 40_000
@@ -42,6 +43,7 @@ def tools(tmp_path):
         commit_sha="7d1c2d3daf632206e8f2c685214c699ff8f11938",
         license="CC-BY-SA-4.0",
     )
+    ingest_cwe(conn, "tests/fixtures/cwec_sample.xml", version="4.20", license="LicenseRef-CWE-TOU")
     ingest_guidance_links(conn, "tests/fixtures/IndexASVS_sample.md")
     ingest_cwe_links(
         conn,
@@ -56,7 +58,7 @@ def tools(tmp_path):
 # -- surface ----------------------------------------------------------
 
 
-def test_exactly_seven_tools_are_exposed(tools):
+def test_exactly_nine_tools_are_exposed(tools):
     assert set(tools) == {
         "kb_info",
         "owasp_search",
@@ -65,6 +67,8 @@ def test_exactly_seven_tools_are_exposed(tools):
         "owasp_checklist",
         "owasp_related",
         "owasp_roster",
+        "cwe_get",
+        "cwe_related",
     }
 
 
@@ -97,7 +101,7 @@ def test_related_description_explains_the_guidance_relationship(tools):
 def test_kb_info_reports_mode_and_packs(tools):
     info = tools["kb_info"]()
     assert info["retrieval_mode"] == "lexical"
-    assert {p["name"] for p in info["packs"]} == {"asvs", "cheatsheets"}
+    assert {p["name"] for p in info["packs"]} == {"asvs", "cheatsheets", "cwe"}
 
 
 def test_kb_info_exposes_link_coverage(tools):
@@ -287,6 +291,163 @@ def test_related_with_edges_carries_no_note(tools):
     assert "note" not in result
 
 
+# -- cwe --------------------------------------------------------------
+
+
+def test_cwe_get_returns_the_weakness(tools):
+    r = tools["cwe_get"]("CWE-789")
+    assert r["kind"] == "weakness"
+    assert r["abstraction"] == "Variant"
+    assert "Memory Allocation" in r["name"]
+    assert r["description"]
+
+
+def test_cwe_get_returns_a_category_with_its_status(tools):
+    """CWE-320 is Obsolete and eight ASVS requirements cite it. An agent
+    departing from that mapping needs to be able to say why."""
+    r = tools["cwe_get"]("CWE-320")
+    assert r["kind"] == "category"
+    assert r["status"] == "Obsolete"
+    assert r["abstraction"] is None
+
+
+def test_cwe_get_states_a_categorys_absent_abstraction_rather_than_omitting_it(tools):
+    """None must survive the dict and the JSON: a caller comparing how coarse two
+    cited ids are has to see that a Category has no level, and a missing key reads
+    as an oversight rather than as a fact about the entry."""
+    r = tools["cwe_get"]("CWE-320")
+    assert "abstraction" in r
+    assert json.loads(json.dumps(r))["abstraction"] is None
+
+
+def test_cwe_get_on_an_unknown_id_errors_and_names_it(tools):
+    r = tools["cwe_get"]("CWE-99999")
+    assert "error" in r
+    assert "CWE-99999" in r["error"]
+
+
+def test_cwe_related_returns_direct_edges_with_abstraction(tools):
+    """Abstraction on every node is what lets a caller see that an overlap is
+    only a Pillar."""
+    edges = tools["cwe_related"]("CWE-789")["edges"]
+    parent = next(e for e in edges if e["to_id"] == "CWE-770")
+    assert parent["rel"] == "cwe_child"
+    assert parent["abstraction"] == "Base"
+
+
+def test_cwe_related_abstraction_is_the_targets_not_the_sources(tools):
+    """CWE-789 is a Variant and CWE-770 a Base. If the join ever read the source's
+    abstraction instead, every edge out of CWE-789 would say Variant and a chain
+    comparison would be meaningless."""
+    edges = tools["cwe_related"]("CWE-789")["edges"]
+    assert tools["cwe_get"]("CWE-789")["abstraction"] == "Variant"
+    assert {e["to_id"]: e["abstraction"] for e in edges}["CWE-770"] == "Base"
+
+
+def test_cwe_related_ancestors_returns_the_whole_chain(tools):
+    """Chains are short -- mean 3.2, max 13 -- so returning them whole avoids an
+    agent recursing by hand across several calls."""
+    ids = [e["to_id"] for e in tools["cwe_related"]("CWE-789", ancestors=True)["edges"]]
+    assert {"CWE-770", "CWE-664"} <= set(ids)
+
+
+def test_cwe_related_ancestors_follows_child_edges_only(tools):
+    """CWE-789 PeerOf CWE-476 is a direct edge and must not become an ancestor:
+    peers are what put cycles in the graph, and a peer's parents are not the cited
+    weakness's parents."""
+    direct = {e["to_id"]: e["rel"] for e in tools["cwe_related"]("CWE-789")["edges"]}
+    assert direct["CWE-476"] == "cwe_peer"
+    walked = tools["cwe_related"]("CWE-789", ancestors=True)["edges"]
+    assert {e["rel"] for e in walked} == {"cwe_child"}
+    assert "CWE-476" not in {e["to_id"] for e in walked}
+
+
+def test_the_ancestor_chains_of_the_real_case_overlap_only_at_a_pillar(tools):
+    """The finding that kept a refinement verdict out of the tools: CWE-789 and
+    CWE-120 do share an ancestor, but it is a Pillar, and 35% of random weakness
+    pairs share some ancestor against 5% sharing a non-Pillar one.
+
+    Measured chains: CWE-789 -> 770 -> 400/665 -> 664, and CWE-120 -> 119 -> 118
+    -> 664. Both intermediate Class entries are in the fixture for this reason."""
+    a = {e["to_id"]: e for e in tools["cwe_related"]("CWE-789", ancestors=True)["edges"]}
+    b = {e["to_id"]: e for e in tools["cwe_related"]("CWE-120", ancestors=True)["edges"]}
+    shared = set(a) & set(b)
+    assert shared == {"CWE-664"}
+    assert a["CWE-664"]["abstraction"] == "Pillar"
+
+
+def test_cwe_related_on_a_category_returns_its_members(tools):
+    edges = tools["cwe_related"]("CWE-320")["edges"]
+    assert {e["rel"] for e in edges} == {"cwe_member"}
+    assert len(edges) == 4
+
+
+def test_cwe_related_keeps_edges_whose_target_is_not_in_the_catalogue(tools):
+    """The count above is of links rows, not of resolved entries. All four of
+    CWE-320's Has_Member targets are outside this catalogue, so an inner join to
+    read abstraction would answer 'no members' for an Obsolete Category that eight
+    ASVS requirements cite -- the answer a caller is trying to get away from."""
+    edges = tools["cwe_related"]("CWE-320")["edges"]
+    assert {e["to_id"] for e in edges} == {"CWE-322", "CWE-323", "CWE-324", "CWE-798"}
+    assert all(e["abstraction"] is None for e in edges)
+    resolved = [e for e in edges if "error" not in tools["cwe_get"](e["to_id"])]
+    assert resolved == [], "fixture premise: none of CWE-320's members is ingested"
+
+
+def test_cwe_related_on_an_unknown_id_errors_rather_than_reporting_no_edges(tools):
+    """An empty edge list for a hallucinated id reads as 'exists, unrelated'."""
+    r = tools["cwe_related"]("CWE-99999")
+    assert "error" in r
+    assert "CWE-99999" in r["error"]
+    assert "edges" not in r
+
+
+def test_no_cwe_tool_emits_a_refinement_verdict(tools):
+    """A graph check would have answered 'related' for CWE-789 vs CWE-120, the
+    exact case that motivated this work -- and a verdict from a tool is trusted
+    in a way an agent's own reasoning is not. The tools supply facts.
+
+    Strengthened from the docstring-word check this replaced, which passed for any
+    docstring containing 'not'. What is pinned instead is the response: the key
+    sets are exact, so no derived judgement of any name can appear beside the
+    facts, and the one docstring sentence that hands the call back to the caller
+    must survive a rewrite."""
+    responses = [
+        tools["cwe_get"]("CWE-789"),
+        tools["cwe_get"]("CWE-320"),
+        tools["cwe_related"]("CWE-789"),
+        tools["cwe_related"]("CWE-789", ancestors=True),
+        tools["cwe_related"]("CWE-320"),
+    ]
+    for r in responses:
+        assert set(r) <= {
+            "entry_id",
+            "kind",
+            "name",
+            "abstraction",
+            "status",
+            "description",
+            "extended_description",
+            "ancestors",
+            "edges",
+        }, f"unexpected key beside the facts: {sorted(set(r))}"
+        for edge in r.get("edges", []):
+            assert set(edge) == {"rel", "to_kind", "to_id", "abstraction", "source"}
+    doc = " ".join(tools["cwe_related"].__doc__.lower().split())
+    assert "your judgement, not this tool's" in doc
+    assert "a shared pillar means almost nothing" in doc
+
+
+def test_the_kb_catalogue_rels_match_what_the_ingest_writes():
+    """core must not import ingest, so the three rel names are written twice. If
+    they drift, catalogue_related returns nothing rather than failing."""
+    from owasp_kb.core.kb import CATALOGUE_CHILD_REL, CATALOGUE_RELS
+    from owasp_kb.ingest.packs.cwe import CWE_CHILD, CWE_RELS
+
+    assert set(CATALOGUE_RELS) == set(CWE_RELS)
+    assert CATALOGUE_CHILD_REL == CWE_CHILD
+
+
 # -- size discipline --------------------------------------------------
 
 
@@ -298,6 +459,8 @@ def test_no_tool_response_exceeds_the_context_ceiling(tools):
         tools["owasp_get"]("Authentication_Cheat_Sheet"),
         tools["owasp_checklist"]("asvs"),
         tools["owasp_related"]("V6.2.1"),
+        tools["cwe_get"]("CWE-1240"),  # the largest entry in the fixture catalogue
+        tools["cwe_related"]("CWE-789", ancestors=True),
     ]
     for response in responses:
         assert len(json.dumps(response)) < MAX_RESPONSE_CHARS
@@ -308,6 +471,8 @@ def test_every_response_is_json_serialisable(tools):
     json.dumps(tools["owasp_search"]("password"))
     json.dumps(tools["owasp_checklist"]("asvs"))
     json.dumps(tools["owasp_related"]("V6.2.1"))
+    json.dumps(tools["cwe_get"]("CWE-789"))
+    json.dumps(tools["cwe_related"]("CWE-789", ancestors=True))
 
 
 # -- roster -------------------------------------------------------------
