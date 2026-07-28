@@ -36,16 +36,31 @@ def _now() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
 
 
-def _text(el: ET.Element | None) -> str:
-    """Flatten an element to one line of whitespace-normalised text.
+def _flatten(el: ET.Element | None) -> str:
+    """Flatten within each block, keeping the blank line between blocks.
 
-    ``el.text`` is not enough: CWE descriptions wrap their content in nested
-    ``xhtml:p``, ``xhtml:ul`` and ``xhtml:div`` elements, so reading only the
-    direct text loses most of the description.
+    ``el.text`` is not enough: ``Extended_Description`` wraps its prose in nested
+    ``xhtml:p`` children, so reading only the direct text returns the indentation
+    before the first child and drops the description entirely.
+
+    Collapsing the whole element to a single line is also wrong. ``_split_oversized``
+    in ``core/chunking`` splits only on blank lines and otherwise returns the body as
+    one part, so a single-line flatten of a long entry becomes one oversized chunk
+    that the embedder truncates. Measured on 4.20: 12 extended descriptions exceed
+    the 512-token threshold as one line, and preserving paragraphs brings 11 of the
+    12 under it. CWE-451 stays over at a single 581-token paragraph; splitting
+    inside a paragraph would cut mid-sentence and is not worth it for one entry.
+
+    Child tails are not collected, which is safe rather than lucky: no child of any
+    Description, Extended_Description or Summary in 4.20 carries a non-whitespace
+    tail, so this loses no content anywhere in the catalogue.
     """
     if el is None:
         return ""
-    return " ".join("".join(el.itertext()).split())
+    blocks = [" ".join("".join(child.itertext()).split()) for child in el]
+    if el.text and el.text.strip():
+        blocks.insert(0, " ".join(el.text.split()))
+    return "\n\n".join(block for block in blocks if block)
 
 
 def _entry_id(raw: str | None) -> str | None:
@@ -170,8 +185,8 @@ def ingest_cwe(
         entry_id = _entry_id(weakness.get("ID"))
         if entry_id is None:
             continue
-        description = _text(weakness.find(q("Description")))
-        extended = _text(weakness.find(q("Extended_Description")))
+        description = _flatten(weakness.find(q("Description")))
+        extended = _flatten(weakness.find(q("Extended_Description")))
         chunk_id = _insert_entry_document(
             conn,
             pid,
@@ -209,7 +224,7 @@ def ingest_cwe(
         if entry_id is None:
             continue
         # A Category's prose lives in Summary; only a Weakness has a Description.
-        description = _text(category.find(q("Summary")))
+        description = _flatten(category.find(q("Summary")))
         chunk_id = _insert_entry_document(
             conn,
             pid,

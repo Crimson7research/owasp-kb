@@ -2231,6 +2231,330 @@
             <Previous_Entry_Name Date="2008-10-14">Unbounded Transfer ('Classic Buffer Overflow')</Previous_Entry_Name>
          </Content_History>
       </Weakness>
+      <Weakness ID="1240" Name="Use of a Cryptographic Primitive with a Risky Implementation" Abstraction="Base" Structure="Simple" Status="Draft">
+            <Description>To fulfill the need for a cryptographic primitive, the product implements a cryptographic algorithm using a non-standard, unproven, or disallowed/non-compliant cryptographic implementation.</Description>
+            <Extended_Description>
+	      <html:p>Cryptographic protocols and systems depend on cryptographic primitives (and associated algorithms) as their basic building blocks. Some common examples of primitives are digital signatures, one-way hash functions, ciphers, and public key cryptography; however, the notion of "primitive" can vary depending on point of view. See "Terminology Notes" for further explanation of some concepts.</html:p>
+	      <html:p>Cryptographic primitives are defined to accomplish one very specific task in a precisely defined and mathematically reliable fashion. For example, suppose that for a specific cryptographic primitive (such as an encryption routine), the consensus is that the primitive can only be broken after trying out N different inputs (where the larger the value of N, the stronger the cryptography). For an encryption scheme like AES-256, one would expect N to be so large as to be infeasible to execute in a reasonable amount of time.</html:p>
+	      <html:p>If a vulnerability is ever found that shows that one can break a cryptographic primitive in significantly less than the expected number of attempts, then that primitive is considered weakened (or sometimes in extreme cases, colloquially it is "broken"). As a result, anything using this cryptographic primitive would now be considered insecure or risky. Thus, even breaking or weakening a seemingly small cryptographic primitive has the potential to render the whole system vulnerable, due to its reliance on the primitive. A historical example can be found in TLS when using DES. One would colloquially call DES the cryptographic primitive for transport encryption in this version of TLS. In the past, DES was considered strong, because no weaknesses were found in it; importantly, DES has a key length of 56 bits. Trying N=2^56 keys was considered impractical for most actors. Unfortunately, attacking a system with 56-bit keys is now practical via brute force, which makes defeating DES encryption practical. It is now practical for an adversary to read any information sent under this version of TLS and use this information to attack the system. As a result, it can be claimed that this use of TLS is weak, and that any system depending on TLS with DES could potentially render the entire system vulnerable to attack.</html:p>
+
+	      <html:p>Cryptographic primitives and associated algorithms are only considered safe after extensive research and review from experienced cryptographers from academia, industry, and government entities looking for any possible flaws. Furthermore, cryptographic primitives and associated algorithms are frequently reevaluated for safety when new mathematical and attack techniques are discovered.  As a result and over time, even well-known cryptographic primitives can lose their compliance status with the discovery of novel attacks that might either defeat the algorithm or reduce its robustness significantly.</html:p>
+	      <html:p>If ad-hoc cryptographic primitives are implemented, it is almost certain that the implementation will be vulnerable to attacks that are well understood by cryptographers, resulting in the exposure of sensitive information and other consequences.</html:p>
+	      <html:p>This weakness is even more difficult to manage for hardware-implemented deployment of cryptographic algorithms. First, because hardware is not patchable as easily as software, any flaw discovered after release and production typically cannot be fixed without a recall of the product. Secondly, the hardware product is often expected to work for years, during which time computation power available to the attacker only increases. Therefore, for hardware implementations of cryptographic primitives, it is absolutely essential that only strong, proven cryptographic primitives are used.</html:p>
+	    </Extended_Description>
+            <Related_Weaknesses>
+              <Related_Weakness Nature="ChildOf" CWE_ID="327" View_ID="1000" Ordinal="Primary" />
+            </Related_Weaknesses>
+		 <Weakness_Ordinalities>
+            <Weakness_Ordinality>
+               <Ordinality>Primary</Ordinality>
+            </Weakness_Ordinality>
+		 </Weakness_Ordinalities>
+            <Applicable_Platforms>
+                <Language Class="Not Language-Specific" Prevalence="Undetermined" />
+                <Operating_System Class="Not OS-Specific" Prevalence="Undetermined" />
+                <Architecture Class="Not Architecture-Specific" Prevalence="Undetermined" />
+                <Technology Class="System on Chip" Prevalence="Undetermined" />
+            </Applicable_Platforms>
+			<Modes_Of_Introduction>
+				<Introduction>
+					<Phase>Architecture and Design</Phase>
+					<Note>This weakness is primarily introduced during the architecture and design phase as risky primitives are included.</Note>
+				</Introduction>
+				<Introduction>
+					<Phase>Implementation</Phase>
+					<Note>Even in cases where the Architectural phase properly specifies a cryptographically secure design, the design may be changed during implementation due to unforeseen constraints.</Note>
+				</Introduction>
+			</Modes_Of_Introduction>
+			<Common_Consequences>
+				<Consequence>
+					<Scope>Confidentiality</Scope>
+					<Impact>Read Application Data</Impact>
+					<Likelihood>High</Likelihood>
+					<Note>Incorrect usage of crypto primitives could render the supposedly encrypted data as unencrypted plaintext in the worst case.</Note>
+				</Consequence>
+			</Common_Consequences>
+	    <Detection_Methods>
+	      <Detection_Method>
+		<Method>Architecture or Design Review</Method>
+		<Description>Review requirements, documentation, and product design to ensure that primitives are consistent with the strongest-available recommendations from trusted parties. If the product appears to be using custom or proprietary implementations that have not had sufficient public review and approval, then this is a significant concern.</Description>
+		<Effectiveness>High</Effectiveness>
+	      </Detection_Method>
+	      <Detection_Method>
+		<Method>Manual Analysis</Method>
+		<Description>Analyze the product to ensure that implementations for each primitive do not contain any known vulnerabilities and are not using any known-weak algorithms, including MD4, MD5, SHA1, DES, etc.</Description>
+		<Effectiveness>Moderate</Effectiveness>
+	      </Detection_Method>
+	      <Detection_Method>
+		<Method>Dynamic Analysis with Manual Results Interpretation</Method>
+		<Description>For hardware, during the implementation (pre-Silicon / post-Silicon) phase, dynamic tests should be done to ensure that outputs from cryptographic routines are indeed working properly, such as test vectors provided by NIST [REF-1236].</Description>
+		<Effectiveness>Moderate</Effectiveness>
+	      </Detection_Method>
+	      <Detection_Method>
+		<Method>Dynamic Analysis with Manual Results Interpretation</Method>
+		<Description>
+		It needs to be determined if the output of a cryptographic primitive is lacking entropy, which is one clear sign that something went wrong with the crypto implementation. There exist many methods of measuring the entropy of a bytestream, from sophisticated ones (like calculating Shannon's entropy of a sequence of characters) to crude ones (by compressing it and comparing the size of the original bytestream vs. the compressed - a truly random byte stream should not be compressible and hence the uncompressed and compressed bytestreams should be nearly identical in size).</Description>
+		<Effectiveness>Moderate</Effectiveness>
+	      </Detection_Method>
+	    </Detection_Methods>
+	    <Potential_Mitigations>
+		<Mitigation Mitigation_ID="MIT-55">
+		  <Phase>Requirements</Phase>
+		  <Description>
+		      Require compliance with the strongest-available recommendations from trusted parties, and require that compliance must be kept up-to-date, since recommendations evolve over time. For example, US government systems require FIPS 140-3 certification, which supersedes FIPS 140-2 [REF-1192] [REF-267].
+		  </Description>
+		  <Effectiveness>High</Effectiveness>
+		</Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Description>
+		      Ensure that the architecture/design uses the strongest-available primitives and algorithms from trusted parties. For example, US government systems require FIPS 140-3 certification, which supersedes FIPS 140-2 [REF-1192] [REF-267].
+		  </Description>
+		  <Effectiveness>High</Effectiveness>
+		</Mitigation>
+		<Mitigation Mitigation_ID="MIT-54">
+		  <Phase>Architecture and Design</Phase>
+		  <Description>
+		      Do not develop custom or private cryptographic algorithms. They will likely be exposed to attacks that are well-understood by cryptographers. As with all cryptographic mechanisms, the source code should be available for analysis. If the algorithm may be compromised when attackers find out how it works, then it is especially weak.
+		  </Description>
+		  <Effectiveness>Discouraged Common Practice</Effectiveness>
+		</Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Description>
+		      Try not to use cryptographic algorithms in novel ways or with new modes of operation even when you "know" it is secure. For example, using SHA-2 chaining to create a 1-time pad for encryption might sound like a good idea, but one should not do this.
+		  </Description>
+		  <Effectiveness>Discouraged Common Practice</Effectiveness>
+		</Mitigation>
+        <Mitigation Mitigation_ID="MIT-52">
+          <Phase>Architecture and Design</Phase>
+          <Description>Ensure that the design can replace one cryptographic primitive or algorithm with another in the next generation ("cryptographic agility"). Where possible, use wrappers to make the interfaces uniform. This will make it easier to upgrade to stronger algorithms. This is especially important for hardware, which can be more difficult to upgrade quickly than software; design the hardware at a replaceable block level.</Description>
+		  <Effectiveness>Defense in Depth</Effectiveness>
+        </Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Description>
+		      Do not use outdated or non-compliant cryptography algorithms. Some older algorithms, once thought to require a billion years of computing time, can now be broken in days or hours. This includes MD4, MD5, SHA1, DES, and other algorithms that were once regarded as strong [REF-267].
+		  </Description>
+		  <Effectiveness>Discouraged Common Practice</Effectiveness>
+		</Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Phase>Implementation</Phase>
+		  <Description>
+		      Do not use a linear-feedback shift register (LFSR) or other legacy methods as a substitute for an accepted and standard Random Number Generator.
+		  </Description>
+		  <Effectiveness>Discouraged Common Practice</Effectiveness>
+		</Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Phase>Implementation</Phase>
+		  <Description>
+		      Do not use a checksum as a substitute for a cryptographically generated hash.
+		  </Description>
+		  <Effectiveness>Discouraged Common Practice</Effectiveness>
+		</Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Strategy>Libraries or Frameworks</Strategy>
+		  <Description>
+		      Use a vetted cryptographic library or framework. Industry-standard implementations will save development time and are more likely to avoid errors that can occur during implementation of cryptographic algorithms. However, the library/framework could be used incorrectly during implementation.
+		  </Description>
+		  <Effectiveness>High</Effectiveness>
+		</Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Phase>Implementation</Phase>
+		  <Description>
+		      When using industry-approved techniques, use them correctly. Don't cut corners by skipping resource-intensive steps (CWE-325). These steps are often essential for the prevention of common attacks.
+		  </Description>
+		  <Effectiveness>Moderate</Effectiveness>
+		</Mitigation>
+		<Mitigation>
+		  <Phase>Architecture and Design</Phase>
+		  <Phase>Implementation</Phase>
+		  <Description>
+		      Do not store keys in areas accessible to untrusted agents. Carefully manage and protect the cryptographic keys (see CWE-320). If the keys can be guessed or stolen, then the strength of the cryptography algorithm is irrelevant.
+		  </Description>
+		  <Effectiveness>Moderate</Effectiveness>
+		</Mitigation>
+	      </Potential_Mitigations>
+			<Demonstrative_Examples>
+				<Demonstrative_Example>
+					<Intro_Text>Re-using random values may compromise security.</Intro_Text>
+					<Example_Code Nature="Bad" Language="Other">Suppose an Encryption algorithm needs a random value for a key. Instead of using a DRNG (Deterministic Random Number Generator), the designer uses a linear-feedback shift register (LFSR) to generate the value.</Example_Code>
+					<Body_Text>While an LFSR may provide pseudo-random number generation service, the entropy (measure of randomness) of the resulting output may be less than that of an accepted DRNG (like that used in dev/urandom). Thus, using an LFSR weakens the strength of the cryptographic system, because it may be possible for an attacker to guess the LFSR output and subsequently the encryption key.</Body_Text>
+					<Example_Code Nature="Good" Language="Other">If a cryptographic algorithm expects a random number as its input, provide one. Do not provide a pseudo-random value.</Example_Code>
+				</Demonstrative_Example>
+			</Demonstrative_Examples>
+      <Observed_Examples>
+      	<Observed_Example>
+          <Reference>CVE-2020-4778</Reference>
+          <Description>software uses MD5, which is less safe than the default SHA-256 used by related products</Description>
+          <Link>https://www.cve.org/CVERecord?id=CVE-2020-4778</Link>
+      	</Observed_Example>
+            <Observed_Example>
+               <Reference>CVE-2005-2946</Reference>
+               <Description>Default configuration of product uses MD5 instead of stronger algorithms that are available, simplifying forgery of certificates.</Description>
+               <Link>https://www.cve.org/CVERecord?id=CVE-2005-2946</Link>
+            </Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2019-3907</Reference>
+		  <Description>identity card uses MD5 hash of a salt and password</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2019-3907</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2021-34687</Reference>
+		  <Description>personal key is transmitted over the network using a substitution cipher</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2021-34687</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2020-14254</Reference>
+		  <Description>product does not disable TLS-RSA cipher suites, allowing decryption of traffic if TLS 2.0 and secure ciphers are not enabled.</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2020-14254</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2019-1543</Reference>
+		  <Description>SSL/TLS library generates 16-byte nonces but reduces them to 12 byte nonces for the ChaCha20-Poly1305 cipher, converting them in a way that violates the cipher's requirements for unique nonces.</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2019-1543</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2017-9267</Reference>
+		  <Description>LDAP interface allows use of weak ciphers</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2017-9267</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2017-7971</Reference>
+		  <Description>SCADA product allows "use of outdated cipher suites"</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2017-7971</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2020-6616</Reference>
+		  <Description>Chip implementing Bluetooth uses a low-entropy PRNG instead of a hardware RNG, allowing spoofing.</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2020-6616</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2019-1715</Reference>
+		  <Description>security product has insufficient entropy in the DRBG, allowing collisions and private key discovery</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2019-1715</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2014-4192</Reference>
+		  <Description>Dual_EC_DRBG implementation in RSA toolkit does not correctly handle certain byte requests, simplifying plaintext recovery</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2014-4192</Link>
+		</Observed_Example>
+		<Observed_Example>
+		  <Reference>CVE-2007-6755</Reference>
+		  <Description>Recommendation for Dual_EC_DRBG algorithm contains point Q constants that could simplify decryption</Description>
+		  <Link>https://www.cve.org/CVERecord?id=CVE-2007-6755</Link>
+		</Observed_Example>
+      </Observed_Examples>
+         <Related_Attack_Patterns>
+            <Related_Attack_Pattern CAPEC_ID="97" />
+         </Related_Attack_Patterns>
+         <References>
+	   <Reference External_Reference_ID="REF-267" />
+	   <Reference External_Reference_ID="REF-1227" />
+	   <Reference External_Reference_ID="REF-1192" />
+	   <Reference External_Reference_ID="REF-1236" Section="Test Vectors" />
+         </References>
+         <Mapping_Notes>
+            <Usage>Allowed</Usage>
+            <Rationale>This CWE entry is at the Base level of abstraction, which is a preferred level of abstraction for mapping to the root causes of vulnerabilities.</Rationale>
+            <Comments>Carefully read both the name and description to ensure that this mapping is an appropriate fit. Do not try to 'force' a mapping to a lower-level Base/Variant simply to comply with this preferred level of abstraction.</Comments>
+            <Reasons>
+               <Reason Type="Acceptable-Use" />
+            </Reasons>
+         </Mapping_Notes>
+         <Notes>
+	   <Note Type="Terminology">
+	     <html:p>
+	     Terminology for cryptography varies widely, from informal and colloquial to mathematically-defined, with different precision and formalism depending on whether the stakeholder is a developer, cryptologist, etc. Yet there is a need for CWE to be self-consistent while remaining understandable and acceptable to multiple audiences.</html:p>
+	     <html:p>As of CWE 4.6, CWE terminology around "primitives" and "algorithms" is emerging as shown by the following example, subject to future consultation and agreement within the CWE and cryptography communities. Suppose one wishes to send encrypted data using a CLI tool such as OpenSSL. One might choose to use AES with a 256-bit key and require tamper protection (GCM mode, for instance). For compatibility's sake, one might also choose the ciphertext to be formatted to the PKCS#5 standard. In this case, the "cryptographic system" would be AES-256-GCM with PKCS#5 formatting. The "cryptographic function" would be AES-256 in the GCM mode of operation, and the "algorithm" would be AES. Colloquially, one would say that AES (and sometimes AES-256) is the "cryptographic primitive," because it is the algorithm that realizes the concept of symmetric encryption (without modes of operation or other protocol related modifications). In practice, developers and architects typically refer to base cryptographic algorithms (AES, SHA, etc.) as cryptographic primitives.</html:p>
+	   </Note>
+           <Note Type="Maintenance">Since CWE 4.4, various cryptography-related entries, including CWE-327 and CWE-1240, have been slated for extensive research, analysis, and community consultation to define consistent terminology, improve relationships, and reduce overlap or duplication. As of CWE 4.6, this work is still ongoing.</Note>
+         </Notes>
+			<Content_History>
+                <Submission>
+                    <Submission_Name>Arun Kanuparthi, Hareesh Khattri, Parbati Kumar Manna, Narasimha Kumar V Mangipudi</Submission_Name>
+                    <Submission_Organization>Intel Corporation</Submission_Organization>
+					<Submission_Date>2020-02-10</Submission_Date>
+					<Submission_Version>4.0</Submission_Version>
+					<Submission_ReleaseDate>2020-02-24</Submission_ReleaseDate>
+                </Submission>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2020-08-20</Modification_Date>
+					<Modification_Version>4.2</Modification_Version>
+					<Modification_ReleaseDate>2020-08-20</Modification_ReleaseDate>
+					<Modification_Comment>updated Background_Details, Common_Consequences, Demonstrative_Examples, Description, Maintenance_Notes, Modes_of_Introduction, Potential_Mitigations, Related_Attack_Patterns, Research_Gaps</Modification_Comment>
+				</Modification>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2021-07-20</Modification_Date>
+					<Modification_Version>4.5</Modification_Version>
+					<Modification_ReleaseDate>2021-07-20</Modification_ReleaseDate>
+					<Modification_Comment>updated Maintenance_Notes, Research_Gaps</Modification_Comment>
+				</Modification>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2021-10-28</Modification_Date>
+					<Modification_Version>4.6</Modification_Version>
+					<Modification_ReleaseDate>2021-10-28</Modification_ReleaseDate>
+					<Modification_Comment>updated Background_Details, Demonstrative_Examples, Description, Detection_Factors, Maintenance_Notes, Name, Observed_Examples, Potential_Mitigations, References, Relationships, Terminology_Notes, Weakness_Ordinalities</Modification_Comment>
+				</Modification>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2023-04-27</Modification_Date>
+					<Modification_Version>4.11</Modification_Version>
+					<Modification_ReleaseDate>2023-04-27</Modification_ReleaseDate>
+					<Modification_Comment>updated References, Relationships</Modification_Comment>
+				</Modification>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2023-06-29</Modification_Date>
+					<Modification_Version>4.12</Modification_Version>
+					<Modification_ReleaseDate>2023-06-29</Modification_ReleaseDate>
+					<Modification_Comment>updated Mapping_Notes</Modification_Comment>
+				</Modification>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2025-04-03</Modification_Date>
+					<Modification_Version>4.17</Modification_Version>
+					<Modification_ReleaseDate>2025-04-03</Modification_ReleaseDate>
+					<Modification_Comment>updated Demonstrative_Examples</Modification_Comment>
+				</Modification>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2025-09-09</Modification_Date>
+					<Modification_Version>4.18</Modification_Version>
+					<Modification_ReleaseDate>2025-09-09</Modification_ReleaseDate>
+					<Modification_Comment>updated References</Modification_Comment>
+				</Modification>
+				<Modification>
+					<Modification_Name>CWE Content Team</Modification_Name>
+					<Modification_Organization>MITRE</Modification_Organization>
+					<Modification_Date>2025-12-11</Modification_Date>
+					<Modification_Version>4.19</Modification_Version>
+					<Modification_ReleaseDate>2025-12-11</Modification_ReleaseDate>
+					<Modification_Comment>updated Relationships</Modification_Comment>
+				</Modification>
+				<Contribution Type="Content">
+				  <Contribution_Name>Parbati K. Manna</Contribution_Name>
+				  <Contribution_Organization>Intel Corporation</Contribution_Organization>
+				  <Contribution_Date>2021-10-18</Contribution_Date>
+				  <Contribution_Comment>provided detection methods and observed examples</Contribution_Comment>
+				</Contribution>
+			<Previous_Entry_Name Date="2021-10-28">Use of a Risky Cryptographic Primitive</Previous_Entry_Name>
+            </Content_History>
+        </Weakness>
       <Weakness ID="400" Name="Uncontrolled Resource Consumption" Abstraction="Class" Structure="Simple" Status="Draft" Diagram="/data/images/CWE-400-Diagram.png">
          <Description>The product does not properly control the allocation and maintenance of a limited resource.</Description>
          <Related_Weaknesses>
