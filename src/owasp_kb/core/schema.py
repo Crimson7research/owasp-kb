@@ -78,6 +78,21 @@ CREATE TABLE IF NOT EXISTS requirements (
 CREATE INDEX IF NOT EXISTS idx_req_chapter ON requirements(pack_id, chapter_id);
 CREATE INDEX IF NOT EXISTS idx_req_level ON requirements(pack_id, level);
 
+CREATE TABLE IF NOT EXISTS catalogue_entries (
+    id                   INTEGER PRIMARY KEY,
+    pack_id              INTEGER NOT NULL REFERENCES packs(id),
+    entry_id             TEXT NOT NULL,
+    kind                 TEXT NOT NULL,
+    name                 TEXT NOT NULL,
+    abstraction          TEXT,
+    status               TEXT NOT NULL,
+    description          TEXT NOT NULL,
+    extended_description TEXT NOT NULL DEFAULT '',
+    chunk_id             INTEGER REFERENCES chunks(id),
+    UNIQUE (pack_id, entry_id)
+);
+CREATE INDEX IF NOT EXISTS idx_catalogue_kind ON catalogue_entries(pack_id, kind);
+
 CREATE TABLE IF NOT EXISTS links (
     from_kind TEXT NOT NULL,
     from_id   TEXT NOT NULL,
