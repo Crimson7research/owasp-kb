@@ -165,6 +165,22 @@ def test_kb_info_exposes_link_coverage(tools):
     assert coverage["guidance"]["total_requirements"] == 3
 
 
+def test_kb_info_reports_the_catalogue_pack_type_and_license(tools):
+    """Pins the projection, not the build.
+
+    kb_info is how a caller learns the catalogue is queryable at all, and which
+    version a CWE citation resolves against. Dropping `type` or `license` from the
+    dict would leave every other kb_info test green. Whether a *real* build
+    contains the pack is a different question, asserted in tests/ingest/test_build.py
+    and against the built indexes in tests/test_retrieval_quality.py -- this
+    fixture ingests the catalogue by hand, so it cannot answer it.
+    """
+    packs = {p["name"]: p for p in tools["kb_info"]()["packs"]}
+    assert packs["cwe"]["type"] == "catalogue"
+    assert packs["cwe"]["version"] == "4.20"
+    assert "CWE" in packs["cwe"]["license"]
+
+
 def test_kb_info_exposes_versions_for_citation(tools):
     versions = {p["name"]: p["version"] for p in tools["kb_info"]()["packs"]}
     assert versions["asvs"] == "5.0.0"
