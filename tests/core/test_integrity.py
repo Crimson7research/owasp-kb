@@ -6,6 +6,7 @@ from owasp_kb.core.schema import create_schema
 from owasp_kb.ingest.links import ingest_guidance_links
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
+from owasp_kb.ingest.packs.cwe import ingest_cwe
 
 
 @pytest.fixture
@@ -30,6 +31,11 @@ def _add_edges(conn, rel, count, source="test"):
         [(f"V1.1.{i}", f"T{i}", rel, source) for i in range(count)],
     )
     conn.commit()
+
+
+def _ingest_cwe_fixture(conn):
+    """Populate the catalogue so the CWE-aware checks are active."""
+    ingest_cwe(conn, "tests/fixtures/cwec_sample.xml", version="4.20", license="LicenseRef-CWE-TOU")
 
 
 def _all_rels(conn):
@@ -137,6 +143,86 @@ def test_a_collapsed_relationship_count_is_flagged(conn):
     _add_edges(conn, "nist", 20)
     failures = run_checks(conn, expected_requirements=3, check_edge_floors=True)
     assert any("only 2 'cwe' links" in f for f in failures)
+
+
+def test_a_cwe_mapping_pointing_at_nothing_is_reported(conn):
+    """Four ASVS-mapped ids turned out to be Categories rather than Weaknesses.
+    A heuristic missed all four; only resolving every edge finds that."""
+    _ingest_cwe_fixture(conn)
+    conn.execute(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
+        "VALUES ('requirement','V1.1.1','cwe','CWE-99999','cwe','test')"
+    )
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    assert any("CWE-99999" in f for f in failures)
+
+
+def test_a_cwe_mapping_that_resolves_is_not_reported(conn):
+    _ingest_cwe_fixture(conn)
+    conn.execute(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
+        "VALUES ('requirement','V1.1.1','cwe','CWE-789','cwe','test')"
+    )
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    assert not any("catalogue entry" in f for f in failures)
+
+
+def test_a_dangling_intra_cwe_edge_is_not_reported(conn):
+    """rel='cwe' is the ASVS-to-CWE mapping. cwe_child/cwe_peer/cwe_member are
+    CWE's own graph, and those legitimately point outside any ingested subset --
+    measured against tests/fixtures/cwec_sample.xml, all four of CWE-320's
+    Has_Member targets are outside the fixture, all fifteen of CWE-255's, plus
+    seven Related_Weakness edges from the kept weaknesses. Widening the check to
+    rel LIKE 'cwe%' turns 26 correct rows (23 distinct ids) into a build failure.
+    """
+    _ingest_cwe_fixture(conn)
+    conn.execute(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
+        "VALUES ('cwe','CWE-789','cwe','CWE-99999','cwe_child','test')"
+    )
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    # Both halves are needed. The report names only the first five ids, and
+    # CWE-99999 sorts outside the five that a widened check surfaces, so the id
+    # assertion on its own stays green while the check fires on all 24.
+    assert not any("catalogue entry" in f for f in failures)
+    assert not any("CWE-99999" in f for f in failures)
+
+
+def test_the_check_is_skipped_when_the_catalogue_is_absent(conn):
+    """A lite build without the CWE pack must not fail on a mapping it cannot
+    resolve. The ASVS-to-CWE links exist there regardless of the pack."""
+    conn.execute(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
+        "VALUES ('requirement','V1.1.1','cwe','CWE-99999','cwe','test')"
+    )
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    assert not any("catalogue entry" in f for f in failures)
+    assert not any("CWE-99999" in f for f in failures)
+
+
+def test_zero_cwe_child_edges_is_an_error_when_the_catalogue_is_present(conn):
+    """A total collapse of Related_Weaknesses parsing produces no cwe_child rows
+    while every entry still lands, so nothing else in this module notices."""
+    _ingest_cwe_fixture(conn)
+    conn.execute("DELETE FROM links WHERE rel = 'cwe_child'")
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    assert any("cwe_child" in f and "zero edges" in f for f in failures)
+
+
+def test_the_cwe_graph_rels_are_present_in_the_fixture_catalogue(conn):
+    _ingest_cwe_fixture(conn)
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    for rel in ("cwe_child", "cwe_peer", "cwe_member"):
+        assert not any(rel in f and "zero edges" in f for f in failures), rel
+
+
+def test_a_catalogue_less_index_is_not_asked_for_the_cwe_graph_rels(conn):
+    """The three rels only exist when the CWE pack is ingested. Requiring them
+    unconditionally would fail every build that omits the pack."""
+    _all_rels(conn)
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    for rel in ("cwe_child", "cwe_peer", "cwe_member"):
+        assert not any(rel in f for f in failures), rel
 
 
 def test_detects_too_many_oversized_chunks(conn):
