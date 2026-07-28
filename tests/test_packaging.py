@@ -592,7 +592,12 @@ def test_the_repo_carries_a_cwe_license_text():
 def _dockerfile_targets(text: str) -> dict[str, str]:
     """Split a Dockerfile into {target_name: body}. Both image variants must
     carry the licenses; a whole-file substring search cannot tell one from two,
-    because the two blocks are identical."""
+    because the two blocks are identical.
+
+    Blind spot: a `FROM <image>` line with no `AS <name>` does not match, so its
+    lines silently fold into the previous named stage instead of raising. Every
+    stage in this Dockerfile is named, so this has not been exercised -- do not
+    trust this helper on a Dockerfile with an unnamed stage without checking."""
     blocks: dict[str, str] = {}
     name = None
     for line in text.splitlines():
@@ -619,8 +624,8 @@ def test_the_dockerfile_ships_every_license_text(target_name):
     dockerfile = Path("docker/Dockerfile").read_text()
     targets = _dockerfile_targets(dockerfile)
     assert {"lite", "full"} <= targets.keys(), (
-        "the target parser found neither block -- an empty parse would make "
-        "every per-target assertion below vacuously true"
+        "the target parser found neither block -- without this, a missing stage "
+        "fails on `targets[target_name]` with a bare KeyError naming nothing useful"
     )
     body = targets[target_name]
 
