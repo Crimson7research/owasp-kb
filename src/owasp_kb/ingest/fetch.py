@@ -82,11 +82,20 @@ def fetch_url_pack(pack: LockedPack, dest: Path) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     archive = out / Path(pack.url).name
     _download(pack.url, archive)
-    with zipfile.ZipFile(archive) as zf:
-        names = zf.namelist()
-        if len(names) != 1:
-            raise ValueError(f"expected one file in {archive.name}, found {len(names)}: {names}")
-        zf.extractall(out)
+    try:
+        with zipfile.ZipFile(archive) as zf:
+            names = zf.namelist()
+            if len(names) != 1:
+                raise ValueError(
+                    f"expected one file in {archive.name}, found {len(names)}: {names}"
+                )
+            zf.extract(names[0], out)
+    except zipfile.BadZipFile as exc:
+        # A truncated transfer or an HTML error page saved as if it were the
+        # zip both land here; name the url and the file so this is not a bare
+        # "File is not a zip file" with nothing to act on.
+        raise ValueError(f"{pack.url} did not download as a valid zip ({archive})") from exc
+    archive.unlink()  # only reached once extraction succeeded
     return out
 
 

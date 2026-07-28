@@ -34,6 +34,19 @@ def load_lock(path: str | Path) -> Lock:
     raw = yaml.safe_load(text)
     packs = {}
     for name, cfg in raw["packs"].items():
+        repo = cfg.get("repo")
+        url = cfg.get("url")
+
+        # Structural: does the pack declare exactly one source.
+        if repo is None and url is None:
+            raise ValueError(f"pack {name!r} declares neither 'repo' nor 'url'; it needs one")
+        if repo is not None and url is not None:
+            raise ValueError(
+                f"pack {name!r} declares both 'repo' and 'url'; it is ambiguous which "
+                "one fetch should use, so pick one"
+            )
+
+        # Value: is that source pinned rather than moving.
         if cfg.get("release") == "latest":
             raise ValueError(
                 f"pack {name!r} pins release 'latest', which is the ASVS bleeding-edge tag; "
@@ -43,22 +56,16 @@ def load_lock(path: str | Path) -> Lock:
         # "/latest/" directory moves as upstream republishes into it, so a
         # pinned-looking filename underneath it is still not pinned; a host
         # like latest-cdn.example.com has no bearing on reproducibility and
-        # should not be rejected.
-        if "latest" in urlsplit(str(cfg.get("url", ""))).path:
+        # should not be rejected. Only run this against packs that have a url
+        # at all -- a repo-pinned pack has none, and skipping it explicitly
+        # says so rather than relying on "latest" in "" being False.
+        if url is not None and "latest" in urlsplit(url).path:
             raise ValueError(
                 f"pack {name!r} pins a url containing 'latest', which moves as "
-                "upstream publishes; pin an explicit release or version so "
-                "citations stay reproducible"
+                "upstream publishes; pin an explicit version so citations stay "
+                "reproducible"
             )
-        repo = cfg.get("repo")
-        url = cfg.get("url")
-        if repo is None and url is None:
-            raise ValueError(f"pack {name!r} declares neither 'repo' nor 'url'; it needs one")
-        if repo is not None and url is not None:
-            raise ValueError(
-                f"pack {name!r} declares both 'repo' and 'url'; it is ambiguous which "
-                "one fetch should use, so pick one"
-            )
+
         packs[name] = LockedPack(
             name=name,
             type=cfg["type"],
