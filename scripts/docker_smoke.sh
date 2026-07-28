@@ -41,4 +41,13 @@ done
 check '5.0.0' "ASVS 5.0.0 baked in"
 check "$EXPECTED_MODE" "retrieval mode is $EXPECTED_MODE"
 
+# Lockstep: the image and the plugin shipped beside it carry one version. A
+# reconnect reports success whether or not the image is current, so drift is
+# invisible at runtime unless the two are pinned together at build time. This
+# turns a stale image into a build failure instead.
+PLUGIN_VERSION=$(python3 -c \
+  'import json,sys; print(json.load(open("plugins/owasp-kb/.claude-plugin/plugin.json"))["version"])')
+check "\"server_version\": \"$PLUGIN_VERSION\"" \
+  "server reports version $PLUGIN_VERSION, matching the plugin"
+
 echo "  PASS"

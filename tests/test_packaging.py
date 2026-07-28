@@ -556,3 +556,25 @@ def test_risk_scoring_flags_metrics_the_code_cannot_settle(skill):
     assert "CVSS" in body
     assert "cannot settle" in body
     assert "temporal or environmental" in body
+
+
+def test_one_version_governs_the_package_the_plugin_and_the_marketplace():
+    """Three version numbers disagreed -- pyproject 0.1.0, marketplace 0.3.0,
+    plugin 0.8.0 -- and nothing compared them. A reader could not tell which
+    described the thing they were running. See #13."""
+    from owasp_kb import __version__
+
+    plugin = json.loads(PLUGIN.read_text())["version"]
+    marketplace = json.loads(MARKETPLACE.read_text())["plugins"][0]["version"]
+    assert plugin == __version__, f"plugin.json {plugin} != owasp_kb {__version__}"
+    assert marketplace == __version__, f"marketplace {marketplace} != owasp_kb {__version__}"
+
+
+def test_pyproject_derives_its_version_rather_than_repeating_it():
+    """importlib.metadata reads install-time metadata, so an editable install
+    reports a stale version after a bump until reinstalled. Deriving from the
+    module attribute keeps one literal in the repo."""
+    text = Path("pyproject.toml").read_text()
+    assert 'dynamic = ["version"]' in text
+    assert 'attr = "owasp_kb.__version__"' in text
+    assert '\nversion = "' not in text, "a literal version in pyproject is a second source of truth"

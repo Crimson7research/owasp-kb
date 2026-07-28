@@ -702,3 +702,22 @@ def test_the_roster_docstring_documents_the_citation_rules(tools):
     assert "remediation_quote" in doc
     assert "cwe_corpus" in doc
     assert "must" in doc and "resolve" in doc
+
+
+def test_kb_info_reports_the_server_version(tools):
+    """A reconnect reports success while serving a stale image. This makes
+    'which build answered' one call instead of comparing a Docker timestamp
+    against git log. See #13."""
+    from owasp_kb import __version__
+
+    assert tools["kb_info"]()["server_version"] == __version__
+
+
+def test_the_server_version_matches_the_plugin(tools):
+    """Lockstep: the plugin and the server it ships beside carry one number, so a
+    mismatch at runtime means a stale image rather than an ambiguity."""
+    import json
+    from pathlib import Path
+
+    plugin = json.loads(Path("plugins/owasp-kb/.claude-plugin/plugin.json").read_text())
+    assert tools["kb_info"]()["server_version"] == plugin["version"]

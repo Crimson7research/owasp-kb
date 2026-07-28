@@ -28,18 +28,35 @@ catch the bug would have been the thing fooled by it.
 
 Each one reads state rather than trusting a message.
 
-**Is the image newer than the code?**
+**Start here: ask the server what it is.** One call, and it is the only check that interrogates
+the thing actually answering rather than something correlated with it:
+
+```
+ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__kb_info
+kb_info()   → { "server_version": "0.9.0", ... }
+```
+
+Compare that against `plugins/owasp-kb/.claude-plugin/plugin.json`. The two carry **one version in
+lockstep** — the package, the plugin and the marketplace entry all derive from `__version__` in
+`src/owasp_kb/__init__.py`, and `scripts/docker_smoke.sh` fails the build if an image reports a
+version its plugin does not. So a mismatch at runtime has exactly one meaning: the image predates
+the plugin and needs rebuilding.
+
+If they match, the server is current and you can stop. The checks below are for when they do not,
+or when you want to confirm a specific change rather than a version.
+
+**Is the image newer than the code?** Circumstantial, but it says how far behind:
 
 ```bash
 docker images owasp-kb --format '{{.Tag}}\t{{.CreatedAt}}' | grep '^full'
 git log -1 --format='%h %ad' --date=iso -- src/
 ```
 
-If the image timestamp is older than the last `src/` commit, the server is stale no matter what
-`/mcp` said. Rebuild with `make build-full` — roughly 17 minutes, because it rebuilds the index
-and embeddings before the image.
+An image older than the last `src/` commit is stale no matter what `/mcp` said. Rebuild with
+`make build-full` — roughly 17 minutes, because it rebuilds the index and embeddings first.
 
-**Is the fix actually inside the image?** Timestamps are circumstantial; this is direct.
+**Is a specific fix inside the image?** Use this when the version matches but you want to confirm
+one change — a version tells you which build answered, not which lines it contains.
 
 ```bash
 docker run --rm --network none --entrypoint python owasp-kb:full -c "

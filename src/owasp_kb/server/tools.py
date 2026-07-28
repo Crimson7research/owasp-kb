@@ -11,6 +11,7 @@ import itertools
 from collections.abc import Callable
 from typing import Any
 
+from owasp_kb import __version__
 from owasp_kb.core.kb import Kb
 from owasp_kb.core.roster import Finding, RosterError, build_roster
 
@@ -155,9 +156,15 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
 
         Also reports per-relationship link coverage: cwe and nist are
         partial because the upstream mappings predate ASVS 5.0.0, so a missing
-        edge is not evidence that none exists."""
+        edge is not evidence that none exists.
+
+        server_version is this build's version, and it is the same number the
+        plugin carries. Compare it against the plugin version you expect: a
+        reconnect reports success whether or not the image behind it is current,
+        so this is how you tell a stale server from a fresh one."""
         info = kb.info()
         return {
+            "server_version": __version__,
             "retrieval_mode": info.retrieval_mode,
             "packs": [
                 {
