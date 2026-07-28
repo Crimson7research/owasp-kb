@@ -11,3 +11,4 @@ models/
 *.sqlite
 *.sqlite-journal
 refresh-summary.txt
+.publish-scrub

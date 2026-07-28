@@ -1,0 +1,11 @@
+# Identifiers belonging to targets this project has been assessed against.
+# One per line, matched as fixed strings (not regex). Comments and blanks ignored.
+#
+# Copy to .publish-scrub (gitignored) and fill in. Add entries as you assess new
+# targets, not at publication time.
+#
+# Include:
+#   repository or project names      my-client-app
+#   distinctive symbol names         SessionAccumulator
+#   file paths that appear in output src/net/their_handler.c
+#   hostnames, internal domains      api.internal.example
