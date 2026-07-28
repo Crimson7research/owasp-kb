@@ -96,6 +96,61 @@ def test_related_description_explains_the_guidance_relationship(tools):
     assert "guidance" in doc and "cwe" in doc
 
 
+def test_no_error_message_is_quote_wrapped(tools):
+    """_error's .strip("'") never worked for any exception in this codebase, so this
+    covers all four tools that report a KeyError rather than only the new ones.
+
+    KeyError.__str__ is repr(args[0]), and repr picks DOUBLE quotes when the message
+    contains a single one -- which every message raised in core does, because they
+    all embed a value with !r. So the strip removed nothing and owasp_outline,
+    owasp_get, owasp_search and owasp_roster have all been shipping
+    '"unknown doc_key ..."' with the quotes in it. Nothing caught that, because all
+    seventeen error assertions in this file are substring checks."""
+    errors = [
+        tools["owasp_outline"]("Authentication_Cheatsheet"),
+        tools["owasp_get"]("Authentication_Cheat_Sheet", anchor="nope"),
+        tools["owasp_search"]("password", pack="nope"),
+        tools["owasp_checklist"]("cheatsheets"),
+        tools["owasp_checklist"]("asvs", level="2", level_exact="2"),
+        tools["owasp_roster"](pack="asvs", chapter_states={"V1": "APPLIES"}, findings=[]),
+        tools["cwe_get"]("CWE-99999"),
+        tools["cwe_related"]("CWE-99999"),
+    ]
+    for r in errors:
+        message = r["error"]
+        assert message, r
+        assert message[0] not in "\"'" and message[-1] not in "\"'", message
+
+
+def test_cwe_related_description_states_when_to_call_it(tools):
+    """This module's opening rule: an agent decides whether to call a tool from its
+    description, and a description that reads like a noun gets skipped -- observed,
+    not hypothesised. cwe_related opened with a noun phrase and was the only tool of
+    the ten with no trigger, which matters most for this one: the design hands the
+    refinement-versus-substitution judgement to the agent and gives it exactly one
+    tool for gathering the evidence, so a tool it does not reach for is a tool that
+    does not exist."""
+    doc = " ".join(tools["cwe_related"].__doc__.lower().split())
+    assert "call this before claiming" in doc
+    assert "refines, substitutes for, or is unrelated to" in doc
+    assert "ancestors=true on both ids" in doc
+
+
+def test_cwe_search_description_warns_that_rank_is_not_confidence(tools):
+    """Measured over the fixture, ranks 2 and 3 are bit-identical at
+    -4.680477790406414 and order on chunk id alone, and BM25 IDF is corpus-global so
+    unrelated fixture edits move the order. 'Returns citable ids' on its own invites
+    taking hits[0], and a model reading rank as confidence cites the wrong weakness
+    in the one workflow where nothing else checks it.
+
+    limit is also asserted because it was the only parameter in this module
+    documented nowhere."""
+    doc = " ".join(tools["cwe_search"].__doc__.lower().split())
+    assert "near-ties are common" in doc
+    assert "not on rank" in doc
+    assert "limit:" in doc
+
+
 # -- kb_info ----------------------------------------------------------
 
 
@@ -292,7 +347,7 @@ def test_related_with_edges_carries_no_note(tools):
     assert "note" not in result
 
 
-# -- cwe --------------------------------------------------------------
+# -- cwe_get ----------------------------------------------------------
 
 
 def test_cwe_get_returns_the_weakness(tools):
@@ -321,6 +376,9 @@ def test_cwe_get_on_an_unknown_id_errors_and_names_it(tools):
     r = tools["cwe_get"]("CWE-99999")
     assert "error" in r
     assert "CWE-99999" in r["error"]
+
+
+# -- cwe_related ------------------------------------------------------
 
 
 def test_cwe_related_returns_direct_edges_with_abstraction(tools):
@@ -459,6 +517,9 @@ def test_no_cwe_tool_emits_a_refinement_verdict(tools):
     assert "a shared pillar means almost nothing" in doc
 
 
+# -- cwe_search -------------------------------------------------------
+
+
 def test_cwe_search_finds_the_weakness_that_names_the_defect(tools):
     """Strengthened from asserting that some hit's id starts with 'CWE-', which
     passed for any CWE entry at all, including a wrong one. CWE-770 'Allocation of
@@ -516,6 +577,9 @@ def test_cwe_search_reports_a_miss_as_a_message_rather_than_an_empty_result(tool
     assert "no match" in r["message"].lower()
     assert "cwe" in r["message"].lower()
     assert "error" not in r
+
+
+# -- ingest contract --------------------------------------------------
 
 
 def test_the_searched_pack_name_matches_what_the_ingest_writes():

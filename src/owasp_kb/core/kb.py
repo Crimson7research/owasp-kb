@@ -359,6 +359,11 @@ class Kb:
         happens to have no relationships. Kb.related is deliberately the opposite:
         for a requirement id, no edges is a real answer about the mapping.
         """
+        # Called for its KeyError, nothing else: an id absent from the catalogue must
+        # not come back as an entry that happens to have no relationships. Deleting
+        # this line reverts the contract to whatever each caller does about it, which
+        # is the drift consolidating it here ended. Pinned by
+        # test_catalogue_related_on_an_unknown_id_raises_rather_than_returning_no_edges.
         self.catalogue_entry(entry_id)
         if ancestors:
             return self._catalogue_ancestors(entry_id)
@@ -405,8 +410,8 @@ class Kb:
     def _catalogue_ancestors(self, entry_id: str) -> CatalogueGraph:
         """Breadth-first over cwe_child, nearest ancestors first.
 
-        A frontier left non-empty when the cap runs out means ancestors were not
-        walked, and that is reported rather than swallowed: see MAX_ANCESTOR_DEPTH.
+        Ancestors the cap stopped the walk from reaching are reported rather than
+        swallowed: see MAX_ANCESTOR_DEPTH.
         """
         edges: list[RelatedEdge] = []
         visited = {entry_id}
@@ -422,4 +427,15 @@ class Kb:
                 visited.add(edge.to_id)
                 edges.append(edge)
                 frontier.append(edge.to_id)
-        return CatalogueGraph(edges=edges, truncated=bool(frontier))
+        # bool(frontier) would over-report by one level: what it leaves are nodes
+        # discovered but not expanded, and a chain of exactly MAX_ANCESTOR_DEPTH edges
+        # ends there with nothing above it. Flagging that complete chain as truncated
+        # tells a caller to discard a sound comparison -- this flag's own harm, in
+        # reverse. So one more query, in a branch no published chain reaches, and the
+        # flag means what both docstrings say it means. A frontier whose only parents
+        # are already visited is a cycle closing, not an ancestor missed.
+        unexpanded = self._catalogue_edges(frontier, rels=(CATALOGUE_CHILD_REL,))
+        return CatalogueGraph(
+            edges=edges,
+            truncated=any(edge.to_id not in visited for edge in unexpanded),
+        )

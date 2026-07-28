@@ -100,9 +100,17 @@ def _truncate(text: str, limit: int) -> str:
 def _error(exc: Exception) -> dict:
     """Core raises with actionable messages; surface them as plain strings.
 
-    KeyError stringifies with surrounding quotes, which reads badly to an agent.
+    KeyError.__str__ is repr(args[0]), which wraps the message in quotes -- and in
+    double quotes whenever the message itself contains a single one, which every
+    message raised here does, because they all embed a value with !r. A
+    ``.strip("'")`` therefore stripped nothing at any of the six raise sites, and
+    every KeyError this module reported has shipped double-quote-wrapped. So read
+    the argument rather than trying to strip whichever quoting repr chose.
+
+    Pinned by test_no_error_message_is_quote_wrapped.
     """
-    return {"error": str(exc).strip("'")}
+    message = exc.args[0] if isinstance(exc, KeyError) and len(exc.args) == 1 else str(exc)
+    return {"error": str(message)}
 
 
 def _grouped(rows) -> list[dict]:
@@ -346,7 +354,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         return response
 
     def cwe_get(entry_id: str) -> dict:
-        """Look up one CWE weakness or category by id — its name, abstraction,
+        """Look up one CWE weakness or category by id -- its name, abstraction,
         status and description.
 
         Call this before citing a CWE id that OWASP's ASVS mapping does not
@@ -383,7 +391,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
     def cwe_search(query: str, limit: int = 8) -> dict:
         """Search the CWE catalogue by describing a weakness in your own words.
 
-        Use this when you know what the defect is but not which CWE names it —
+        Use this when you know what the defect is but not which CWE names it --
         for instance when OWASP's mapping is silent for a requirement, which it
         is for 141 of 345. Returns citable ids; a miss comes back as an empty hit
         list WITH a message saying the query found nothing, because 'no results'
@@ -391,6 +399,14 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
 
         entry_id on each hit is what you cite, and cwe_get on it gives the
         abstraction and status the citation needs.
+
+        Hits are lexically ranked and near-ties are common: two entries can score
+        identically and order arbitrarily between them. Read the top few and choose
+        on the names and descriptions, not on rank.
+
+        Args:
+            query: Natural-language description of the defect.
+            limit: Maximum hits to return.
         """
         try:
             hits = kb.search(query, pack=CWE_PACK, limit=limit)
@@ -417,6 +433,11 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
 
     def cwe_related(entry_id: str, ancestors: bool = False) -> dict:
         """Relationships for a CWE id: parents, peers, or a category's members.
+
+        Call this before claiming that one CWE id refines, substitutes for, or is
+        unrelated to another -- for instance when you are citing an id the ASVS
+        mapping does not carry and need to say how it relates to the one it does.
+        Pass ancestors=True on both ids and compare the chains.
 
         ancestors=True returns the whole ChildOf chain rather than direct parents,
         each node carrying its abstraction. On every edge, abstraction is the

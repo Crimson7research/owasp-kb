@@ -1,7 +1,7 @@
 import pytest
 
 from owasp_kb.core.db import connect
-from owasp_kb.core.integrity import run_checks
+from owasp_kb.core.integrity import CATALOGUE_REL_TYPES, MIN_EDGES_PER_REL, run_checks
 from owasp_kb.core.schema import create_schema
 from owasp_kb.ingest.links import ingest_guidance_links
 from owasp_kb.ingest.packs.asvs import ingest_asvs
@@ -22,6 +22,11 @@ def conn(tmp_path):
         license="CC-BY-SA-4.0",
     )
     return c
+
+
+# CWE's own graph rels, written out so a test cannot derive its cases from the
+# registration it is checking. Pinned against CATALOGUE_REL_TYPES below.
+CWE_GRAPH_RELS = ("cwe_child", "cwe_peer", "cwe_member")
 
 
 def _add_edges(conn, rel, count, source="test"):
@@ -200,20 +205,49 @@ def test_the_check_is_skipped_when_the_catalogue_is_absent(conn):
     assert not any("CWE-99999" in f for f in failures)
 
 
-def test_zero_cwe_child_edges_is_an_error_when_the_catalogue_is_present(conn):
-    """A total collapse of Related_Weaknesses parsing produces no cwe_child rows
-    while every entry still lands, so nothing else in this module notices."""
-    _ingest_cwe_fixture(conn)
-    conn.execute("DELETE FROM links WHERE rel = 'cwe_child'")
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
-    assert any("cwe_child" in f and "zero edges" in f for f in failures)
+def test_every_cwe_graph_rel_is_registered_for_the_zero_edge_check():
+    """The rels the tests below parametrise over, spelled out rather than read from
+    the constant they exercise.
+
+    Deriving the cases from CATALOGUE_REL_TYPES cannot detect that set shrinking:
+    reduced to {"cwe_child"} it generates one passing case, and emptied it generates
+    none at all, which pytest reports as a skip. Measured -- both mutations left the
+    file green until this literal was introduced."""
+    assert CATALOGUE_REL_TYPES == set(CWE_GRAPH_RELS)
 
 
-def test_the_cwe_graph_rels_are_present_in_the_fixture_catalogue(conn):
+@pytest.mark.parametrize("rel", CWE_GRAPH_RELS)
+def test_zero_edges_for_any_cwe_graph_rel_is_an_error(conn, rel):
+    """A total collapse of Related_Weaknesses or Has_Member parsing produces no rows
+    for that rel while every entry still lands, so nothing else in this module
+    notices.
+
+    Covering all three rather than cwe_child alone: only cwe_child's registration
+    was guarded before. This also subsumes the absence-asserting test it replaced,
+    which stayed green under every mutation including CATALOGUE_REL_TYPES = set() --
+    un-registering the rels made it greener, because what it asserted was that no
+    failure appears."""
     _ingest_cwe_fixture(conn)
+    conn.execute("DELETE FROM links WHERE rel = ?", (rel,))
     failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
-    for rel in ("cwe_child", "cwe_peer", "cwe_member"):
-        assert not any(rel in f and "zero edges" in f for f in failures), rel
+    assert any(rel in f and "zero edges" in f for f in failures)
+
+
+def test_a_collapsed_cwe_graph_count_is_flagged(conn):
+    """The floors for the three graph rels were unguarded too: deleting all three
+    MIN_EDGES_PER_REL entries left every test in this file green.
+
+    The fixture catalogue produces 13 / 2 / 19 edges against floors of 800 / 200 /
+    3,000, so it trips all three the moment the floors are checked -- which is what
+    check_edge_floors=False exists for everywhere else in this file. The expected
+    minimum is read from MIN_EDGES_PER_REL rather than written out, so deleting an
+    entry fails here rather than passing vacuously."""
+    _all_rels(conn)
+    _ingest_cwe_fixture(conn)
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=True)
+    for rel in CWE_GRAPH_RELS:
+        expected = f"{rel!r} links, expected at least {MIN_EDGES_PER_REL[rel]}"
+        assert any(expected in f for f in failures), rel
 
 
 def test_a_catalogue_less_index_is_not_asked_for_the_cwe_graph_rels(conn):

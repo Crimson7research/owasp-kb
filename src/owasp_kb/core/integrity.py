@@ -136,13 +136,19 @@ def run_checks(
         ]
         if unresolved:
             shown = ", ".join(sorted(unresolved)[:5])
+            # The population this check counts is the mapping *after* translation to
+            # 5.0.0: 115 distinct ids, four of them Categories (CWE-255, 310, 320,
+            # 1002). The upstream file has a fifth, CWE-16, but both of its only
+            # citers are bleeding-edge ids that do not translate, so no build can
+            # ever surface it here. That roster stays in this comment rather than in
+            # the message: a build error should say what to fix, and a measurement
+            # embedded in one is the clause that goes stale -- this one already did.
             failures.append(
                 f"{len(unresolved)} ASVS-mapped CWE id(s) resolve to no catalogue "
                 f"entry ({shown}). Either the CWE pack is stale relative to the "
-                "mapping, or the ingest is dropping entries the mapping needs -- "
-                "measured against ASVS 5.0.0 and CWE 4.20, five of the 120 mapped "
-                "ids are Categories rather than Weaknesses (CWE-16, 255, 310, 320, "
-                "1002), so an ingest that kept only Weaknesses would strand all five"
+                "mapping, or the ingest is dropping entries the mapping needs -- it "
+                "must keep Categories as well as Weaknesses, and Deprecated and "
+                "Obsolete entries too, because the mapping cites all of them"
             )
 
     total_chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]

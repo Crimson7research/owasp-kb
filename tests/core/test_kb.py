@@ -290,6 +290,36 @@ def catalogue(catalogue_conn):
     return Kb(catalogue_conn)
 
 
+def _child_links(conn, pairs):
+    """Add synthetic cwe_child edges, for graph shapes the real catalogue has no
+    example of -- a cycle, and a chain long enough to reach the depth cap."""
+    conn.executemany(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source)"
+        " VALUES ('cwe', ?, 'cwe', ?, 'cwe_child', 'synthetic')",
+        list(pairs),
+    )
+
+
+def _synthetic_chain(conn, edges):
+    """A ChildOf chain of ``edges`` links whose foot is a real catalogue entry.
+
+    Only the foot needs a catalogue_entries row: catalogue_related validates the id
+    it is asked about, and CWE's graph legitimately points at ids outside the
+    ingested set, which is what the rest of the chain stands in for.
+    """
+    chain = [f"CWE-9{i:03d}" for i in range(edges + 1)]
+    pack_id = conn.execute("SELECT id FROM packs WHERE name = 'cwe'").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO catalogue_entries (pack_id, entry_id, kind, name, abstraction, status,"
+        " description) VALUES (?, ?, 'weakness', 'synthetic', 'Base', 'Draft', 'x')",
+        (pack_id, chain[0]),
+    )
+    # strict=False: chain[1:] is deliberately one shorter, so the pairing is every
+    # consecutive pair and the last node has no parent.
+    _child_links(conn, zip(chain, chain[1:], strict=False))
+    return chain
+
+
 def test_catalogue_entry_returns_a_weakness_with_its_abstraction(catalogue):
     entry = catalogue.catalogue_entry("CWE-789")
     assert (entry.kind, entry.abstraction, entry.status) == ("weakness", "Variant", "Draft")
@@ -349,11 +379,7 @@ def test_catalogue_related_on_an_unknown_id_raises_rather_than_returning_no_edge
 def test_a_cycle_in_the_graph_terminates_the_walk(catalogue_conn):
     """The visited set, not the depth cap, is what makes the walk terminate. CWE's
     graph really does contain cycles, so a two-node one is walked here."""
-    catalogue_conn.executemany(
-        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source)"
-        " VALUES ('cwe', ?, 'cwe', ?, 'cwe_child', 'synthetic')",
-        [("CWE-789", "CWE-1004"), ("CWE-1004", "CWE-789")],
-    )
+    _child_links(catalogue_conn, [("CWE-789", "CWE-1004"), ("CWE-1004", "CWE-789")])
     graph = Kb(catalogue_conn).catalogue_related("CWE-789", ancestors=True)
     ids = [e.to_id for e in graph.edges]
     assert "CWE-1004" in ids
@@ -367,19 +393,31 @@ def test_an_ancestor_chain_deeper_than_the_cap_is_reported_as_truncated(catalogu
     cut silently below its Pillar looks exactly like one that shares a Base or a
     Class, which is the false 'related' the whole design exists to avoid. So the
     guard is exercised on a synthetic chain rather than left untested."""
-    depth = MAX_ANCESTOR_DEPTH + 5
-    chain = [f"CWE-9{i:03d}" for i in range(depth + 1)]
-    pack_id = catalogue_conn.execute("SELECT id FROM packs WHERE name = 'cwe'").fetchone()["id"]
-    catalogue_conn.execute(
-        "INSERT INTO catalogue_entries (pack_id, entry_id, kind, name, abstraction, status,"
-        " description) VALUES (?, ?, 'weakness', 'synthetic', 'Base', 'Draft', 'x')",
-        (pack_id, chain[0]),
-    )
-    catalogue_conn.executemany(
-        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source)"
-        " VALUES ('cwe', ?, 'cwe', ?, 'cwe_child', 'synthetic')",
-        list(zip(chain, chain[1:], strict=False)),
-    )
+    chain = _synthetic_chain(catalogue_conn, edges=MAX_ANCESTOR_DEPTH + 5)
     graph = Kb(catalogue_conn).catalogue_related(chain[0], ancestors=True)
     assert graph.truncated is True
     assert [e.to_id for e in graph.edges] == chain[1 : MAX_ANCESTOR_DEPTH + 1]
+
+
+def test_a_chain_of_exactly_the_cap_is_complete_and_not_flagged(catalogue_conn):
+    """The boundary the flag used to get wrong. A chain of exactly
+    MAX_ANCESTOR_DEPTH edges is walked in full, but its last node is left in the
+    frontier undiscovered-from, so ``bool(frontier)`` called it truncated. A false
+    positive tells the agent to discard a comparison that is sound -- the flag's own
+    harm, in reverse -- so the walk checks whether anything above the frontier is
+    actually unvisited."""
+    chain = _synthetic_chain(catalogue_conn, edges=MAX_ANCESTOR_DEPTH)
+    graph = Kb(catalogue_conn).catalogue_related(chain[0], ancestors=True)
+    assert [e.to_id for e in graph.edges] == chain[1:]
+    assert len(graph.edges) == MAX_ANCESTOR_DEPTH
+    assert graph.truncated is False
+
+
+def test_a_cycle_at_the_cap_boundary_is_not_reported_as_truncated(catalogue_conn):
+    """The other half of the same distinction: a frontier whose only parents are
+    already visited is a cycle closing, not an ancestor missed."""
+    chain = _synthetic_chain(catalogue_conn, edges=MAX_ANCESTOR_DEPTH)
+    _child_links(catalogue_conn, [(chain[-1], chain[0])])
+    graph = Kb(catalogue_conn).catalogue_related(chain[0], ancestors=True)
+    assert [e.to_id for e in graph.edges] == chain[1:]
+    assert graph.truncated is False
