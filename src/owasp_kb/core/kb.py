@@ -27,8 +27,13 @@ CATALOGUE_RELS = (CATALOGUE_CHILD_REL, "cwe_peer", "cwe_member")
 # Measured on CWE 4.20 the longest ChildOf chain is 13, so 20 is headroom rather
 # than a real limit. It is not what makes the walk terminate -- the visited set is,
 # and it does so even on the cycles the graph contains. The cap only bounds the work
-# if a future release deepens the graph past 20, where it would truncate a chain;
-# that is preferred to an unbounded loop over a shape nobody has measured.
+# if a future release deepens the graph past 20.
+#
+# Where it does bite, it must say so, which is why CatalogueGraph carries a flag: a
+# chain silently cut below its Pillar looks exactly like a chain that shares a Base
+# or a Class, and that false "related" is the one answer this whole design exists to
+# avoid. Truncation is the only failure mode here that corrupts the claim rather than
+# merely losing data.
 MAX_ANCESTOR_DEPTH = 20
 
 
@@ -49,6 +54,23 @@ class KbInfo:
     packs: list[Pack]
     retrieval_mode: str
     link_coverage: list[LinkCoverage]
+
+
+@dataclass(frozen=True)
+class CatalogueGraph:
+    """Edges out of one catalogue entry, and whether the walk that found them stopped
+    early.
+
+    ``truncated`` is only ever True for an ancestor walk that hit
+    MAX_ANCESTOR_DEPTH with ancestors still unexplored; a direct-edge query does no
+    walking, so it reports False. Reported as a flag rather than raised, following
+    the roster's ``complete``: raising would discard the ancestors already found and
+    leave the caller with nothing, and a caller with nothing falls back on recalling
+    a chain from memory, which is what this pack exists to replace.
+    """
+
+    edges: list[RelatedEdge]
+    truncated: bool
 
 
 class Kb:
@@ -317,7 +339,7 @@ class Kb:
             extended_description=row["extended_description"],
         )
 
-    def catalogue_related(self, entry_id: str, *, ancestors: bool = False) -> list[RelatedEdge]:
+    def catalogue_related(self, entry_id: str, *, ancestors: bool = False) -> CatalogueGraph:
         """Direct edges, or the whole ChildOf ancestor chain.
 
         Every node carries its abstraction, because a shared Pillar is not
@@ -330,22 +352,31 @@ class Kb:
         ancestors, nearest first, not a tree: which child each edge was reached
         from is dropped, because the question a caller asks of a chain is how
         coarse its shared node is.
+
+        Raises KeyError for an id that is not in the catalogue, exactly as
+        catalogue_entry does. The id space here is closed and enumerable, so an
+        unknown id is a mis-cited number and must not come back as an entry that
+        happens to have no relationships. Kb.related is deliberately the opposite:
+        for a requirement id, no edges is a real answer about the mapping.
         """
+        self.catalogue_entry(entry_id)
         if ancestors:
             return self._catalogue_ancestors(entry_id)
-        return self._catalogue_edges([entry_id], rels=CATALOGUE_RELS)
+        return CatalogueGraph(
+            edges=self._catalogue_edges([entry_id], rels=CATALOGUE_RELS), truncated=False
+        )
 
     def _catalogue_edges(self, from_ids: list[str], *, rels: tuple[str, ...]) -> list[RelatedEdge]:
         """Edges out of any of ``from_ids``, with each target's abstraction.
 
         The join to catalogue_entries is a LEFT JOIN, and that is the whole
         correctness of this method: CWE keeps edges pointing outside any subset of
-        itself, so an inner join drops them silently. CWE-320's four Has_Member
-        targets are all absent from the test catalogue and three of the five ids in
-        an ancestor walk from CWE-120 are too -- an inner join answers "no members"
-        for an Obsolete Category that eight ASVS requirements cite, which is the
-        answer a caller is trying to get away from. A missing target yields
-        abstraction=None instead.
+        itself, so an inner join drops them silently. Measured on the test catalogue:
+        all four of CWE-320's Has_Member targets are absent from it, and two of the
+        five ids an ancestor walk from CWE-120 reaches are too (CWE-20 and CWE-787).
+        An inner join answers "no members" for an Obsolete Category that eight ASVS
+        requirements cite, which is the answer a caller is trying to get away from. A
+        missing target yields abstraction=None instead.
         """
         if not from_ids:
             return []
@@ -371,8 +402,12 @@ class Kb:
             for r in rows
         ]
 
-    def _catalogue_ancestors(self, entry_id: str) -> list[RelatedEdge]:
-        """Breadth-first over cwe_child, nearest ancestors first."""
+    def _catalogue_ancestors(self, entry_id: str) -> CatalogueGraph:
+        """Breadth-first over cwe_child, nearest ancestors first.
+
+        A frontier left non-empty when the cap runs out means ancestors were not
+        walked, and that is reported rather than swallowed: see MAX_ANCESTOR_DEPTH.
+        """
         edges: list[RelatedEdge] = []
         visited = {entry_id}
         frontier = [entry_id]
@@ -387,4 +422,4 @@ class Kb:
                 visited.add(edge.to_id)
                 edges.append(edge)
                 frontier.append(edge.to_id)
-        return edges
+        return CatalogueGraph(edges=edges, truncated=bool(frontier))

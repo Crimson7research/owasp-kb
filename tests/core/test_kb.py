@@ -1,7 +1,7 @@
 import pytest
 
 from owasp_kb.core.db import connect
-from owasp_kb.core.kb import Kb
+from owasp_kb.core.kb import MAX_ANCESTOR_DEPTH, Kb
 from owasp_kb.core.schema import create_schema
 from owasp_kb.ingest.links import (
     ingest_cwe_links,
@@ -11,6 +11,7 @@ from owasp_kb.ingest.links import (
 )
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
+from owasp_kb.ingest.packs.cwe import ingest_cwe
 
 
 @pytest.fixture
@@ -264,3 +265,121 @@ def test_related_unknown_id_returns_empty_list(kb):
 def test_related_is_deterministically_ordered(kb):
     edges = kb.related("V6.2.1")
     assert edges == sorted(edges, key=lambda e: (e.rel, e.to_id))
+
+
+# -- catalogue --------------------------------------------------------
+
+
+@pytest.fixture
+def catalogue_conn(tmp_path):
+    """The CWE fixture catalogue on its own.
+
+    The catalogue methods touch neither the ASVS nor the cheat-sheet pack, so the
+    smaller index makes a failure here point at the graph rather than at an ingest
+    three packs wide. The connection is the fixture rather than the Kb because the
+    depth-cap test has to write synthetic links.
+    """
+    conn = connect(tmp_path / "cwe.sqlite")
+    create_schema(conn)
+    ingest_cwe(conn, "tests/fixtures/cwec_sample.xml", version="4.20", license="LicenseRef-CWE-TOU")
+    return conn
+
+
+@pytest.fixture
+def catalogue(catalogue_conn):
+    return Kb(catalogue_conn)
+
+
+def test_catalogue_entry_returns_a_weakness_with_its_abstraction(catalogue):
+    entry = catalogue.catalogue_entry("CWE-789")
+    assert (entry.kind, entry.abstraction, entry.status) == ("weakness", "Variant", "Draft")
+    assert "Memory Allocation" in entry.name
+    assert entry.description
+
+
+def test_catalogue_entry_returns_a_category_with_no_abstraction(catalogue):
+    """CWE-320 is Obsolete and eight ASVS requirements cite it, so it has to be
+    retrievable; a Category carries no Abstraction attribute, and that None is a
+    fact about the entry rather than a gap in the row."""
+    entry = catalogue.catalogue_entry("CWE-320")
+    assert (entry.kind, entry.abstraction, entry.status) == ("category", None, "Obsolete")
+
+
+def test_catalogue_entry_on_an_unknown_id_raises_naming_it(catalogue):
+    with pytest.raises(KeyError, match="CWE-99999"):
+        catalogue.catalogue_entry("CWE-99999")
+
+
+def test_catalogue_related_returns_direct_edges_with_the_targets_abstraction(catalogue):
+    edges = {e.to_id: e for e in catalogue.catalogue_related("CWE-789").edges}
+    assert (edges["CWE-770"].rel, edges["CWE-770"].abstraction) == ("cwe_child", "Base")
+    assert edges["CWE-476"].rel == "cwe_peer"
+
+
+def test_catalogue_related_keeps_edges_pointing_outside_the_catalogue(catalogue):
+    """The LEFT JOIN, at the level it lives on. All four of CWE-320's Has_Member
+    targets are absent from this catalogue, so an inner join returns nothing at all
+    for it."""
+    edges = catalogue.catalogue_related("CWE-320").edges
+    assert {e.to_id for e in edges} == {"CWE-322", "CWE-323", "CWE-324", "CWE-798"}
+    assert {e.rel for e in edges} == {"cwe_member"}
+    assert all(e.abstraction is None for e in edges)
+
+
+def test_catalogue_related_ancestors_walks_the_chain_nearest_first(catalogue):
+    """Measured chain: CWE-789 -> 770 -> 400/665 -> 664."""
+    graph = catalogue.catalogue_related("CWE-789", ancestors=True)
+    assert {e.rel for e in graph.edges} == {"cwe_child"}
+    assert [e.to_id for e in graph.edges][0] == "CWE-770"
+    assert {e.to_id for e in graph.edges} == {"CWE-770", "CWE-400", "CWE-665", "CWE-664"}
+    assert graph.truncated is False
+
+
+def test_catalogue_related_on_an_unknown_id_raises_rather_than_returning_no_edges(catalogue):
+    """The opposite of Kb.related, deliberately. The catalogue's id space is closed,
+    so an unknown id is a mis-cited number; for a requirement id, no edges is a real
+    answer about the mapping. The guard lives here rather than in the tool so any
+    caller of the core API inherits it."""
+    with pytest.raises(KeyError, match="CWE-99999"):
+        catalogue.catalogue_related("CWE-99999")
+    with pytest.raises(KeyError, match="CWE-99999"):
+        catalogue.catalogue_related("CWE-99999", ancestors=True)
+
+
+def test_a_cycle_in_the_graph_terminates_the_walk(catalogue_conn):
+    """The visited set, not the depth cap, is what makes the walk terminate. CWE's
+    graph really does contain cycles, so a two-node one is walked here."""
+    catalogue_conn.executemany(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source)"
+        " VALUES ('cwe', ?, 'cwe', ?, 'cwe_child', 'synthetic')",
+        [("CWE-789", "CWE-1004"), ("CWE-1004", "CWE-789")],
+    )
+    graph = Kb(catalogue_conn).catalogue_related("CWE-789", ancestors=True)
+    ids = [e.to_id for e in graph.edges]
+    assert "CWE-1004" in ids
+    assert "CWE-789" not in ids, "the entry walked from must not appear as its own ancestor"
+    assert len(ids) == len(set(ids))
+    assert graph.truncated is False
+
+
+def test_an_ancestor_chain_deeper_than_the_cap_is_reported_as_truncated(catalogue_conn):
+    """No real chain reaches the cap -- measured maximum 13 against 20 -- but a chain
+    cut silently below its Pillar looks exactly like one that shares a Base or a
+    Class, which is the false 'related' the whole design exists to avoid. So the
+    guard is exercised on a synthetic chain rather than left untested."""
+    depth = MAX_ANCESTOR_DEPTH + 5
+    chain = [f"CWE-9{i:03d}" for i in range(depth + 1)]
+    pack_id = catalogue_conn.execute("SELECT id FROM packs WHERE name = 'cwe'").fetchone()["id"]
+    catalogue_conn.execute(
+        "INSERT INTO catalogue_entries (pack_id, entry_id, kind, name, abstraction, status,"
+        " description) VALUES (?, ?, 'weakness', 'synthetic', 'Base', 'Draft', 'x')",
+        (pack_id, chain[0]),
+    )
+    catalogue_conn.executemany(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source)"
+        " VALUES ('cwe', ?, 'cwe', ?, 'cwe_child', 'synthetic')",
+        list(zip(chain, chain[1:], strict=False)),
+    )
+    graph = Kb(catalogue_conn).catalogue_related(chain[0], ancestors=True)
+    assert graph.truncated is True
+    assert [e.to_id for e in graph.edges] == chain[1 : MAX_ANCESTOR_DEPTH + 1]

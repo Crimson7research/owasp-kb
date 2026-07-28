@@ -305,19 +305,15 @@ def test_cwe_get_returns_the_weakness(tools):
 
 def test_cwe_get_returns_a_category_with_its_status(tools):
     """CWE-320 is Obsolete and eight ASVS requirements cite it. An agent
-    departing from that mapping needs to be able to say why."""
+    departing from that mapping needs to be able to say why.
+
+    The abstraction assertions are on an explicit None surviving to the wire: a
+    caller comparing how coarse two cited ids are has to see that a Category has no
+    level, and an absent key reads as an oversight rather than as a fact."""
     r = tools["cwe_get"]("CWE-320")
     assert r["kind"] == "category"
     assert r["status"] == "Obsolete"
     assert r["abstraction"] is None
-
-
-def test_cwe_get_states_a_categorys_absent_abstraction_rather_than_omitting_it(tools):
-    """None must survive the dict and the JSON: a caller comparing how coarse two
-    cited ids are has to see that a Category has no level, and a missing key reads
-    as an oversight rather than as a fact about the entry."""
-    r = tools["cwe_get"]("CWE-320")
-    assert "abstraction" in r
     assert json.loads(json.dumps(r))["abstraction"] is None
 
 
@@ -395,6 +391,17 @@ def test_cwe_related_keeps_edges_whose_target_is_not_in_the_catalogue(tools):
     assert resolved == [], "fixture premise: none of CWE-320's members is ingested"
 
 
+def test_cwe_related_states_whether_the_walk_was_truncated(tools):
+    """Always present and in both modes: a key that only appears on failure is one
+    a caller never learns to read. No chain in the published catalogue comes near
+    the cap -- the deepest walk in this fixture is three levels, against a measured
+    catalogue maximum of 13 and a cap of 20 -- so what matters here is that the flag
+    is stated. The deep case is pinned in tests/core/test_kb.py, because a chain cut
+    below its Pillar looks exactly like a non-Pillar overlap."""
+    assert tools["cwe_related"]("CWE-789", ancestors=True)["truncated"] is False
+    assert tools["cwe_related"]("CWE-320")["truncated"] is False
+
+
 def test_cwe_related_on_an_unknown_id_errors_rather_than_reporting_no_edges(tools):
     """An empty edge list for a hallucinated id reads as 'exists, unrelated'."""
     r = tools["cwe_related"]("CWE-99999")
@@ -412,13 +419,21 @@ def test_no_cwe_tool_emits_a_refinement_verdict(tools):
     docstring containing 'not'. What is pinned instead is the response: the key
     sets are exact, so no derived judgement of any name can appear beside the
     facts, and the one docstring sentence that hands the call back to the caller
-    must survive a rewrite."""
+    must survive a rewrite.
+
+    The exactness is the mechanism, so adding a genuine field -- a target's name on
+    an edge, say -- reddens this test too. That is intended: it is the only check
+    that catches a verdict smuggled in at edge level, and being asked to add the
+    field here deliberately is the price. If you are here for that reason, add it;
+    if you are here because you added a judgement, do not."""
     responses = [
         tools["cwe_get"]("CWE-789"),
         tools["cwe_get"]("CWE-320"),
         tools["cwe_related"]("CWE-789"),
         tools["cwe_related"]("CWE-789", ancestors=True),
         tools["cwe_related"]("CWE-320"),
+        tools["cwe_search"]("allocation without limits"),
+        tools["cwe_search"]("zzzznotpresent qqqqnosuchweakness"),
     ]
     for r in responses:
         assert set(r) <= {
@@ -430,10 +445,15 @@ def test_no_cwe_tool_emits_a_refinement_verdict(tools):
             "description",
             "extended_description",
             "ancestors",
+            "truncated",
             "edges",
+            "hits",
+            "message",
         }, f"unexpected key beside the facts: {sorted(set(r))}"
         for edge in r.get("edges", []):
             assert set(edge) == {"rel", "to_kind", "to_id", "abstraction", "source"}
+        for hit in r.get("hits", []):
+            assert set(hit) == {"entry_id", "citation", "heading_path", "excerpt"}
     doc = " ".join(tools["cwe_related"].__doc__.lower().split())
     assert "your judgement, not this tool's" in doc
     assert "a shared pillar means almost nothing" in doc
@@ -441,21 +461,31 @@ def test_no_cwe_tool_emits_a_refinement_verdict(tools):
 
 def test_cwe_search_finds_the_weakness_that_names_the_defect(tools):
     """Strengthened from asserting that some hit's id starts with 'CWE-', which
-    passed for any CWE entry at all, including a wrong one.
+    passed for any CWE entry at all, including a wrong one. CWE-770 'Allocation of
+    Resources Without Limits or Throttling' is the entry this query describes.
 
-    CWE-770 'Allocation of Resources Without Limits or Throttling' is the entry
-    this query describes. Measured, BM25 over the fixture ranks it *second* of six
-    hits, behind CWE-400 'Uncontrolled Resource Consumption' -- both are
-    resource-exhaustion entries and the query's terms are split across them -- so
-    what is pinned is that CWE-770 comes back near the top, not that it is first.
-    """
+    No exact rank is asserted, because rank 1 here is a pure tie-break. Measured
+    scores over the fixture: CWE-400 -4.905085475094273, then CWE-770 and CWE-789
+    *bit-identical* at -4.680477790406414, then CWE-120 -1.886, CWE-664 -1.287,
+    CWE-1240 -0.921. CWE-770 is joint second, ahead of CWE-789 only because SQLite
+    emits the lower chunk id first; adding `c.id DESC` to the ordering swaps them
+    with no change in relevance. BM25 IDF is corpus-global too, so editing the ASVS
+    or cheat-sheet fixtures can move this ranking.
+
+    Ordering ahead of CWE-1240 is a real margin (-4.680 against -0.921) rather than
+    a tie-break: a weakness about cryptographic primitives has nothing to do with
+    allocation."""
     hits = tools["cwe_search"]("allocation without limits")["hits"]
     ids = [h["entry_id"] for h in hits]
-    assert "CWE-770" in ids
-    assert ids.index("CWE-770") <= 1
+    assert {"CWE-770", "CWE-1240"} <= set(ids)
+    assert "CWE-770" in ids[:3]
+    assert ids.index("CWE-770") < ids.index("CWE-1240")
+    # A rank claim says nothing if the list is not the catalogue: unrestricted, this
+    # query puts two cheat-sheet sections at ranks 4 and 5.
+    assert all(i.startswith("CWE-") for i in ids)
     assert (
         "Allocation of Resources Without Limits or Throttling"
-        in (hits[ids.index("CWE-770")]["heading_path"])
+        in hits[ids.index("CWE-770")]["heading_path"]
     )
 
 

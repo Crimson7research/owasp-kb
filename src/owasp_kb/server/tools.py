@@ -432,15 +432,20 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         An id absent from the catalogue is an error, as it is for cwe_get: an
         empty edge list must mean "this entry records no relationships" and never
         "no such id", or a mis-cited number passes silently.
+
+        truncated says whether the walk stopped before running out of ancestors.
+        It is false for every chain in the published catalogue, and if it is ever
+        true the chain you have is missing its coarsest end -- which is exactly
+        where the Pillar sits, so do not read a shared Class off a truncated chain.
         """
         try:
-            kb.catalogue_entry(entry_id)
-            edges = kb.catalogue_related(entry_id, ancestors=ancestors)
+            graph = kb.catalogue_related(entry_id, ancestors=ancestors)
         except KeyError as exc:
             return _error(exc)
         return {
             "entry_id": entry_id,
             "ancestors": ancestors,
+            "truncated": graph.truncated,
             "edges": [
                 {
                     "rel": e.rel,
@@ -449,7 +454,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                     "abstraction": e.abstraction,
                     "source": e.source,
                 }
-                for e in edges
+                for e in graph.edges
             ],
         }
 
