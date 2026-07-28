@@ -86,10 +86,23 @@ def test_a_pack_can_pin_a_direct_url_instead_of_a_repo(tmp_path):
     assert pack.version == "4.20"
 
 
-def test_a_url_pinning_latest_is_rejected(tmp_path):
-    """cwec_latest.xml.zip would make a citation resolve to different text as
-    MITRE publishes, which defeats the reproducible-citation property the whole
-    project rests on."""
+LATEST_GUARD_URL_CASES = [
+    # A "/latest/" directory moves as upstream republishes into it, so a
+    # pinned-looking filename underneath it is still not pinned.
+    ("https://example.com/latest/cwec_v4.20.xml.zip", True),
+    # Already covered before the fix; kept so path-scoping cannot regress it.
+    ("https://cwe.mitre.org/data/xml/cwec_latest.xml.zip", True),
+    # A host containing "latest" has no bearing on reproducibility.
+    ("https://latest-cdn.example.com/cwec_v4.20.xml.zip", False),
+]
+
+
+@pytest.mark.parametrize("url,rejected", LATEST_GUARD_URL_CASES)
+def test_the_latest_guard_is_scoped_to_the_url_path(tmp_path, url, rejected):
+    """Matching the filename alone would accept a /latest/ directory holding a
+    pinned-looking filename; matching the whole url would reject a host like
+    latest-cdn.example.com that has no bearing on reproducibility. Only the
+    path avoids both holes."""
     lock_file = tmp_path / "sources.lock.yml"
     lock_file.write_text(
         "packs:\n"
@@ -97,10 +110,13 @@ def test_a_url_pinning_latest_is_rejected(tmp_path):
         "    type: catalogue\n"
         "    version: '4.20'\n"
         "    license: LicenseRef-CWE-TOU\n"
-        "    url: https://cwe.mitre.org/data/xml/cwec_latest.xml.zip\n"
+        f"    url: {url}\n"
     )
-    with pytest.raises(ValueError, match="latest"):
-        load_lock(lock_file)
+    if rejected:
+        with pytest.raises(ValueError, match="latest"):
+            load_lock(lock_file)
+    else:
+        assert load_lock(lock_file).packs["cwe"].url == url
 
 
 def test_the_real_lock_pins_cwe_by_version():

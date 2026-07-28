@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -38,9 +39,12 @@ def load_lock(path: str | Path) -> Lock:
                 f"pack {name!r} pins release 'latest', which is the ASVS bleeding-edge tag; "
                 "pin an explicit release so citations stay reproducible"
             )
-        # Match the filename, not the whole URL: a host or path legitimately
-        # containing "latest" should not be rejected on that basis alone.
-        if "latest" in Path(str(cfg.get("url", ""))).name:
+        # Match the path, not the whole URL and not just the filename. A
+        # "/latest/" directory moves as upstream republishes into it, so a
+        # pinned-looking filename underneath it is still not pinned; a host
+        # like latest-cdn.example.com has no bearing on reproducibility and
+        # should not be rejected.
+        if "latest" in urlsplit(str(cfg.get("url", ""))).path:
             raise ValueError(
                 f"pack {name!r} pins a url containing 'latest', which moves as "
                 "upstream publishes; pin an explicit release or version so "
