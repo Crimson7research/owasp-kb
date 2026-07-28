@@ -5,7 +5,11 @@ description = "OWASP ASVS and Cheat Sheet knowledge bases, plus MITRE's CWE cata
 requires-python = ">=3.13"
 license = "MIT"
 dependencies = [
-    "mcp>=1.28.1",
+    # Upper bound is load-bearing: mcp 2.0.0 (2026-07-28) moved FastMCP out of
+    # mcp.server, which server/app.py imports. CI resolves the newest match, so an
+    # unbounded spec broke every build the day 2.0.0 shipped while pinned
+    # devcontainers kept passing. Raising this bound is a migration, not a bump.
+    "mcp>=1.28.1,<2",
     "pydantic>=2.7",
     "pyyaml>=6.0",
     "sqlite-vec>=0.1.6",
