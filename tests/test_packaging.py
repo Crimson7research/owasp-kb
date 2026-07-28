@@ -725,6 +725,71 @@ def test_the_smoke_test_proves_the_licence_texts_reached_the_image():
         )
 
 
+def test_the_verifier_verifies_a_cwe_it_did_not_get_from_the_mapping():
+    """Of 95 CWE ids cited in one real assessment, 42 were not from OWASP's
+    mapping and nothing could check them. cwe_get is what checks them."""
+    _, body = _agent("owasp-finding-verifier")
+    assert "cwe_get" in body
+
+
+def test_the_verifier_can_actually_call_the_cwe_tools_it_is_told_to_call():
+    """The highest-risk failure in this change and the cheapest to miss: `tools:`
+    is a strict allowlist that filters MCP tools, so prose telling the agent to
+    call cwe_get is inert -- worse than inert, it is an agent that cannot do what
+    its own prompt instructs -- if the allowlist does not reach it.
+
+    It does, via the server wildcard, which is why no frontmatter change shipped
+    with the prose. This test is what makes that a checked fact rather than an
+    assumption: an allowlist later narrowed to an enumeration of tool names would
+    silently break the guidance below, and nothing else would notice."""
+    meta, body = _agent("owasp-finding-verifier")
+    allowed = {t.strip() for t in meta["tools"].split(",")}
+    server = "mcp__plugin_owasp-kb_owasp-kb__"
+    named = [t for t in ("cwe_get", "cwe_search", "cwe_related") if t in body]
+    # Without this the loop below has nothing to iterate and the test passes on a
+    # prompt that never mentions a CWE tool at all -- vacuous rather than green.
+    assert named, "the verifier prompt names none of the CWE tools"
+    for tool in named:
+        assert f"{server}*" in allowed or f"{server}{tool}" in allowed, (
+            f"the prompt tells the agent to call {tool} and the tools: allowlist "
+            f"does not permit it -- {allowed}"
+        )
+
+
+def test_the_verifier_is_told_to_load_the_cwe_tools_before_calling_them():
+    """MCP tools are deferred in this plugin: the agent must ToolSearch a tool's
+    schema before it can be invoked, and the existing section enumerates which.
+    A cwe_get missing from that list is a tool the agent is told to call and has
+    no schema for."""
+    _, body = _agent("owasp-finding-verifier")
+    assert "select:mcp__plugin_owasp-kb_owasp-kb__cwe_get" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_cite_the_weakness_name_not_just_the_id(skill):
+    """`cwe_get` alone would pass on a skill that merely names the tool. The point
+    of the guidance is the name beside the id: a reader cannot judge CWE-789 and
+    can judge 'Memory Allocation with Excessive Size Value'."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "cwe_get" in body
+    assert "weakness **name**" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_say_an_obsolete_mapping_is_grounds_to_depart(skill):
+    """CWE-320 is Obsolete and eight requirements map to it. That is the clearest
+    case for substituting a specific weakness, and it is now evidenceable.
+
+    Asserted on the phrase, not the bare word: `"Obsolete" in body` was the
+    assertion first written here, and a bare word carries no instruction -- a
+    skill could satisfy it while saying nothing about what to do, and any
+    incidental future mention would keep satisfying it."""
+    # Whitespace-normalised: the phrase wraps across a line break in both files,
+    # and where a hard wrap falls is not what this test is about.
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "`Obsolete` or is a Category rather than a weakness" in body
+
+
 def test_the_image_tag_records_every_packs_version():
     """asvs$(V)-cs$(DATE) named two of three packs, so a CWE bump produced an
     indistinguishable tag for a different index. The immutable tag is the whole

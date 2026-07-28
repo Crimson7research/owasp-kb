@@ -130,6 +130,18 @@ must be able to tell which is which:
 
 Where `cwe_corpus` is empty, say the mapping is silent rather than leaving it blank.
 
+Where you cite an id the mapping does not carry, `cwe_get` it and give the weakness **name**
+beside the id — a reader cannot judge `CWE-789` but can judge *Memory Allocation with
+Excessive Size Value*. Where the mapped entry is `Obsolete` or is a Category rather than a
+weakness, say that: it is the reason a more specific id is right, and `cwe_get` reports both.
+
+`CWE-798 Use of Hard-coded Credentials — model-assigned; mapping carries CWE-320 Key Management
+Errors, which is an Obsolete Category and lists CWE-798 among its members`
+
+Keep the id itself bare in the roster payload. `cwe_get` is for the report text; `owasp_roster`
+matches `cwe` against `cwe_corpus` and dedupes on it, and an id with a name appended matches
+nothing.
+
 **Show whether guidance was read.** A `remediation` with a `remediation_quote` is a section an
 agent navigated to and read. One without is the requirement-level mapping. Mark the difference;
 both are citations from the knowledge base, but only one is specific.

@@ -20,7 +20,13 @@ Deferred; load before use:
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_related
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_outline
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_get
+ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__cwe_get
+ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__cwe_related
+ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__cwe_search
 ```
+
+The last three are for *Checking a CWE you chose yourself*, below. Load them when
+you get that far, not before — a finding you refute never needs them.
 
 ## Process
 
@@ -30,7 +36,9 @@ ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_get
    framework default, a validation layer.
 4. Decide whether the finding stands.
 5. If it stands, gather what the report needs:
-   - `owasp_related(<req_id>, rel='cwe')` for the weakness class
+   - `owasp_related(<req_id>, rel='cwe')` for the weakness class — and if the id it returns
+     does not describe the defect you traced, or it returns none, see *Checking a CWE you
+     chose yourself* below before you put an id in `cwe`
    - `owasp_related(<req_id>, rel='guidance')`, then `owasp_outline` and `owasp_get` on the
      cited section, for the remediation citation as `doc_key#anchor` and a verbatim quote
      from the text you just read
@@ -96,6 +104,55 @@ from navigating to a section nobody had linked.
 
 If you did not read a section, leave the finder's document-level citation alone rather than
 adding an anchor to it.
+
+## Checking a CWE you chose yourself
+
+`owasp_related(req_id, rel='cwe')` gives the id OWASP maps to the requirement. It is often not
+the right one for the defect you found: the mapping is per requirement and a finding is per
+defect, and in one real assessment 42 of 95 cited ids were not from the mapping at all.
+
+Choosing a better id is correct. Choosing one you cannot substantiate is not, so check it:
+
+```
+cwe_get("CWE-789")   -> name, abstraction, status, description
+```
+
+If the id is not in the catalogue, `cwe_get` errors and you have invented it — drop it rather
+than shipping it. Give the **name** alongside the id, so a reader can tell whether the weakness
+matches the defect without looking it up.
+
+**Put the name in your prose, not in the JSON.** `cwe` stays the bare id, exactly as in the
+output block above: `owasp_roster` matches it against the requirement's mapped ids and dedupes
+findings on `(file, line, cwe)`, and `"CWE-789 (Memory Allocation with Excessive Size Value)"`
+matches nothing and dedupes with nothing. A key you add to that object is not an error either —
+the roster reads the fields it knows and drops the rest silently — so an invented field is not a
+richer report, it is a line nobody reads.
+
+**If you do not have an id at all, do not guess one.** `cwe_search` takes a description of the
+defect in your own words and returns citable ids. This is the normal case, not the exception:
+OWASP's mapping is silent for 141 of the 345 requirements, so for those there is no mapped id to
+start from. Read the top few hits and choose on the names and descriptions — they are lexically
+ranked and near-ties order arbitrarily, so rank 1 is not a verdict. Then `cwe_get` the one you
+picked, exactly as above. A `cwe` field left empty is better than a recalled number.
+
+Two things make a departure from the mapping defensible, and both are now evidenceable:
+
+- **the mapped entry is obsolete.** `cwe_get("CWE-320")` reports status `Obsolete`, and eight
+  ASVS requirements map to it. Say so.
+- **the mapped entry is a Category, not a weakness.** `cwe_get` reports `kind`. A category is a
+  grouping; `cwe_related` returns its members, which is where the specific weakness lives.
+
+`cwe_related(id, ancestors=True)` gives the ChildOf chain with each node's abstraction. Comparing
+your id's chain with the mapped one tells you how far apart they are — but read it carefully: a
+shared **Pillar** means almost nothing, since 35% of weakness pairs share some ancestor and only
+5% share a non-Pillar one. A shared Base or Class is meaningful. State which you found; do not
+report "related" on a Pillar overlap.
+
+**Check `truncated` on that response before you conclude anything from it.** When it is `true`
+the walk stopped before reaching the top of the chain, and what is missing is the coarse end —
+which is where the Pillar and the Classes are. A "no shared ancestor" reading off a truncated
+chain is not a finding, it is a chain you have not finished reading. Say the comparison was
+inconclusive rather than reporting the two ids as unrelated.
 
 ## Excluded material
 
