@@ -9,7 +9,7 @@ lawyer.
 
 ## Both upstream repos are CC-BY-SA-4.0
 
-The two projects this repository ingests content from:
+Two of the three projects this repository ingests content from:
 
 - [OWASP/ASVS](https://github.com/OWASP/ASVS)
 - [OWASP/CheatSheetSeries](https://github.com/OWASP/CheatSheetSeries)
@@ -32,7 +32,11 @@ Two separate CC-BY-SA-4.0 obligations are in play, not one:
   receives a copy of the licensed content, which is exactly what
   "redistribution" means under the license — the attribution requirement
   applies in full, regardless of the fact that it arrives inside a database
-  file rather than as loose markdown.
+  file rather than as loose markdown. The same is true of the CWE catalogue's
+  entry text, which the same file carries verbatim; its obligation comes from
+  MITRE's terms rather than from CC-BY-SA-4.0, and it is the reason LICENSE-CWE
+  travels with the image — see
+  [below](#cwe-is-mitres-under-its-own-terms).
 
 - **The built SQLite index is itself an adaptation, so ShareAlike applies to
   it independently.** The index is not the source content unmodified — it is

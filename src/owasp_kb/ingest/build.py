@@ -40,8 +40,15 @@ class BuildReport:
     exists and happens to be empty.
     """
 
+    # One count per pack, each named for what that pack produces: ASVS
+    # requirements, cheat sheet documents, CWE catalogue entries. Deliberately not
+    # `documents`, which is what this field was called while holding only the cheat
+    # sheet count -- the build then logged "120 documents" for an index whose `docs`
+    # table has 1,528 rows, and a reader diffing that against docs/stack.md saw a 12x
+    # gap with no explanation. `chunks` below is a whole-index COUNT, so the two
+    # scopes sat in one log line looking alike.
     requirements: int = 0
-    documents: int = 0
+    cheatsheet_documents: int = 0
     catalogue_entries: int = 0
     chunks: int = 0
     guidance_links: int = 0
@@ -134,7 +141,7 @@ def _populate(
     )
 
     cs_cfg = lock.packs["cheatsheets"]
-    report.documents = ingest_cheatsheets(
+    report.cheatsheet_documents = ingest_cheatsheets(
         conn,
         sources / "cheatsheets" / "cheatsheets",
         version=cs_cfg.version,
@@ -229,12 +236,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     log.info(
-        "built %s: %d requirements, %d documents, %d catalogue entries, %d chunks "
-        "(%d truncated), %d guidance links, %d CWE links (%d dropped), %d supersedes links, "
-        "%d NIST links (%d unmatched), %d vectors",
+        "built %s: %d ASVS requirements, %d cheat sheet documents, %d CWE catalogue "
+        "entries, %d chunks index-wide (%d truncated), %d guidance links, %d CWE links "
+        "(%d dropped), %d supersedes links, %d NIST links (%d unmatched), %d vectors",
         args.out,
         report.requirements,
-        report.documents,
+        report.cheatsheet_documents,
         report.catalogue_entries,
         report.chunks,
         report.truncated_chunks,

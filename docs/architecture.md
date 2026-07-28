@@ -51,9 +51,10 @@ binary over stdio; nothing about the server is Claude-Code-specific.
 - **`ingest/`** — everything that runs at build time and touches the network
   or the filesystem outside the index: `fetch.py` downloads pinned sources per
   `sources.lock.yml`; `lock.py` parses and validates the lock file (and
-  refuses `release: latest`); `packs/asvs.py` and `packs/cheatsheets.py` turn
-  the two source formats into rows; `links.py` populates the `links` edge
-  table from the four upstream mapping files; `build.py` orchestrates all of
+  refuses `release: latest`); `packs/asvs.py`, `packs/cheatsheets.py` and
+  `packs/cwe.py` turn the three source formats into rows; `links.py` populates
+  the `links` edge table from the four upstream mapping files, and `packs/cwe.py`
+  writes CWE's own three graph rels directly; `build.py` orchestrates all of
   it, runs the integrity checks, and either finalizes the file or deletes it.
   Nothing in `ingest/` is imported by `server/`.
 
@@ -79,7 +80,8 @@ binary over stdio; nothing about the server is Claude-Code-specific.
   copy the same skill directories elsewhere.
 
 **`Kb` is the facade.** Every query the server can answer — search, outline,
-get, checklist, related, info — is a method on `owasp_kb.core.kb.Kb`, taking a
+get, checklist, related, info, and the catalogue's entry and graph lookups — is a
+method on `owasp_kb.core.kb.Kb`, taking a
 `sqlite3.Connection` and returning typed dataclasses (`core/models.py`).
 `server/tools.py` does nothing but call a `Kb` method, catch its exceptions,
 and reshape the result into a JSON-able dict. **There is no retrieval logic in
@@ -91,7 +93,10 @@ a change to how search ranks results can never require touching the server.
 ## Pack registry
 
 A **pack** is one ingested knowledge base, recorded in the `packs` table with
-a `type` of either:
+a `type` of one of three values. Two of the three packs are OWASP's; `cwe` is
+MITRE's — see [docs/licensing.md](licensing.md).
+
+
 
 - **`checklist`** — an enumerable, leveled requirement set. Currently only
   `asvs`. Supports `owasp_checklist` (enumerate by chapter/section/id/level)
@@ -100,16 +105,24 @@ a `type` of either:
   headings. Currently only `cheatsheets`. Supports `owasp_search`,
   `owasp_outline`, `owasp_get` — not `owasp_checklist`, which raises
   `ValueError` naming the tools that do apply if called against a corpus pack.
+- **`catalogue`** — keyed entries plus a relationship graph, each entry
+  addressable by the id a citation carries. Currently only `cwe`. Adds rows to
+  `catalogue_entries` and supports `cwe_get`, `cwe_search`, `cwe_related`
+  alongside the corpus-navigation tools, which work on it but are rarely what
+  you want: an entry has one or two sections, so its outline is `[Description]`.
 
-`owasp_related` and `owasp_search` work across both types uniformly, because
-both ultimately resolve to rows in `chunks`. See
+`owasp_related` and `owasp_search` work across all three types uniformly, because
+all ultimately resolve to rows in `chunks`. The CWE graph is the exception, and
+`cwe_related` exists because of it: `owasp_related` disambiguates its `id`
+argument by counting dots in an ASVS requirement id, so a `CWE-nnn` cannot reach
+it. See
 [docs/kb-packs.md](kb-packs.md) for the full contract and how to add one.
 
 ## Schema
 
 ```
-packs         (id, name UNIQUE, type CHECK IN ('checklist','corpus'), version,
-               source_url, commit_sha, license, fetched_at)
+packs         (id, name UNIQUE, type CHECK IN ('checklist','corpus','catalogue'),
+               version, source_url, commit_sha, license, fetched_at)
 docs          (id, pack_id -> packs, doc_key, title, source_path, source_url;
                UNIQUE(pack_id, doc_key))
 sections      (id, doc_id -> docs, anchor, heading_path, ord, depth;
@@ -120,6 +133,10 @@ chunks_vec    vec0 virtual table (full builds only): chunk_id -> FLOAT[384]
 requirements  (id, pack_id -> packs, req_id, chapter_id, chapter_name,
                section_id, section_name, text, level, chunk_id -> chunks;
                UNIQUE(pack_id, req_id))
+catalogue_entries
+              (id, pack_id -> packs, entry_id, kind, name, abstraction, status,
+               description, extended_description, chunk_id -> chunks;
+               UNIQUE(pack_id, entry_id))
 links         (from_kind, from_id, to_kind, to_id, rel, source;
                PRIMARY KEY(from_kind, from_id, to_kind, to_id, rel))
 ```

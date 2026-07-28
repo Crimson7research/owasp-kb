@@ -5,7 +5,7 @@ the tenth, `owasp_roster`, wraps `core/roster.build_roster` instead — it
 assembles verdicts an assessment already produced rather than reading the
 knowledge base itself.
 
-Three of the nine (`cwe_get`, `cwe_search`, `cwe_related`) address the CWE pack
+Three of the ten (`cwe_get`, `cwe_search`, `cwe_related`) address the CWE pack
 specifically. The other seven are pack-agnostic. CWE is MITRE's, not OWASP's, and
 is in this server because ASVS maps its requirements to CWE ids — see
 [docs/licensing.md](licensing.md).
@@ -51,7 +51,9 @@ whenever a citation needs an exact version string.
      "commit_sha": null, "license": "CC-BY-SA-4.0"},
     {"name": "cheatsheets", "type": "corpus", "version": "20260724",
      "commit_sha": "7d1c2d3daf632206e8f2c685214c699ff8f11938",
-     "license": "CC-BY-SA-4.0"}
+     "license": "CC-BY-SA-4.0"},
+    {"name": "cwe", "type": "catalogue", "version": "4.20",
+     "commit_sha": null, "license": "LicenseRef-CWE-TOU"}
   ]
 }
 ```
@@ -70,8 +72,8 @@ owasp_search(query: str, pack: str | None = None, level: str | None = None,
   internally reduced to a set of search terms (stopwords stripped for the
   lexical half — see [docs/build.md](build.md) and
   `core/retrieval/lexical.to_fts_query`).
-- `pack` — restrict to one pack (`"asvs"` or `"cheatsheets"`). Omit to search
-  both.
+- `pack` — restrict to one pack (`"asvs"`, `"cheatsheets"` or `"cwe"`). Omit to
+  search all three. `cwe_search` is exactly this call with `pack="cwe"`.
 - `level` — ASVS level `"1"`, `"2"`, or `"3"`. Applies to requirement hits
   only; cheat sheet hits are unaffected since they carry no level.
 - `limit` — maximum hits returned (default 8).
@@ -92,7 +94,7 @@ For a cheat sheet hit, `req_id` is `null` and `doc_key`/`anchor` are set
 instead; `citation` is `"{doc_key}#{anchor}"` in that case.
 
 **Error cases:**
-- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: asvs, cheatsheets"}`.
+- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: asvs, cheatsheets, cwe"}`.
 - **No match → `{"hits": [], "message": "..."}`, not `{"hits": []}` and never
   a bare `[]`.** This is deliberate and worth stating explicitly: an agent
   that receives `[]` for a search reads it as "no security requirements apply

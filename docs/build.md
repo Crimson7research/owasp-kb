@@ -152,8 +152,10 @@ translated (and 8 entries do not translate to any requirement in this
 release), and the NIST mapping is dated over a year before this ASVS release
 and keyed on the *previous* major version's requirement ids, reachable only
 through whichever `supersedes` edges happen to connect a v5 requirement back
-to a v4 one. `core/integrity.py` enforces a floor on every `rel` type (100 for
-`guidance` and `cwe`, 150 for `supersedes`, 20 for `nist`) specifically so a
+to a v4 one. `core/integrity.py` enforces a floor on every one of the seven `rel`
+types (100 for `guidance` and `cwe`, 150 for `supersedes`, 20 for `nist`, and for
+CWE's own graph 800 `cwe_child`, 200 `cwe_peer`, 3000 `cwe_member`) specifically
+so a
 silent collapse to near-zero — the exact failure mode the CWE mapping hit
 before the bleeding-edge translation step existed — fails the build instead of
 shipping as a quietly smaller index.

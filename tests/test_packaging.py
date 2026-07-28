@@ -833,6 +833,16 @@ def _upstream_marker(name: str, pack: dict) -> str:
     )
 
 
+def test_notice_ships_as_plain_text_not_markdown():
+    """NOTICE is COPY'd into both images at /opt/owasp-kb/licenses/ and is read
+    there as a text file, so a markdown `**` renders as four literal asterisks in
+    the middle of a licence notice. Three crept in when the CWE attribution was
+    added; master's NOTICE had none."""
+    assert "**" not in NOTICE_FILE.read_text(), (
+        "markdown emphasis in NOTICE renders literally where it ships"
+    )
+
+
 def test_notice_attributes_every_pack_in_the_lock():
     """NOTICE said "two upstream OWASP projects" for the whole of this branch,
     while the image baked a third pack that is MITRE's and not CC-BY-SA-4.0 --
@@ -878,10 +888,15 @@ def test_notice_does_not_claim_one_licence_covers_the_whole_index():
     """The sentence was "The index therefore remains CC-BY-SA-4.0 in its own
     right". That is a licensing claim, not an attribution one, and it is false
     once the index contains MITRE content that is not CC-BY-SA-4.0. The index is
-    a composite; NOTICE has to say which portion is which."""
-    notice = " ".join(NOTICE_FILE.read_text().split())
-    assert "index therefore remains CC-BY-SA-4.0 in its own right" not in notice
-    assert "composite of differently-licensed content" in notice
+    a composite; NOTICE has to say which portion is which.
+
+    Matched case-insensitively and without the emphasis marker: NOTICE ships as
+    plain text at /opt/owasp-kb/licenses/, where markdown `**` renders literally,
+    so how the sentence emphasises "composite" is free to change. What must not
+    change is that it says so at all."""
+    notice = " ".join(NOTICE_FILE.read_text().split()).lower()
+    assert "index therefore remains cc-by-sa-4.0 in its own right" not in notice
+    assert "of differently-licensed content" in notice
     licences = {p["license"] for p in _lock_packs().values()}
     assert len(licences) > 1, (
         "every pack now shares one licence, so the composite wording above is no "

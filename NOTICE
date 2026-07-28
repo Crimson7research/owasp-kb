@@ -14,7 +14,7 @@ its requirements to CWE ids, and the project name does not describe it.
 ## Third-party content
 
 This project packages, and its built container images bake in, content from
-three upstream projects. **They do not share an upstream or a license.** Two
+three upstream projects. They do NOT share an upstream or a license. Two
 are OWASP Foundation projects licensed CC-BY-SA-4.0, verified via the GitHub
 licence API on each upstream repository; the third is MITRE's, under MITRE's
 own terms of use:
@@ -35,8 +35,8 @@ Baking this content into a distributable image is redistribution, and the
 SQLite index built from it — chunked, cross-linked, and re-served through the
 MCP tools — is an adaptation under the Creative Commons framework.
 
-**The index is a composite of differently-licensed content, and no single
-license covers all of it.** The portions derived from ASVS and the Cheat Sheet
+The index is a COMPOSITE of differently-licensed content, and no single
+license covers all of it. The portions derived from ASVS and the Cheat Sheet
 Series remain CC-BY-SA-4.0 in their own right as an adaptation; see
 LICENSE-DATA for the full legal text of that license. The portion derived from
 the CWE catalogue is governed by MITRE's CWE Terms of Use; see LICENSE-CWE for

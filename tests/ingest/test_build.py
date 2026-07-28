@@ -73,7 +73,7 @@ def test_build_creates_a_queryable_index(sources, tmp_path):
     report = _build(sources, out)
     assert out.exists()
     assert report.requirements == 3
-    assert report.documents == 3
+    assert report.cheatsheet_documents == 3
     assert report.integrity_failures == []
 
 
@@ -231,7 +231,7 @@ def test_build_is_rerunnable_over_an_existing_file(sources, tmp_path):
     _build(sources, out)
     report = _build(sources, out)
     assert report.requirements == 3
-    assert report.documents == 3
+    assert report.cheatsheet_documents == 3
 
 
 def test_build_missing_source_raises_actionably(tmp_path):
