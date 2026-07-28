@@ -25,3 +25,11 @@ packs:
     paths:
       - cheatsheets/
       - IndexASVS.md
+  cwe:
+    type: catalogue
+    version: "4.20"
+    license: LicenseRef-CWE-TOU
+    # Not an OWASP project. Present because ASVS maps to it. A numbered release
+    # rather than cwec_latest.xml.zip: a citation must resolve to the same
+    # weakness text for as long as the image exists.
+    url: https://cwe.mitre.org/data/xml/cwec_v4.20.xml.zip

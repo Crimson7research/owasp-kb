@@ -12,9 +12,10 @@ import yaml
 class LockedPack:
     name: str
     type: str
-    repo: str
     version: str
     license: str
+    repo: str | None = None
+    url: str | None = None
     release: str | None = None
     commit: str | None = None
     assets: list[str] = field(default_factory=list)
@@ -37,10 +38,28 @@ def load_lock(path: str | Path) -> Lock:
                 f"pack {name!r} pins release 'latest', which is the ASVS bleeding-edge tag; "
                 "pin an explicit release so citations stay reproducible"
             )
+        # Match the filename, not the whole URL: a host or path legitimately
+        # containing "latest" should not be rejected on that basis alone.
+        if "latest" in Path(str(cfg.get("url", ""))).name:
+            raise ValueError(
+                f"pack {name!r} pins a url containing 'latest', which moves as "
+                "upstream publishes; pin an explicit release or version so "
+                "citations stay reproducible"
+            )
+        repo = cfg.get("repo")
+        url = cfg.get("url")
+        if repo is None and url is None:
+            raise ValueError(f"pack {name!r} declares neither 'repo' nor 'url'; it needs one")
+        if repo is not None and url is not None:
+            raise ValueError(
+                f"pack {name!r} declares both 'repo' and 'url'; it is ambiguous which "
+                "one fetch should use, so pick one"
+            )
         packs[name] = LockedPack(
             name=name,
             type=cfg["type"],
-            repo=cfg["repo"],
+            repo=repo,
+            url=url,
             version=str(cfg["version"]),
             license=cfg["license"],
             release=cfg.get("release"),
