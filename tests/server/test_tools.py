@@ -58,7 +58,7 @@ def tools(tmp_path):
 # -- surface ----------------------------------------------------------
 
 
-def test_exactly_nine_tools_are_exposed(tools):
+def test_exactly_ten_tools_are_exposed(tools):
     assert set(tools) == {
         "kb_info",
         "owasp_search",
@@ -69,6 +69,7 @@ def test_exactly_nine_tools_are_exposed(tools):
         "owasp_roster",
         "cwe_get",
         "cwe_related",
+        "cwe_search",
     }
 
 
@@ -438,6 +439,63 @@ def test_no_cwe_tool_emits_a_refinement_verdict(tools):
     assert "a shared pillar means almost nothing" in doc
 
 
+def test_cwe_search_finds_the_weakness_that_names_the_defect(tools):
+    """Strengthened from asserting that some hit's id starts with 'CWE-', which
+    passed for any CWE entry at all, including a wrong one.
+
+    CWE-770 'Allocation of Resources Without Limits or Throttling' is the entry
+    this query describes. Measured, BM25 over the fixture ranks it *second* of six
+    hits, behind CWE-400 'Uncontrolled Resource Consumption' -- both are
+    resource-exhaustion entries and the query's terms are split across them -- so
+    what is pinned is that CWE-770 comes back near the top, not that it is first.
+    """
+    hits = tools["cwe_search"]("allocation without limits")["hits"]
+    ids = [h["entry_id"] for h in hits]
+    assert "CWE-770" in ids
+    assert ids.index("CWE-770") <= 1
+    assert (
+        "Allocation of Resources Without Limits or Throttling"
+        in (hits[ids.index("CWE-770")]["heading_path"])
+    )
+
+
+def test_cwe_search_is_restricted_to_the_catalogue(tools):
+    """Unrestricted, this same query returns two cheat-sheet sections among its
+    top five. A tool that says it searches CWE and returns OWASP prose gives an
+    agent doc_keys it will then try to cite as weaknesses."""
+    hits = tools["cwe_search"]("allocation without limits")["hits"]
+    assert hits
+    assert all(h["entry_id"].startswith("CWE-") for h in hits)
+
+
+def test_cwe_search_reports_a_miss_as_a_message_rather_than_an_empty_result(tools):
+    """Corrected from the plan's 'assert "error" in r' after reading owasp_search:
+    at the tool boundary a miss is NOT an error there. Kb.search raises LookupError
+    and owasp_search converts it to hits: [] plus a message stating the query found
+    nothing rather than that nothing applies -- pinned by
+    test_search_no_match_returns_explicit_message_not_empty. cwe_search mirrors
+    that exactly rather than inventing a second convention for the same event; an
+    error dict is reserved for the pack being absent from the index.
+
+    The query is nonsense tokens rather than the plan's 'zzzz no such weakness
+    zzzz', which was measured to return eight hits: the retriever ORs the surviving
+    terms, and 'no', 'such' and 'weakness' all occur in CWE prose. A phrase about
+    absence matches on its filler."""
+    r = tools["cwe_search"]("zzzznotpresent qqqqnosuchweakness")
+    assert r["hits"] == []
+    assert "no match" in r["message"].lower()
+    assert "cwe" in r["message"].lower()
+    assert "error" not in r
+
+
+def test_the_searched_pack_name_matches_what_the_ingest_writes():
+    """A typo would make every cwe_search an error about an unknown pack."""
+    from owasp_kb.ingest.packs.cwe import PACK_NAME
+    from owasp_kb.server.tools import CWE_PACK
+
+    assert CWE_PACK == PACK_NAME
+
+
 def test_the_kb_catalogue_rels_match_what_the_ingest_writes():
     """core must not import ingest, so the three rel names are written twice. If
     they drift, catalogue_related returns nothing rather than failing."""
@@ -473,6 +531,7 @@ def test_every_response_is_json_serialisable(tools):
     json.dumps(tools["owasp_related"]("V6.2.1"))
     json.dumps(tools["cwe_get"]("CWE-789"))
     json.dumps(tools["cwe_related"]("CWE-789", ancestors=True))
+    json.dumps(tools["cwe_search"]("allocation without limits"))
 
 
 # -- roster -------------------------------------------------------------

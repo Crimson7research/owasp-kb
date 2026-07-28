@@ -35,6 +35,12 @@ def _normalised(text: str) -> str:
 # these must not be read as "no such mapping exists".
 PARTIAL_COVERAGE_RELS = ("cwe", "nist", "supersedes")
 
+# The pack ingest/packs/cwe.py registers. Named here rather than imported because
+# the server never loads ingest; pinned against it by
+# test_the_searched_pack_name_matches_what_the_ingest_writes, because a typo would
+# turn cwe_search into an error about an unknown pack.
+CWE_PACK = "cwe"
+
 TOOL_TRIGGER_TOPICS = (
     "authentication",
     "passwords",
@@ -374,6 +380,41 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             "extended_description": entry.extended_description,
         }
 
+    def cwe_search(query: str, limit: int = 8) -> dict:
+        """Search the CWE catalogue by describing a weakness in your own words.
+
+        Use this when you know what the defect is but not which CWE names it —
+        for instance when OWASP's mapping is silent for a requirement, which it
+        is for 141 of 345. Returns citable ids; a miss comes back as an empty hit
+        list WITH a message saying the query found nothing, because 'no results'
+        on its own reads as 'no such weakness exists'.
+
+        entry_id on each hit is what you cite, and cwe_get on it gives the
+        abstraction and status the citation needs.
+        """
+        try:
+            hits = kb.search(query, pack=CWE_PACK, limit=limit)
+        except (KeyError, ValueError) as exc:
+            # KeyError before LookupError, as in owasp_search: an index built
+            # without the CWE pack is a fact about this build, and reporting it as
+            # "no match" would read as "no such weakness exists".
+            return _error(exc)
+        except LookupError as exc:
+            return {"hits": [], "message": str(exc)}
+        return {
+            "hits": [
+                {
+                    # doc_key is the entry id: the ingest keys one document per
+                    # catalogue entry on it.
+                    "entry_id": h.doc_key,
+                    "citation": h.citation,
+                    "heading_path": h.heading_path,
+                    "excerpt": _truncate(h.text, MAX_EXCERPT_CHARS),
+                }
+                for h in hits
+            ]
+        }
+
     def cwe_related(entry_id: str, ancestors: bool = False) -> dict:
         """Relationships for a CWE id: parents, peers, or a category's members.
 
@@ -545,4 +586,5 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         owasp_roster,
         cwe_get,
         cwe_related,
+        cwe_search,
     ]
