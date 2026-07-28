@@ -54,6 +54,16 @@ jobs:
           fetch_all(load_lock('sources.lock.yml'), Path('data'))
           "
 
+      # The test job runs before data/ exists, so every realdata test skips there.
+      # Run them here, where the fetch has happened. Two guards keep a silent pass
+      # impossible: `test -f` fails if the fetch did not produce the catalogue, so
+      # the skip branch can never be taken; and `pytest -m` exits 5 when nothing
+      # matches, so deleting a marker fails rather than quietly running nothing.
+      - name: Real-catalogue assertions
+        run: |
+          test -f data/cwe/cwec_v4.20.xml
+          pytest -m realdata -q --strict-markers
+
       - name: Download embedding model
         run: python scripts/download_model.py
 

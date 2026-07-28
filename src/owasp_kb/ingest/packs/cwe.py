@@ -19,24 +19,33 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from owasp_kb.core.chunking import chunk_markdown
+from owasp_kb.core.chunking import chunk_markdown, slugify
 from owasp_kb.core.registry import Pack, pack_id, upsert_pack
 
 PACK_NAME = "cwe"
 SOURCE_URL = "https://cwe.mitre.org"
 
-# Only these rels are produced here, so clearing by rel scopes the delete to this
-# ingest without depending on the source filename, which carries the version.
-CWE_RELS = ("cwe_child", "cwe_peer", "cwe_member")
+# Every rel this module produces must appear in CWE_RELS: _clear_pack scopes its
+# delete by that list, so a rel produced but not registered leaves withdrawn edges
+# of that rel surviving every rebuild. Named rather than inlined at the three
+# producer sites so the obligation is one hop away from each of them, and pinned by
+# test_every_rel_produced_is_registered_for_clearing.
+CWE_CHILD, CWE_PEER, CWE_MEMBER = "cwe_child", "cwe_peer", "cwe_member"
+CWE_RELS = (CWE_CHILD, CWE_PEER, CWE_MEMBER)
 
-_DESCRIPTION_ANCHOR = "description"
+# The anchor is derived from the heading rather than written twice: chunk anchors
+# come from slugify, so hardcoding "description" here would silently NULL every
+# chunk_id if the heading were ever reworded.
+_DESCRIPTION_HEADING = "Description"
+_EXTENDED_HEADING = "Extended Description"
+_DESCRIPTION_ANCHOR = slugify(_DESCRIPTION_HEADING)
 
 
 def _now() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
 
 
-def _flatten(el: ET.Element | None) -> str:
+def _flatten_blocks(el: ET.Element | None) -> str:
     """Flatten within each block, keeping the blank line between blocks.
 
     ``el.text`` is not enough: ``Extended_Description`` wraps its prose in nested
@@ -114,9 +123,9 @@ def _clear_pack(conn: sqlite3.Connection, pid: int) -> None:
 
 def _as_markdown(title: str, description: str, extended: str) -> str:
     """Build the document the chunker splits, one H2 per non-empty field."""
-    parts = [f"# {title}", "", "## Description", "", description]
+    parts = [f"# {title}", "", f"## {_DESCRIPTION_HEADING}", "", description]
     if extended:
-        parts += ["", "## Extended Description", "", extended]
+        parts += ["", f"## {_EXTENDED_HEADING}", "", extended]
     return "\n".join(parts)
 
 
@@ -163,6 +172,36 @@ def _insert_entry_document(
     return description_chunk_id
 
 
+def _insert_entry(
+    conn: sqlite3.Connection,
+    pid: int,
+    *,
+    entry_id: str,
+    kind: str,
+    name: str,
+    abstraction: str | None,
+    status: str,
+    description: str,
+    extended: str,
+) -> None:
+    """Write one catalogue entry and the searchable document behind it.
+
+    Shared by both loops. A Weakness and a Category differ only in ``kind``, in
+    whether an abstraction exists, and in whether there is an extended description,
+    so one statement serves both -- otherwise a reader has to diff two nine-column
+    INSERTs to confirm the loops agree.
+    """
+    chunk_id = _insert_entry_document(
+        conn, pid, entry_id=entry_id, name=name, description=description, extended=extended
+    )
+    conn.execute(
+        "INSERT INTO catalogue_entries (pack_id, entry_id, kind, name, abstraction,"
+        " status, description, extended_description, chunk_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (pid, entry_id, kind, name, abstraction, status, description, extended, chunk_id),
+    )
+
+
 def ingest_cwe(
     conn: sqlite3.Connection, xml_path: str | Path, *, version: str, license: str
 ) -> int:
@@ -199,30 +238,16 @@ def ingest_cwe(
         entry_id = _entry_id(weakness.get("ID"))
         if entry_id is None:
             continue
-        description = _flatten(weakness.find(q("Description")))
-        extended = _flatten(weakness.find(q("Extended_Description")))
-        chunk_id = _insert_entry_document(
+        _insert_entry(
             conn,
             pid,
             entry_id=entry_id,
+            kind="weakness",
             name=weakness.get("Name", ""),
-            description=description,
-            extended=extended,
-        )
-        conn.execute(
-            "INSERT INTO catalogue_entries (pack_id, entry_id, kind, name, abstraction,"
-            " status, description, extended_description, chunk_id)"
-            " VALUES (?, ?, 'weakness', ?, ?, ?, ?, ?, ?)",
-            (
-                pid,
-                entry_id,
-                weakness.get("Name", ""),
-                weakness.get("Abstraction"),
-                weakness.get("Status", ""),
-                description,
-                extended,
-                chunk_id,
-            ),
+            abstraction=weakness.get("Abstraction"),
+            status=weakness.get("Status", ""),
+            description=_flatten_blocks(weakness.find(q("Description"))),
+            extended=_flatten_blocks(weakness.find(q("Extended_Description"))),
         )
         count += 1
 
@@ -230,35 +255,25 @@ def ingest_cwe(
             target = _entry_id(related.get("CWE_ID"))
             if target is None:
                 continue
-            rel = "cwe_child" if related.get("Nature") == "ChildOf" else "cwe_peer"
+            rel = CWE_CHILD if related.get("Nature") == "ChildOf" else CWE_PEER
             edges.append(("cwe", entry_id, "cwe", target, rel, source))
 
     for category in root.findall(f"{q('Categories')}/{q('Category')}"):
         entry_id = _entry_id(category.get("ID"))
         if entry_id is None:
             continue
-        # A Category's prose lives in Summary; only a Weakness has a Description.
-        description = _flatten(category.find(q("Summary")))
-        chunk_id = _insert_entry_document(
+        _insert_entry(
             conn,
             pid,
             entry_id=entry_id,
+            kind="category",
             name=category.get("Name", ""),
-            description=description,
+            # A Category has no Abstraction attribute, and its prose lives in
+            # Summary -- only a Weakness carries a Description.
+            abstraction=None,
+            status=category.get("Status", ""),
+            description=_flatten_blocks(category.find(q("Summary"))),
             extended="",
-        )
-        conn.execute(
-            "INSERT INTO catalogue_entries (pack_id, entry_id, kind, name, abstraction,"
-            " status, description, extended_description, chunk_id)"
-            " VALUES (?, ?, 'category', ?, NULL, ?, ?, '', ?)",
-            (
-                pid,
-                entry_id,
-                category.get("Name", ""),
-                category.get("Status", ""),
-                description,
-                chunk_id,
-            ),
         )
         count += 1
 
@@ -266,7 +281,13 @@ def ingest_cwe(
             target = _entry_id(member.get("CWE_ID"))
             if target is None:
                 continue
-            edges.append(("cwe", entry_id, "cwe", target, "cwe_member", source))
+            edges.append(("cwe", entry_id, "cwe", target, CWE_MEMBER, source))
+
+    if count == 0:
+        raise ValueError(
+            f"no Weakness or Category elements under namespace {ns!r} in {path}; "
+            "expected a MITRE cwec_v*.xml catalogue"
+        )
 
     # OR IGNORE, not plain INSERT: the catalogue really does repeat edges, e.g.
     # CWE-120 declares ChildOf CWE-787 three times.

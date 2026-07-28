@@ -37,6 +37,10 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Tests that assert against a fetched upstream corpus rather than a fixture. They
+# skip when data/ is absent, so the default `pytest -q` run stays hermetic; the ci
+# build job selects them explicitly once the fetch has happened.
+markers = ["realdata: requires the fetched catalogue under data/"]
 
 [tool.ruff]
 line-length = 100
