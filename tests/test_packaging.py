@@ -502,3 +502,57 @@ def test_the_finder_emits_only_verdicts_the_roster_accepts():
         )
     assert "MET" in body
     assert "MET" in meta["description"]
+
+
+@pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
+def test_the_skills_specify_per_finding_detail_sections(skill):
+    """A table row cannot carry a flow, a risk assessment or a remediation with its
+    provenance. See #31."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    for section in (
+        "### Requirement",
+        "### Description",
+        "### Risk",
+        "### Technical risk assessment",
+        "### Recommendation",
+    ):
+        assert section in body, f"{skill} does not specify {section}"
+
+
+@pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
+def test_detail_sections_are_bounded_to_verified_and_refuted_findings(skill):
+    """97 gaps with a full section each would run to thousands of lines. Verified
+    and refuted findings are the ones someone acts on; the rest stay table rows."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "stay table rows" in body, "the bound is what keeps a 97-gap report finite"
+    assert "per **verified `GAP`**" in body
+    assert "per **finding a verifier refuted**" in body
+
+
+@pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
+def test_the_skills_require_the_verdict_in_the_finding_heading(skill):
+    """A run producing 25 verified and 72 unconfirmed gaps renders them alike
+    otherwise, and three quarters of the report reads as confirmed."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "verdict goes in the heading" in body.lower()
+
+
+@pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
+def test_a_recalled_recommendation_must_say_it_is_recalled(skill):
+    """The project's stated anti-goal is silent fallback to recalled guidance with
+    no way to tell it from a citation. Every finding gets a recommendation; one
+    without corpus backing says so."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "training data" in body
+    assert "hallucinated" in body
+    assert "Every finding gets one" in body
+
+
+@pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
+def test_risk_scoring_flags_metrics_the_code_cannot_settle(skill):
+    """Confidentiality and Integrity depend on what a credential grants, which is a
+    business input. Scoring them silently presents a guess as an assessment."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "CVSS" in body
+    assert "cannot settle" in body
+    assert "temporal or environmental" in body

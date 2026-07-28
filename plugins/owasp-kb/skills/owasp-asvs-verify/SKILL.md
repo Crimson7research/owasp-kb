@@ -151,6 +151,107 @@ a fact you report rather than a claim you make.
 The last three states are the point. A report that cannot say "I could not determine this"
 says `MET` instead.
 
+## Detail sections
+
+The table is the summary and stays complete — every requirement, every verdict. Below it, add one
+detail section per **verified `GAP`** and per **finding a verifier refuted**. Those are the ones
+someone has to act on. `GAP (unconfirmed)` and the rest stay table rows, which is what keeps the
+report finite: a 97-gap assessment would otherwise run to thousands of lines.
+
+Each section follows this shape:
+
+    ## Finding 7 — Staged credentials survive disconnect — `GAP`
+
+    | | |
+    |---|---|
+    | **Covers** | V7.3.1 (L2), V7.4.1 (L1) |
+    | **Location** | `firmware/main/adapters/PeerServer.cpp:136` |
+    | **CWE** | CWE-613 — matches the mapping |
+    | **Root cause** | #3 — termination is not implemented anywhere |
+    | **Technical severity** | High — reasoning below |
+
+    ### Requirement
+    > **ASVS 5.0.0 V7.4.1** (L1) — <the requirement text, verbatim from owasp_checklist>
+
+    ### Description
+    ### Risk
+    ### Technical risk assessment
+    ### Recommendation
+    ### References
+
+**The verdict goes in the heading.** A run can produce 25 verified gaps and 72 unconfirmed ones;
+rendering them alike makes three quarters of the report read as confirmed.
+
+**`Covers` lists every requirement.** Findings sharing a `(file, line, cwe)` merge, so one defect
+routinely covers several — the heading cannot be an ASVS id.
+
+**`Root cause` points back to the cross-cutting list.** Without it, 97 findings read as 97
+independent problems and the reader fixes symptoms.
+
+**Omit the CWE row** when you have no id and `cwe_corpus` is empty. Coverage is 204/345, so absence
+is ordinary and a blank field reads as an oversight.
+
+### Description carries the flow
+
+Show how the defect is reached, not just that it exists. For injection that is a source-to-sink
+path. For a *missing* control there is no tainted data, so it is the attack path from the absent
+control to the reachable value — both are acceptable, omitting it is not. A `GAP` with no path is
+an assertion.
+
+Then say how you know the control applies here at all. "Is this even applicable" is the first thing
+a developer pushes back with, and answering it pre-empts the argument.
+
+### Technical risk assessment
+
+Score what the code shows. Give the CVSS vector and the reasoning per metric, and **flag every
+metric resting on an assumption the code cannot settle** — Confidentiality and Integrity usually
+depend on what a compromised credential actually grants, which is a business input you do not have.
+
+State what would move the number. "8.1, or 5.4 if that session only carries anonymous cart state"
+is a score a client can challenge; a bare 8.1 is not. Say when a weakness is conditional — one that
+needs a second flaw to exploit — and why you scored it as you did anyway.
+
+Do not score temporal or environmental metrics. Both need deployment facts the repository does not
+contain.
+
+### Recommendation, with its provenance stated
+
+**Every finding gets one.** If the corpus has nothing to cite, that is a reason to label the source
+— never a reason to omit the fix.
+
+State the provenance every time, *including* when it is corpus-quoted. The principle may be OWASP's;
+the code you write is always yours, and marking only the citation lets your snippet borrow its
+authority.
+
+- **Corpus-quoted** — quote the section, cite `doc_key#anchor` and the pinned version, and mark any
+  snippet you wrote as yours rather than OWASP's.
+- **Principle cited, implementation recalled** — the common case, where the corpus covers the idea
+  but not this framework's API. Say so plainly: *implementation from model training data, not the
+  OWASP corpus; verify against current documentation before implementing.*
+- **No corpus coverage** — lead with the warning, not a footnote: *⚠ from model training data, not
+  the OWASP corpus.* Name the `owasp_search` query that returned nothing, and say it may be
+  hallucinated and must be verified rather than cited.
+
+Recording the empty query matters: it is evidence the gap is in the corpus rather than in the
+assessment, and it lets someone check whether a better query would have found something. Never
+synthesise an anchor for a section that does not exist — `owasp_roster` rejects one that does not
+resolve, and a reader cannot tell a guessed anchor from a real one.
+
+**Prefer a working pattern already in the target repository** over anything reconstructed. If the
+codebase solves this correctly somewhere else, cite that first — it is better provenance than any
+tier.
+
+Where no minimal fix exists, because the finding is architectural, give an ordered sequence and say
+which requirements become *implementable* once it is done. Do not invent a snippet that
+misrepresents the work involved.
+
+### Findings a verifier refuted
+
+These get a section too, and they are among the most useful entries. They are recorded
+`INSUFFICIENT EVIDENCE` rather than `MET`: refuting the reported defect is not the same as
+establishing the control is adequate, and nobody produced that finding. Their Recommendation slot
+becomes *what would need to be assessed to reach `MET`*.
+
 ## Rules
 
 - Applicability, verdicts and remediation are the dispatched agents' job, not yours: the
