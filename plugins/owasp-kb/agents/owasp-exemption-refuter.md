@@ -39,7 +39,7 @@ For a single chapter-level claim, return:
 {
   "verdict": "exemption_refuted",
   "searched": "grepped for cookie, session, token, ctx, peer, state across src/; read the BLE connection handler",
-  "evidence": "PeerServer keeps per-peer provisioning state across writes at PeerServer.cpp:141"
+  "evidence": "the connection handler keeps per-peer state across writes at src/net/handler.c:141"
 }
 ```
 

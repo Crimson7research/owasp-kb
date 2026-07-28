@@ -170,7 +170,7 @@ Each section follows this shape:
     | | |
     |---|---|
     | **Covers** | V7.3.1 (L2), V7.4.1 (L1) |
-    | **Location** | `firmware/main/adapters/PeerServer.cpp:136` |
+    | **Location** | `src/net/connection_handler.c:136` |
     | **CWE** | CWE-613 — matches the mapping |
     | **Root cause** | #3 — termination is not implemented anywhere |
     | **Technical severity** | High — reasoning below |
