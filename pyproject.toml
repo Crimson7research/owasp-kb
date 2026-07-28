@@ -1,7 +1,7 @@
 [project]
 name = "owasp-kb"
 dynamic = ["version"]
-description = "OWASP ASVS and Cheat Sheet knowledge bases as an MCP server"
+description = "OWASP ASVS and Cheat Sheet knowledge bases, plus MITRE's CWE catalogue, as an MCP server"
 requires-python = ">=3.13"
 license = "MIT"
 dependencies = [

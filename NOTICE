@@ -6,11 +6,18 @@ Foundation. OWASP® and the OWASP logo are registered trademarks of the OWASP
 Foundation. The project name leads with "owasp" only to describe its subject
 matter — the pinned OWASP content it packages and serves.
 
+CWE™ is a trademark of The MITRE Corporation. Naming the catalogue is
+attribution, not endorsement, and MITRE disclaims warranty and liability for
+any use of it. CWE is not an OWASP project; it is present because ASVS maps
+its requirements to CWE ids, and the project name does not describe it.
+
 ## Third-party content
 
 This project packages, and its built container images bake in, content from
-two upstream OWASP projects. Both are licensed CC-BY-SA-4.0, verified via the
-GitHub licence API on each upstream repository:
+three upstream projects. **They do not share an upstream or a license.** Two
+are OWASP Foundation projects licensed CC-BY-SA-4.0, verified via the GitHub
+licence API on each upstream repository; the third is MITRE's, under MITRE's
+own terms of use:
 
 - OWASP Application Security Verification Standard (ASVS)
   https://github.com/OWASP/ASVS
@@ -20,13 +27,27 @@ GitHub licence API on each upstream repository:
   https://github.com/OWASP/CheatSheetSeries
   License: CC-BY-SA-4.0
 
+- Common Weakness Enumeration (CWE) — The MITRE Corporation (not OWASP)
+  https://cwe.mitre.org/
+  License: LicenseRef-CWE-TOU (see LICENSE-CWE for the full terms)
+
 Baking this content into a distributable image is redistribution, and the
 SQLite index built from it — chunked, cross-linked, and re-served through the
-MCP tools — is an adaptation under the Creative Commons framework. The index
-therefore remains CC-BY-SA-4.0 in its own right; see LICENSE-DATA for the
-full legal text of that license. The MIT license in LICENSE covers only the
-project's own source code (the ingest pipeline, the MCP server, the plugin
-and skills), never the upstream content or the index derived from it.
+MCP tools — is an adaptation under the Creative Commons framework.
+
+**The index is a composite of differently-licensed content, and no single
+license covers all of it.** The portions derived from ASVS and the Cheat Sheet
+Series remain CC-BY-SA-4.0 in their own right as an adaptation; see
+LICENSE-DATA for the full legal text of that license. The portion derived from
+the CWE catalogue is governed by MITRE's CWE Terms of Use; see LICENSE-CWE for
+that text, which must accompany redistribution. Each image's OCI labels state
+the same split (`org.opencontainers.image.licenses="MIT AND CC-BY-SA-4.0 AND
+LicenseRef-CWE-TOU"`), and docs/licensing.md gives the practical reading —
+neither that document nor this one is legal advice.
+
+The MIT license in LICENSE covers only the project's own source code (the
+ingest pipeline, the MCP server, the plugin and skills), never the upstream
+content or the index derived from it.
 
 For the exact pinned version, release tag or commit SHA of each upstream
 source in any given build, see `sources.lock.yml`, or call the `kb_info` MCP

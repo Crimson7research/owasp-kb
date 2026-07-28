@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 import yaml
@@ -788,6 +789,104 @@ def test_the_skills_say_an_obsolete_mapping_is_grounds_to_depart(skill):
     # and where a hard wrap falls is not what this test is about.
     body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
     assert "`Obsolete` or is a Category rather than a weakness" in body
+
+
+NOTICE_FILE = Path("NOTICE")
+LOCK_FILE = Path("sources.lock.yml")
+
+
+def _notice_attribution_entries() -> list[str]:
+    """The `- `-prefixed blocks of NOTICE's attribution list, one per upstream.
+
+    Parsed as blocks rather than searched as substrings, and that is the whole
+    point of this helper. A bare `"CWE" in notice` check passes on a NOTICE that
+    never attributes CWE at all, because the string occurs in `LICENSE-CWE` and
+    inside `LicenseRef-CWE-TOU` in the prose. So does `"cheatsheets" in
+    notice.lower()`, off the `CheatSheetSeries` URL of a different pack. Scoping
+    to the list means a pack is only found where it is actually attributed.
+    """
+    blocks = NOTICE_FILE.read_text().split("\n\n")
+    return [b for b in blocks if b.lstrip().startswith("- ")]
+
+
+def _lock_packs() -> dict:
+    return yaml.safe_load(LOCK_FILE.read_text())["packs"]
+
+
+def _upstream_marker(name: str, pack: dict) -> str:
+    """Where a pack's attribution entry must point, derived from its lock entry.
+
+    Two shapes exist because the upstreams differ: ASVS and the Cheat Sheet
+    Series are GitHub repositories (`repo`), CWE is a direct download from
+    MITRE (`url`). A pack carrying neither fails loudly rather than being
+    skipped -- an unlocatable upstream is not an attributable one.
+    """
+    if repo := pack.get("repo"):
+        return f"https://github.com/{repo}"
+    if url := pack.get("url"):
+        host = urlparse(url).netloc
+        assert host, f"pack {name!r} has an unparseable url {url!r}"
+        return host
+    raise AssertionError(
+        f"pack {name!r} declares neither `repo` nor `url`, so NOTICE has no "
+        "upstream to attribute; give the lock entry one"
+    )
+
+
+def test_notice_attributes_every_pack_in_the_lock():
+    """NOTICE said "two upstream OWASP projects" for the whole of this branch,
+    while the image baked a third pack that is MITRE's and not CC-BY-SA-4.0 --
+    contradicting the OCI licence label in the same artifact. It went stale
+    because nothing asserted anything about it at all.
+
+    Derived from sources.lock.yml, not from a list of three: a fourth pack added
+    without touching NOTICE fails here."""
+    packs = _lock_packs()
+    entries = _notice_attribution_entries()
+    assert len(entries) == len(packs), (
+        f"NOTICE lists {len(entries)} upstreams and the lock has {len(packs)}"
+    )
+    for name, pack in sorted(packs.items()):
+        marker = _upstream_marker(name, pack)
+        matched = [e for e in entries if marker in e]
+        assert len(matched) == 1, (
+            f"pack {name!r}: expected exactly one NOTICE attribution entry "
+            f"pointing at {marker}, found {len(matched)}"
+        )
+
+
+def test_notice_states_each_packs_licence_on_that_packs_own_entry():
+    """Not "the licence string appears in NOTICE somewhere": LicenseRef-CWE-TOU
+    also appears in the composite-index paragraph, so a file-wide search would
+    pass with the licence stated against the wrong upstream, or against none."""
+    entries = _notice_attribution_entries()
+    for name, pack in sorted(_lock_packs().items()):
+        marker = _upstream_marker(name, pack)
+        # Asserted, not `next(...)`: a bare StopIteration reports as an error that
+        # names neither the pack nor what was looked for.
+        matched = [e for e in entries if marker in e]
+        assert matched, f"pack {name!r}: no NOTICE entry points at {marker}"
+        entry = matched[0]
+        stated = re.search(r"^\s*License:\s*(\S+)", entry, re.MULTILINE)
+        assert stated, f"pack {name!r}: its NOTICE entry has no `License:` line"
+        assert stated.group(1) == pack["license"], (
+            f"pack {name!r}: NOTICE says {stated.group(1)!r}, the lock says {pack['license']!r}"
+        )
+
+
+def test_notice_does_not_claim_one_licence_covers_the_whole_index():
+    """The sentence was "The index therefore remains CC-BY-SA-4.0 in its own
+    right". That is a licensing claim, not an attribution one, and it is false
+    once the index contains MITRE content that is not CC-BY-SA-4.0. The index is
+    a composite; NOTICE has to say which portion is which."""
+    notice = " ".join(NOTICE_FILE.read_text().split())
+    assert "index therefore remains CC-BY-SA-4.0 in its own right" not in notice
+    assert "composite of differently-licensed content" in notice
+    licences = {p["license"] for p in _lock_packs().values()}
+    assert len(licences) > 1, (
+        "every pack now shares one licence, so the composite wording above is no "
+        "longer the thing to assert -- revisit this test rather than deleting it"
+    )
 
 
 def test_the_image_tag_records_every_packs_version():
