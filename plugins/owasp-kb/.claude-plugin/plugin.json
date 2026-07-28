@@ -1,6 +1,6 @@
 {
   "name": "owasp-kb",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Authoritative OWASP security guidance (ASVS 5.0.0 + Cheat Sheet Series) via a local MCP server, with skills for secure coding, ASVS verification, gap reporting and threat modelling",
   "author": {
     "name": "Yimura"

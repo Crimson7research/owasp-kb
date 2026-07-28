@@ -112,9 +112,13 @@ not because it shares an upstream.
 
 OWASP® is a registered trademark of the OWASP Foundation. This project is
 **not affiliated with, endorsed by, or sponsored by** the OWASP Foundation.
-The project name leads with "owasp" only because that is what the content is
-— the Application Security Verification Standard and the Cheat Sheet Series,
+The project name leads with "owasp" only because that is what most of the content
+is — the Application Security Verification Standard and the Cheat Sheet Series,
 both OWASP Foundation projects — not because of any relationship with the
-Foundation itself. This matters specifically because the naming choice could
+Foundation itself. Since the CWE pack, the name is also **incomplete** as a
+description: one of the three packs is MITRE's, and the name says nothing about it.
+`kb_info` reports every pack's `license` and `source_url` for that reason, so a
+citation's upstream is always recoverable from the server rather than inferred from
+the repository's name. This matters specifically because the naming choice could
 otherwise read as an implied affiliation; the disclaimer exists precisely to
 foreclose that reading, and is repeated in [NOTICE](../NOTICE).

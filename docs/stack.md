@@ -22,8 +22,28 @@ one against a knowledge base that is *not* shaped like this one.
 
 ## 1. What the corpus actually is
 
-Ten properties. Every one of them is a fact about OWASP's content, not a
-preference of this project's.
+Ten properties. Every one of them is a fact about the content, not a preference
+of this project's.
+
+**Two of the three packs are OWASP's; the third is not.** ASVS and the Cheat
+Sheet Series are OWASP Foundation projects. The CWE catalogue is MITRE's — CWE
+is **not an OWASP project**, and it sits in this server because ASVS maps its
+requirements to CWE ids, not because it shares an upstream. That mapping is why
+an agent ends up holding a CWE id it cannot check: it reaches only 204 of 345
+requirements, and in one real assessment 42 of 95 cited ids came from nowhere in
+this index at all. See [docs/licensing.md](licensing.md) for CWE's own terms.
+
+Its properties differ from the two OWASP corpora in ways that happen to make the
+argument below stronger rather than weaker. CWE publishes **numbered releases**
+(`4.20`) rather than a moving branch, so property 2 holds more cleanly for it
+than for the Cheat Sheet Series, which needs a commit SHA. It is **keyed**: 1,391
+entries — 969 Weaknesses and 422 Categories — each addressable by the id a
+finding actually cites, which is why `cwe_get` can treat an unknown id as an error
+rather than an empty result. And its structure is a **relationship graph**
+(`ChildOf`, `PeerOf`, `Has_Member`: 1,160 / 284 / 4,260 edges) rather than heading
+hierarchy, which is the first content in this index whose shape is navigated by
+edge rather than by anchor — and the reason `packs.type` needed a third value,
+`catalogue`, alongside `checklist` and `corpus`.
 
 **1. Read-only after build — exactly one writer, at build time.**
 `ingest/build.py` writes the index once and nothing ever writes to it again.
@@ -34,21 +54,28 @@ the file is packaged, or serving fails loudly.
 
 **2. Pinned to an exact upstream release.**
 `sources.lock.yml` pins ASVS to a release tag and rejects `latest` — the
-rolling bleeding-edge build — and pins the Cheat Sheet Series to a 40-character
-commit SHA. Every document carries a `source_url` that pins the commit, so a
-citation resolves to the exact indexed text rather than to a moving branch.
-Upstream publishes numbered releases with machine-readable assets; no scraping,
-no PDF parsing.
+rolling bleeding-edge build — pins the Cheat Sheet Series to a 40-character
+commit SHA, and pins CWE to a numbered release (`4.20`). Every document carries a
+`source_url` that pins the commit, so a citation resolves to the exact indexed
+text rather than to a moving branch. Every upstream publishes numbered releases
+with machine-readable assets; no scraping, no PDF parsing.
 
 **3. Small — small enough that the database engine is not the interesting
 problem.**
-120 files and 2.48 MB of cheat sheets, plus 82 KB of ASVS requirement text.
-137 documents in the index. 2,894 chunks at the shipped chunk size of 512
-tokens. 384-dimension vectors, roughly 4 MB of vector data at `float32`. The
-index file is 4.8 MB (`lite`) or 9.4 MB (`full`). The whole ASVS standard would
-fit in a context window, which is why the MCP server earns its place through
-filtering, citation stability and cross-linking rather than through
+120 files and 2.48 MB of cheat sheets, plus 82 KB of ASVS requirement text, plus
+an 18.2 MB CWE catalogue XML that reduces to 1,391 keyed entries. 1,528 documents in
+the index — 17 ASVS chapters, 120 cheat sheets, 1,391 CWE entries. 4,869 chunks at
+the shipped chunk size of 512 tokens (345 ASVS + 2,549 cheat sheet + 1,975 CWE).
+384-dimension vectors, roughly 7.5 MB of vector data at `float32`. The index file
+is 8.0 MB (`lite`) or 16.0 MB (`full`), measured on the shipped files. The whole
+ASVS standard would fit in a context window, which is why the MCP server earns its
+place through filtering, citation stability and cross-linking rather than through
 compression.
+
+The CWE pack roughly doubled every one of those figures and changed none of the
+conclusions below. It moved the corpus from ~345× below the threshold where an ANN
+index starts to matter to ~205× below it — a change of degree inside an argument
+that has two orders of magnitude of headroom.
 
 **4. It does not change at runtime; freshness is a build concern.**
 There is no runtime fetch path in the server at all. A baked image is exactly
@@ -60,7 +87,7 @@ knowledge base are reviewed, not auto-merged.
 
 **5. Citations must be reproducible, indefinitely, by a third party.**
 A citation produced against the content-pinned tag
-(`owasp-kb:full-asvs5.0.0-cs20260724`) resolves to the same requirement text
+(`owasp-kb:full-asvs5.0.0-cs20260724-cwe4.20`) resolves to the same requirement text
 for as long as the image exists. This property drives three otherwise unrelated
 pieces of machinery at once: the immutable image tag, the anchor-uniqueness
 discipline (16 slug collisions across 9 of the 120 cheat sheets in the real
@@ -92,11 +119,18 @@ is precisely the failure mode the design refuses. This is only defensible
 because the enumerable set is bounded: 345 rows, 140,698 characters unfiltered
 before grouping, 103,134 after.
 
-**9. Two structurally different content shapes, both stable.**
-`checklist` (enumerable, leveled requirement sets) and `corpus` (documents
-navigated by heading). No schema or server code names "ASVS" or "cheat
-sheets" — they are two rows in a `packs` table, distinguished from any future
-pack only by the `type` that row carries.
+**9. Three structurally different content shapes, all stable.**
+`checklist` (enumerable, leveled requirement sets), `corpus` (documents navigated
+by heading) and `catalogue` (keyed entries navigated by a relationship graph). No
+schema or server code names "ASVS", "cheat sheets" or "CWE" — they are three rows
+in a `packs` table, distinguished from any future pack only by the `type` that row
+carries. The third type is a partial vindication of the generic registry and worth
+reading as such: no tool that predates CWE needed changing, and no existing `Kb`
+method did either. But the pack did need three *new* tools (`cwe_get`,
+`cwe_search`, `cwe_related`) and two new `Kb` methods, because a graph is not
+queryable through a heading API. ADR 0005's "adding a pack needs no server change"
+holds for a pack shaped like the two it was written about, and does not hold in
+general — see the dated note on that ADR.
 
 **10. The consumer is an AI agent, not a human.**
 This changes what absence means. An empty search raises rather than returning
@@ -114,6 +148,14 @@ the other 155 being genuinely new in 5.0.0. The project surfaces that coverage
 rather than filling the gaps, because inventing edges would make this a source
 of security claims rather than a conduit for OWASP's.
 
+The CWE pack is what that partiality eventually cost, and it is worth separating
+the two things. The pack does **not** fill in the missing 141 mappings — no edge
+was invented. It makes the ids on the *other* side checkable: an agent that
+departs from the mapping, which it must for 141 requirements and does anyway for
+the rest, previously produced a CWE id nothing in this index could resolve. Now
+`cwe_get` resolves it or errors. That is still a conduit, not a source: the
+catalogue is MITRE's text, cited by MITRE's id.
+
 ---
 
 ## 2. The stack, and which property forces each part
@@ -126,9 +168,9 @@ were decided by the obvious argument and were not.
 | SQLite, single file | **6** (offline, one process) | scale — see below |
 | `mode=ro&immutable=1` | **1** (one writer, at build) | performance |
 | Baked index in the image | **6**, **5** (offline, pinned citations) | image size |
-| Brute-force cosine, no ANN | **3** (~2,400–2,894 vectors) | — |
+| Brute-force cosine, no ANN | **3** (4,869 vectors) | — |
 | `links` edge table | **7** (upstream publishes the join) | — |
-| Generic `packs` table | **9** (two shapes, more coming) | — |
+| Generic `packs` table | **9** (three shapes, more coming) | — |
 | No pagination anywhere | **8** (bounded enumerable set) | — |
 | Raising instead of empty results | **10** (an agent consumes this) | — |
 | `sources.lock.yml`, rejecting `latest` | **2** (upstream has release tags) | — |
@@ -214,22 +256,26 @@ Measured, the claim was wrong. The literal string "brute force" occurs **34
 times** across the 120 cheat sheets, and BM25 alone returns the expected
 document inside the top 8 for **two of the four** paraphrased test queries —
 including the hardest-sounding one, which it ranks **3rd**. Mean rank across
-those four queries is **3.0 under BM25 alone and 2.2 under hybrid**. As ADR
-0002 puts it: *"The real deficiency is ranking, not presence"* — an improvement
+those four queries was **3.0 under BM25 alone and 2.2 under hybrid** when that was
+measured; the shipped index now measures **3.2 and 2.2**, because the CWE pack put
+1,391 more documents in the BM25 index and cost one rank position on one of the
+four queries. The direction of the argument is unchanged and the size of the gap
+grew slightly. As ADR 0002 puts it: *"The real deficiency is ranking, not presence"* — an improvement
 of degree, not of finds-it-at-all. The vector half buys better ordering among
 results that were mostly already there.
 
 That reframing is what let the scale argument bite. Once vector search is a
 ranking improvement rather than the only way to find anything, the question
-becomes how much machinery a ranking improvement is worth over 4 MB of vectors.
+becomes how much machinery a ranking improvement is worth over 7.5 MB of vectors.
 Brute-force cosine distance over that many vectors runs in **under 10 ms**,
 measured. There is nothing for an ANN index to do.
 
 (One honest wrinkle: ADR 0002 says "~2,400 chunks", which was the pre-merge
 snapshot the retrieval benchmarks ran against. The shipped index at 512-token
-chunks holds **2,894**. Both are roughly 400× below the 10⁶ threshold, so the
-conclusion is unaffected, but the ADR's figure is a snapshot, not the shipped
-count.)
+chunks held **2,894** before the CWE pack and holds **4,869** with it. All three
+figures are 200–400× below the 10⁶ threshold, so the conclusion is unaffected, but
+the ADR's figure is a snapshot, not the shipped count — and now two packs behind
+rather than one.)
 
 The reversal is what makes ADR 0002 credible. A record that only stated the
 conclusion — "we chose SQLite, it is small and fast" — would be indisputable

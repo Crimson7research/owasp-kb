@@ -40,16 +40,25 @@ serve: ## Run the MCP server against the full index (for manual stdio testing)
 IMAGE ?= owasp-kb
 ASVS_VERSION ?= $(shell $(EXEC) python -c "import yaml;print(yaml.safe_load(open('sources.lock.yml'))['packs']['asvs']['version'])" | tr -d '\r')
 CS_DATE ?= $(shell $(EXEC) python -c "import yaml;print(yaml.safe_load(open('sources.lock.yml'))['packs']['cheatsheets']['version'])" | tr -d '\r')
+CWE_VERSION ?= $(shell $(EXEC) python -c "import yaml;print(yaml.safe_load(open('sources.lock.yml'))['packs']['cwe']['version'])" | tr -d '\r')
+
+# The immutable tag names every pack in the index. It named two of three until the
+# CWE pack shipped, at which point a CWE release bump -- which deprecates ids and
+# renumbers others -- would have produced a byte-different index under an identical
+# tag. cwe_get makes CWE ids directly citable, so they are part of what the
+# reproducible-citation promise covers, and the tag has to be able to distinguish
+# them. Keep this in step with .github/workflows/release.yml.
+PINNED_TAG := asvs$(ASVS_VERSION)-cs$(CS_DATE)-cwe$(CWE_VERSION)
 
 build-lite: index ## Build the lite image
 	docker build -f docker/Dockerfile --target lite \
 		-t $(IMAGE):lite \
-		-t $(IMAGE):lite-asvs$(ASVS_VERSION)-cs$(CS_DATE) .
+		-t $(IMAGE):lite-$(PINNED_TAG) .
 
 build-full: index-full ## Build the full image
 	docker build -f docker/Dockerfile --target full \
 		-t $(IMAGE):full \
-		-t $(IMAGE):full-asvs$(ASVS_VERSION)-cs$(CS_DATE) .
+		-t $(IMAGE):full-$(PINNED_TAG) .
 
 build: build-lite build-full ## Build both images
 

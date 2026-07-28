@@ -114,14 +114,27 @@ Every build produces two tags per variant:
 
 - **A moving tag** — `owasp-kb:lite`, `owasp-kb:full` — always the most recent
   build for that variant.
-- **An immutable, content-pinned tag** — `owasp-kb:lite-asvs5.0.0-cs20260724`,
-  `owasp-kb:full-asvs5.0.0-cs20260724` — encoding the exact ASVS version and
-  Cheat Sheet Series fetch date baked into that specific image, read directly
-  from `sources.lock.yml` at build time (`ASVS_VERSION`/`CS_DATE` in the
+- **An immutable, content-pinned tag** —
+  `owasp-kb:lite-asvs5.0.0-cs20260724-cwe4.20`,
+  `owasp-kb:full-asvs5.0.0-cs20260724-cwe4.20` — encoding the exact ASVS version,
+  Cheat Sheet Series fetch date and CWE release baked into that specific image,
+  read directly from `sources.lock.yml` at build time
+  (`ASVS_VERSION`/`CS_DATE`/`CWE_VERSION`, composed into `PINNED_TAG` in the
   `Makefile`; the same values via `steps.versions` in `release.yml`). A
   citation produced against a pinned tag remains reproducible indefinitely,
   independent of whatever the moving tag points to later — see the README's
   "Reproducible citations" section.
+
+  **The `-cwe<version>` component was added with the CWE pack, and the tag was
+  wrong without it.** The scheme named two packs because there were two. Once a
+  third pack shipped, a CWE release bump alone — 4.20 to 4.21 deprecates ids and
+  renumbers others — would have produced a byte-different index under a tag
+  identical to the previous one. That is precisely the drift the immutable tag
+  exists to make impossible, and it became citable rather than incidental the
+  moment `cwe_get` let an agent quote a CWE name and status. **Every pack in the
+  index must appear in the tag**; a fourth pack means a fourth component.
+  ADRs 0003 and 0004 quote the older two-pack form because that is what existed
+  when they were written.
 
 ## Mapping coverage
 

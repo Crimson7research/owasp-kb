@@ -28,6 +28,9 @@ TOOL_NAMES = {
     "owasp_checklist",
     "owasp_related",
     "owasp_roster",
+    "cwe_get",
+    "cwe_search",
+    "cwe_related",
 }
 
 
@@ -109,7 +112,11 @@ def test_skill_body_handles_an_unreachable_server(skill):
 def test_skills_only_reference_real_tools(skill):
     """A monorepo does not prevent plugin and server drifting apart; this does."""
     body = (SKILLS_DIR / skill / "SKILL.md").read_text()
-    referenced = set(re.findall(r"\b(owasp_\w+|kb_info)\b", body))
+    # cwe_* is matched only where it is called, not bare: `cwe_corpus` is a field
+    # on the owasp_roster payload, not a tool, and a bare `cwe_\w+` would flag it.
+    referenced = set(re.findall(r"\b(owasp_\w+|kb_info)\b", body)) | set(
+        re.findall(r"\b(cwe_\w+)\s*\(", body)
+    )
     assert referenced <= TOOL_NAMES, f"unknown tools referenced: {referenced - TOOL_NAMES}"
 
 
@@ -661,3 +668,70 @@ def test_licensing_doc_covers_cwe():
         "this is the sentence the new CWE section introduced; distinct from "
         "the pre-existing OWASP trademark disclaimer, which never says MITRE"
     )
+
+
+# One string per file, and each one is something the CWE *pack* introduced.
+# The assertion originally written here was `"CWE" in text` for all three, and it
+# could not fail for two of them: docs/stack.md and docs/kb-packs.md both said
+# "CWE" before this branch existed, because the ASVS->CWE *mapping* has been
+# ingested since 0.2.0. A file can satisfy that and still describe a two-pack,
+# all-OWASP server, which is the exact claim this test is here to catch.
+CWE_PACK_MARKERS = {
+    # None of the three tools existed before the pack; the README's job here is
+    # to list them, so the tool name is the pack's footprint in it.
+    "README.md": "cwe_get",
+    # The sentence the framing turns on. docs/licensing.md already carried it;
+    # docs/stack.md is where a reader goes to learn what the corpus *is*.
+    "docs/stack.md": "not an OWASP project",
+    # The third pack type. `catalogue` is CWE's and nothing else's, so a
+    # kb-packs.md that still documents two types cannot contain it.
+    "docs/kb-packs.md": "catalogue",
+}
+
+
+@pytest.mark.parametrize("path", sorted(CWE_PACK_MARKERS))
+def test_the_docs_do_not_claim_every_pack_is_owasp(path):
+    """CWE is MITRE's. A project called owasp-kb that silently serves non-OWASP
+    content misattributes it, and a reader cannot tell which upstream a citation
+    came from."""
+    marker = CWE_PACK_MARKERS[path]
+    text = Path(path).read_text()
+    assert "CWE" in text, f"{path} does not mention the CWE pack"
+    assert marker in text, (
+        f"{path} mentions CWE but not {marker!r} -- it may only be talking about "
+        "the ASVS->CWE mapping, which predates the pack"
+    )
+
+
+def test_the_smoke_test_covers_every_advertised_tool():
+    """The loop checked the original seven. A shipped image whose cwe_get was
+    missing would have passed, which is the one thing a smoke test is for."""
+    script = Path("scripts/docker_smoke.sh").read_text()
+    loop = next(line for line in script.splitlines() if line.startswith("for tool in "))
+    checked = set(loop.removeprefix("for tool in ").removesuffix("; do").split())
+    assert checked == TOOL_NAMES, f"smoke test misses {TOOL_NAMES - checked}"
+
+
+def test_the_smoke_test_proves_the_licence_texts_reached_the_image():
+    """Task 1 added the COPY and tested only the Dockerfile text. Nothing ran
+    against a built image, so `it should work` was as far as it went.
+
+    Unexercised until someone runs `make docker-smoke`: this asserts the script
+    contains the check, not that the check passes."""
+    script = Path("scripts/docker_smoke.sh").read_text()
+    for name in EXPECTED_LICENSE_NAMES:
+        assert f"/opt/owasp-kb/licenses/{name}" in script, (
+            f"the smoke test never looks for {name} in the image"
+        )
+
+
+def test_the_image_tag_records_every_packs_version():
+    """asvs$(V)-cs$(DATE) named two of three packs, so a CWE bump produced an
+    indistinguishable tag for a different index. The immutable tag is the whole
+    basis of the reproducible-citation promise, and cwe_get means CWE ids are
+    now part of what it promises."""
+    makefile = Path("Makefile").read_text()
+    release = Path(".github/workflows/release.yml").read_text()
+    assert "CWE_VERSION" in makefile, "the Makefile does not read the CWE version"
+    for text, name in ((makefile, "Makefile"), (release, "release.yml")):
+        assert "-cwe" in text, f"{name} builds a tag that does not name the CWE pack"

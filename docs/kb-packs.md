@@ -1,34 +1,47 @@
 # Knowledge base packs
 
-A **pack** is one ingested OWASP knowledge base. The server has no
-hardcoded notion of "ASVS" or "Cheat Sheets" beyond the two rows currently in
-the `packs` table — everything else is generic over the pack contract below.
-Adding a new pack should never require a server change; if it does, that is a
-bug in the contract, not a reason to special-case the new pack.
+A **pack** is one ingested knowledge base. The server has no hardcoded notion of
+"ASVS", "Cheat Sheets" or "CWE" beyond the three rows currently in the `packs`
+table — everything else is generic over the pack contract below.
+
+**Two of the three packs are OWASP's and one is not.** `asvs` and `cheatsheets`
+come from the OWASP Foundation; `cwe` is MITRE's Common Weakness Enumeration, and
+it is a pack because ASVS maps its requirements to CWE ids, so an agent holding a
+CWE id needs somewhere to check it. Nothing in the contract below is
+OWASP-specific, and a reader should not infer from the repository's name that
+everything it serves is OWASP's — `kb_info` reports each pack's `license` and
+`source_url` for exactly that reason. See [docs/licensing.md](licensing.md).
+
+Adding a new pack should not require a server change, and for a pack shaped like
+one that already exists it does not. CWE was the first that needed new tools
+(`cwe_get`, `cwe_search`, `cwe_related`) because its structure is a relationship
+graph, and no existing tool could traverse one. That is a limit of the contract,
+recorded in the dated note on
+[ADR 0005](decisions/0005-pack-registry.md) rather than papered over.
 
 ## The contract
 
 Every pack is one row in `packs` (see `core/schema.py`):
 
 ```
-packs (id, name UNIQUE, type CHECK IN ('checklist','corpus'), version,
+packs (id, name UNIQUE, type CHECK IN ('checklist','corpus','catalogue'), version,
        source_url, commit_sha, license, fetched_at)
 ```
 
 All fields except `commit_sha` are required for every pack:
 
 - **`name`** — the string every tool's `pack` argument matches against
-  (`"asvs"`, `"cheatsheets"`). Stable forever once shipped, since it appears
-  in citations.
-- **`type`** — `checklist` or `corpus`, validated by `registry.upsert_pack`
-  before the row is written; an unknown type raises rather than silently
-  storing garbage.
+  (`"asvs"`, `"cheatsheets"`, `"cwe"`). Stable forever once shipped, since it
+  appears in citations.
+- **`type`** — `checklist`, `corpus` or `catalogue`, validated by
+  `registry.upsert_pack` before the row is written; an unknown type raises rather
+  than silently storing garbage.
 - **`version`** — a human string surfaced by `kb_info` and embedded in every
   citation for a `checklist` pack's requirements (e.g. `ASVS 5.0.0 V6.2.1`).
   For a release-pinned pack this is the release version (`5.0.0`); for a
   commit-pinned pack it is whatever the lock file's `version` field holds
   (the Cheat Sheet Series uses the fetch date, `20260724`, since a raw SHA is
-  not a meaningful citation string on its own).
+  not a meaningful citation string on its own). CWE is release-pinned, `4.20`.
 - **`source_url`**, **`commit_sha`**, **`license`**, **`fetched_at`** —
   provenance, all surfaced by `kb_info` so an agent (or a human auditing a
   citation) can trace exactly what was ingested and under what license.
@@ -36,21 +49,37 @@ All fields except `commit_sha` are required for every pack:
 Beyond the `packs` row, every pack contributes rows to `docs`, `sections`, and
 `chunks` (its retrievable content) — a `checklist` pack additionally
 contributes to `requirements`, one row per enumerable item, each pointing at
-exactly one `chunks` row via `chunk_id`.
+exactly one `chunks` row via `chunk_id`, and a `catalogue` pack to
+`catalogue_entries`, one row per keyed entry, likewise pointing at one chunk.
 
-## The two types, and which tools apply
+## The three types, and which tools apply
 
 | Type | Structure | Tools that apply | Current pack |
 |---|---|---|---|
 | `checklist` | Enumerable, leveled items (requirements) | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_checklist`, `owasp_related` | `asvs` |
 | `corpus` | Document collection, headings only | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_related` | `cheatsheets` |
+| `catalogue` | Keyed entries and a relationship graph | `owasp_search`, `owasp_outline`, `owasp_get`, `cwe_get`, `cwe_search`, `cwe_related` | `cwe` |
 
 `owasp_checklist` is the one tool gated by type: calling it against a `corpus`
 pack raises `ValueError` naming `owasp_search`/`owasp_outline` as the
 alternative (`Kb.checklist` in `core/kb.py`) rather than returning an empty or
 misleading result. Every other tool is type-agnostic because it ultimately
 operates on `chunks`, `docs`, or `links` rows, none of which differ in shape
-between the two types.
+between the three types.
+
+The `catalogue` row is the one to read carefully, because it is the type that
+found the contract's edge. The type-agnostic tools do work on it unchanged — its
+entries are `docs`, `sections` and `chunks` like everything else, so
+`owasp_get("CWE-789")` returns the description text and `cwe_search` is a thin
+restriction of `owasp_search` to one pack rather than a second retrieval path.
+(`owasp_outline` also works, and is nearly useless here: a catalogue entry has one
+or two sections, so the outline it returns is `[Description]`. Working and worth
+calling are different things.) What the contract had no answer for was the graph:
+`Has_Member`, `ChildOf` and `PeerOf` are `links` rows, but `owasp_related`
+disambiguates its `id` argument by counting dots in an ASVS requirement id, so a
+`CWE-nnn` was never going to reach it. `cwe_related` exists for that, and
+`cwe_get` because a keyed entry must resolve or error — an unknown id returning
+`[]` is how a mis-cited number reaches a report.
 
 ## Adding a pack
 
@@ -77,7 +106,7 @@ No server change is required. The path is entirely in `ingest/`:
    - Return a count (requirements or documents ingested) for the build report.
 
 3. **Register the module in `ingest/build.py`**: import it, call it inside
-   `build_index` alongside the existing two calls, and add its count to
+   `build_index` alongside the existing three calls, and add its count to
    `BuildReport`. If the new pack should participate in any `links` edges
    (e.g. a `guidance` mapping references it), extend the relevant
    `ingest_*_links` function in `ingest/links.py`, or add a new one and a new
@@ -99,12 +128,36 @@ No server change is required. The path is entirely in `ingest/`:
    mapping incident recorded in that module's docstring and in
    [docs/build.md](build.md).
 
-No step above touches `server/`. The seven tools already generalize over any
-pack that satisfies the contract; a correctly-shaped new pack is immediately
-queryable by all of them (`owasp_checklist` and `owasp_roster` only if
-`type = 'checklist'`, since both enumerate a requirement set).
+No step above touches `server/` — provided the new pack's shape is one an existing
+tool can already reach. Of the ten tools, the seven `owasp_*`/`kb_info` ones
+generalize over any pack that satisfies the contract, and a correctly-shaped new
+pack is immediately queryable by all of them (`owasp_checklist` and `owasp_roster`
+only if `type = 'checklist'`, since both enumerate a requirement set). The three
+`cwe_*` tools are pack-specific by construction and are the counterexample: CWE
+satisfied the contract and was still not fully queryable, because a relationship
+graph has no reachable surface in a heading-and-anchor API. Expect a genuinely new
+*shape* to need new tools; expect a new pack of an existing shape not to.
 
 ## Deliberate omissions
+
+Two notes before the list, because the list used to carry an unstated assumption.
+
+**This section is about OWASP projects, and the pack registry is not.** Every
+entry below is an OWASP project weighed and declined. CWE was never in this list —
+it was not recorded as a deliberate omission and then reversed; it was simply
+outside the frame, because until now the only question asked here was "which
+*OWASP* project next". Nothing was overturned by adding it. What was wrong was the
+frame, and the frame is what the paragraph above the list now states.
+
+**Why CWE became a pack when it had not been considered as one.** The ASVS→CWE
+mapping has shipped since 0.2.0, and for as long as it was the only CWE content,
+the reasonable position was that this server carries OWASP's *reference* to CWE
+and CWE itself lives elsewhere. What broke that position was measurement, not
+appetite: of 95 CWE ids cited in findings in one real assessment, 42 were absent
+from the mapping. For those 42 there was no elsewhere — nothing in the toolchain
+could resolve the id, so it was recalled from training data and asserted, which is
+the one failure mode this whole project exists to remove. A mapping to a catalogue
+you do not hold is a citation you cannot check.
 
 The following OWASP projects are **not** packs, on purpose — not oversights:
 
@@ -120,6 +173,7 @@ The following OWASP projects are **not** packs, on purpose — not oversights:
   "A03:2021" instead of the specific requirement or cheat sheet section that
   actually explains what to do.
 - **Internal/organization-specific guidance** — out of scope for this project
-  entirely. `owasp-kb` packages public OWASP content; an organization's own
-  security standards are a different pack a deployer would add locally,
-  following the steps above, not something this repository should ship.
+  entirely. `owasp-kb` packages public, openly-licensed security content — OWASP's
+  and, since the CWE pack, MITRE's; an organization's own security standards are a
+  different pack a deployer would add locally, following the steps above, not
+  something this repository should ship.

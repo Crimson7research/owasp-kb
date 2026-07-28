@@ -10,17 +10,18 @@ with no network access.
   build time (make build)                      serve time (per agent session)
  ┌─────────────────────────────────────┐       ┌───────────────────────────────┐
  │ sources.lock.yml                     │       │  docker run -i --rm           │
- │   pins ASVS release + CS commit SHA  │       │    --network none owasp-kb    │
+ │   pins ASVS + CWE releases, CS SHA   │       │    --network none owasp-kb    │
  │            │                         │       │            │                  │
  │            v                         │       │            v                  │
  │ ingest/fetch.py  -- downloads -->    │       │  server/app.py (entrypoint)   │
- │   data/asvs/*  data/cheatsheets/*    │       │    opens the baked index      │
+ │   data/{asvs,cheatsheets,cwe}/*      │       │    opens the baked index      │
  │            │                         │       │    read-only, builds Kb       │
  │            v                         │       │            │                  │
- │ ingest/packs/asvs.py                 │       │            v                  │
- │ ingest/packs/cheatsheets.py           │       │  server/tools.py              │
- │   -> requirements, docs, sections,   │       │    six MCP tool adapters      │
- │      chunks (core/chunking.py)       │       │  server/prompts.py            │
+ │ ingest/packs/{asvs,cheatsheets,      │       │            v                  │
+ │               cwe}.py                │       │  server/tools.py              │
+ │   -> requirements, catalogue_entries,│       │    ten MCP tool adapters      │
+ │      docs, sections, chunks          │       │                               │
+ │      (core/chunking.py)              │       │  server/prompts.py            │
  │            │                         │       │    three MCP prompts          │
  │            v                         │       │            │                  │
  │ ingest/links.py                      │       │            v                  │
@@ -66,7 +67,7 @@ binary over stdio; nothing about the server is Claude-Code-specific.
 
 - **`server/`** — the MCP surface: `app.py` is the entrypoint that opens the
   index and wires tools and prompts into a `FastMCP` instance; `tools.py`
-  adapts `Kb` methods into six MCP tool callables with trigger-worded
+  adapts `Kb` methods into ten MCP tool callables with trigger-worded
   descriptions (see [docs/discoverability.md](discoverability.md));
   `prompts.py` defines the three MCP prompts.
 
@@ -132,15 +133,27 @@ every corpus hit goes through (see `HIT_SQL` in `core/retrieval/base.py`).
 ## The `links` edge table
 
 Every cross-reference the server can traverse — ASVS-to-cheat-sheet,
-requirement-to-CWE, requirement-to-NIST, v5-to-v4 — is one row in `links`,
-keyed by `(from_kind, from_id, to_kind, to_id, rel)`. Four `rel` values exist:
+requirement-to-CWE, requirement-to-NIST, v5-to-v4, and CWE's own graph — is one
+row in `links`, keyed by `(from_kind, from_id, to_kind, to_id, rel)`. Seven `rel`
+values exist; the first four are authored joins *between* packs, the last three are
+one pack's internal structure:
 
-| `rel` | From → To | Source file |
-|---|---|---|
-| `guidance` | ASVS section/chapter → cheat sheet `doc_key` | `IndexASVS.md` |
-| `cwe` | requirement → `CWE-nnn` | `v5.0.be_cwe_mapping.json`, translated through `mapping_v5.0.be_to_v5.0.0.yml` |
-| `supersedes` | requirement → its v4.0.3 predecessor | `mapping_v5.0.0_to_v4.0.3.yml` |
-| `nist` | requirement → a NIST SP 800-63B section | `nist.md`, composed through `supersedes` |
+| `rel` | From → To | Source file | Edges |
+|---|---|---|---|
+| `guidance` | ASVS section/chapter → cheat sheet `doc_key` | `IndexASVS.md` | 167 |
+| `cwe` | requirement → `CWE-nnn` | `v5.0.be_cwe_mapping.json`, translated through `mapping_v5.0.be_to_v5.0.0.yml` | 204 |
+| `supersedes` | requirement → its v4.0.3 predecessor | `mapping_v5.0.0_to_v4.0.3.yml` | 265 |
+| `nist` | requirement → a NIST SP 800-63B section | `nist.md`, composed through `supersedes` | 48 |
+| `cwe_child` | `CWE-nnn` → its ChildOf parent | `cwec_v4.20.xml` | 1,160 |
+| `cwe_peer` | `CWE-nnn` → a PeerOf weakness | `cwec_v4.20.xml` | 284 |
+| `cwe_member` | a CWE Category → its members | `cwec_v4.20.xml` | 4,260 |
+
+The `cwe_*` three are traversed by `cwe_related`, not `owasp_related`: the latter
+disambiguates its `id` argument by counting dots in an ASVS requirement id, so a
+`CWE-nnn` never reaches it. A `cwe_member` or `cwe_peer` edge can point at an id
+with no `catalogue_entries` row — CWE Categories group ids from outside what this
+pack ingests — so the join that resolves an edge's target is a LEFT JOIN and the
+target's `abstraction` comes back `null` rather than the edge vanishing.
 
 Exact edge counts, per-source caveats, and why each composition step is
 necessary are in [docs/build.md](build.md#mapping-coverage). `owasp_related`

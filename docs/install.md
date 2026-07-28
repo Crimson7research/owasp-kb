@@ -74,7 +74,7 @@ args = ["run", "-i", "--rm", "--network", "none", "owasp-kb:full"]
 ```
 
 Set `OWASP_KB_IMAGE` before running the script to install pointing at a
-different tag (e.g. an immutable `owasp-kb:full-asvs5.0.0-cs20260724`).
+different tag (e.g. an immutable `owasp-kb:full-asvs5.0.0-cs20260724-cwe4.20`).
 
 ## OpenCode
 
