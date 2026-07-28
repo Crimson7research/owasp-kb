@@ -439,3 +439,266 @@ def test_roster_tool_response_is_json_serialisable(tools):
             ],
         )
     )
+
+
+def _gap(req_id, chapter, section, **kw):
+    """A minimally valid GAP finding for the roster: traced, located, in scope."""
+    base = {
+        "req_id": req_id,
+        "chapter": chapter,
+        "section": section,
+        "verdict": "GAP",
+        "evidence": "e",
+        "file": "a.py",
+        "line": 1,
+        "cwe": "CWE-1",
+        "trace": "t",
+    }
+    base.update(kw)
+    return base
+
+
+STATES = {"V1": "APPLIES", "V6": "APPLIES"}
+
+
+def test_a_remediation_naming_an_unknown_document_is_rejected(tools):
+    """A citation that points nowhere looks exactly like one that points
+    somewhere. SearchHit already rejects an uncitable hit at construction; a
+    finding's remediation field had no equivalent guard."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[_gap("V6.2.1", "V6", "V6.2", remediation="Nonexistent_Cheat_Sheet#foo")],
+    )
+    assert "error" in result
+    assert "Nonexistent_Cheat_Sheet" in result["error"]
+    assert "V6.2.1" in result["error"]
+
+
+def test_a_remediation_naming_an_unknown_anchor_is_rejected(tools):
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap("V6.2.1", "V6", "V6.2", remediation="Authentication_Cheat_Sheet#no-such-section")
+        ],
+    )
+    assert "error" in result
+    assert "no-such-section" in result["error"]
+    # the message must help: Kb.get lists the anchors that do exist
+    assert "password-storage" in result["error"]
+    assert "V6.2.1" in result["error"]
+
+
+def test_a_resolvable_remediation_is_accepted(tools):
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap("V6.2.1", "V6", "V6.2", remediation="Authentication_Cheat_Sheet#password-storage")
+        ],
+    )
+    assert "error" not in result
+    assert result["complete"] is True
+
+
+def test_a_document_level_remediation_needs_no_anchor(tools):
+    """The guidance mapping is document-level -- a finder attaching an edge has no
+    anchor to give, and that is a valid citation."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[_gap("V6.2.1", "V6", "V6.2", remediation="Authentication_Cheat_Sheet")],
+    )
+    assert "error" not in result
+
+
+def test_a_finding_with_no_remediation_is_still_accepted(tools):
+    """13 of 345 requirements have no guidance edge. Omitting the field is correct
+    there; requiring one would force an invented citation."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[_gap("V6.2.1", "V6", "V6.2")],
+    )
+    assert "error" not in result
+
+
+def test_a_quote_present_in_the_cited_section_is_accepted(tools):
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                remediation="Authentication_Cheat_Sheet#password-storage",
+                remediation_quote="Store passwords with argon2id.",
+            )
+        ],
+    )
+    assert "error" not in result
+
+
+def test_a_quote_absent_from_the_cited_section_is_rejected(tools):
+    """Claiming to have read a section and being unable to quote it is the case
+    this catches -- an anchor that merely exists proves nothing about whether the
+    agent navigated to it or recalled it."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                remediation="Authentication_Cheat_Sheet#password-storage",
+                remediation_quote="Use bcrypt with a work factor of 12.",
+            )
+        ],
+    )
+    assert "error" in result
+    assert "V6.2.1" in result["error"]
+    assert "password-storage" in result["error"]
+
+
+def test_a_quote_differing_only_in_whitespace_is_accepted(tools):
+    """Kb.get joins chunks with a blank line and chunking splits at 512 tokens, so
+    a quote spanning a boundary carries whitespace the source does not. Without
+    normalisation this rule would reject correct quotes, which is worse than not
+    having it."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                remediation="Authentication_Cheat_Sheet#password-storage",
+                remediation_quote="Store   passwords\n\nwith  argon2id.",
+            )
+        ],
+    )
+    assert "error" not in result
+
+
+def test_a_quote_without_a_remediation_is_rejected(tools):
+    """A quote with nothing to check it against is a claim with no referent."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[_gap("V6.2.1", "V6", "V6.2", remediation_quote="Store passwords with argon2id.")],
+    )
+    assert "error" in result
+    assert "remediation" in result["error"]
+
+
+def test_the_response_reports_the_corpus_cwe_beside_the_cited_one(tools):
+    """44% of cited CWE ids in a real report were model-supplied and
+    indistinguishable from mapped ones. Returning the mapping lets the report
+    render both instead of silently presenting one as the other."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[_gap("V6.2.1", "V6", "V6.2", cwe="CWE-789")],
+    )
+    finding = result["findings"][0]
+    assert finding["cwe"] == "CWE-789"
+    assert finding["cwe_corpus"] == ["CWE-521"]
+
+
+def test_cwe_corpus_is_empty_when_the_mapping_has_none(tools):
+    """cwe coverage is 204/345. An empty list says the mapping is silent, which is
+    different from the model having agreed with it."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[_gap("V1.1.1", "V1", "V1.1", cwe="CWE-311")],
+    )
+    assert result["findings"][0]["cwe_corpus"] == []
+
+
+def test_cwe_corpus_lists_every_mapped_id(tools):
+    """A requirement can map to several. V6.2.2 maps to two."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[_gap("V6.2.2", "V6", "V6.2", cwe="CWE-307")],
+    )
+    assert sorted(result["findings"][0]["cwe_corpus"]) == ["CWE-307", "CWE-521"]
+
+
+def test_cwe_corpus_unions_the_mappings_of_a_merged_finding(tools):
+    """Two findings at the same (file, line, cwe) merge into one covering both
+    requirements. Its corpus mapping is the union -- one defect, two requirements,
+    and a reader wants both mappings."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap("V6.2.1", "V6", "V6.2", cwe="CWE-789"),
+            _gap("V6.2.2", "V6", "V6.2", cwe="CWE-789"),
+        ],
+    )
+    assert len(result["findings"]) == 1, "same file/line/cwe should merge"
+    assert sorted(result["findings"][0]["cwe_corpus"]) == ["CWE-307", "CWE-521"]
+
+
+def test_a_quote_matching_only_after_normalising_the_section_is_accepted(tools):
+    """The cheat sheet source wraps 'Protecting Against Automated Attacks' across
+    two lines, so the indexed section text carries a literal newline the
+    quote-as-written does not. Normalisation must apply to the section side as
+    well as the quote side -- comparing a normalised quote against the raw
+    section would reject this correct quote."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                remediation="Authentication_Cheat_Sheet#protecting-against-automated-attacks",
+                remediation_quote=(
+                    "Defend against credential stuffing and brute force with rate "
+                    "limiting and anti-automation controls."
+                ),
+            )
+        ],
+    )
+    assert "error" not in result
+
+
+def test_a_read_citation_validates_even_without_a_guidance_edge(tools):
+    """The V1.4.1 case from the earlier assessment: the corpus maps no guidance to that
+    requirement, and the agent navigated to a section and read it anyway. That is a
+    better citation than the mapping would give, and it must pass.
+
+    V1.1.1 has no guidance edge in the fixture index, mirroring V1.4.1."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states=STATES,
+        findings=[
+            _gap(
+                "V1.1.1",
+                "V1",
+                "V1.1",
+                remediation="Authentication_Cheat_Sheet#password-storage",
+                remediation_quote="Store passwords with argon2id.",
+            )
+        ],
+    )
+    assert "error" not in result
+    assert result["complete"] is True
+
+
+def test_the_roster_docstring_documents_the_citation_rules(tools):
+    """The docstring is what an agent reads to know a field exists and a rule
+    applies. Both rules shipped enforced and undocumented, so an agent would have
+    hit a citation rejection it had no way to anticipate."""
+    doc = tools["owasp_roster"].__doc__
+    assert "remediation_quote" in doc
+    assert "cwe_corpus" in doc
+    assert "must" in doc and "resolve" in doc

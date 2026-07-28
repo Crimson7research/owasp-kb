@@ -159,6 +159,20 @@ def test_assessment_skills_require_a_remediation_citation(skill):
     assert "owasp_get" in body
 
 
+@pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
+def test_the_skills_render_the_corpus_cwe(skill):
+    """owasp_roster returns cwe_corpus and this is its only consumer. A field
+    computed and never read is the inert-feature failure."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "cwe_corpus" in body
+
+
+@pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
+def test_the_skills_distinguish_a_read_citation_from_a_mapped_one(skill):
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "remediation_quote" in body
+
+
 def test_every_tool_named_in_a_skill_process_has_an_output_consumer():
     """Guard against reintroducing an instruction nothing downstream needs."""
     body = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text().lower()
@@ -271,6 +285,28 @@ def test_refuter_defaults_to_unclear_not_holds():
 def test_verifier_must_produce_a_trace():
     _, body = _agent("owasp-finding-verifier")
     assert "source" in body.lower() and "sink" in body.lower()
+
+
+def test_the_finder_attaches_the_guidance_edge():
+    """0 of 72 unverified gaps in a real report carried any remediation citation,
+    because the verifier is the role that produces one. guidance coverage is
+    332/345, so a finder can attach the mapping itself for one tool call."""
+    _, body = _agent("owasp-requirement-finder")
+    assert "owasp_related" in body
+    assert "guidance" in body
+    assert "remediation" in body
+
+
+def test_the_finder_omits_a_citation_rather_than_inventing_one():
+    _, body = _agent("owasp-requirement-finder")
+    lowered = body.lower()
+    assert "omit" in lowered or "leave it out" in lowered
+
+
+def test_the_verifier_supplies_a_quote_for_a_section_it_read():
+    """An anchor that resolves proves the section exists, not that anyone read it."""
+    _, body = _agent("owasp-finding-verifier")
+    assert "remediation_quote" in body
 
 
 def test_verify_skill_dispatches_the_agent_roles():

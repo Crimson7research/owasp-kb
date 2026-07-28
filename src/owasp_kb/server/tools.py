@@ -18,6 +18,17 @@ MAX_EXCERPT_CHARS = 1200
 MAX_GET_CHARS = 30_000
 LARGE_CHECKLIST_ROWS = 100
 
+
+def _normalised(text: str) -> str:
+    """Whitespace-insensitive form, for comparing a quote to indexed text.
+
+    Kb.get joins a section's chunks with a blank line, and chunking splits at 512
+    tokens, so a quote spanning a chunk boundary contains whitespace the source
+    document does not. Comparing raw text would reject correct quotes.
+    """
+    return " ".join(text.split())
+
+
 # Relationships whose upstream mappings predate ASVS 5.0.0 and therefore cover
 # only part of the requirement set. An empty owasp_related result for one of
 # these must not be read as "no such mapping exists".
@@ -122,6 +133,20 @@ def _grouped(rows) -> list[dict]:
 
 def build_tools(kb: Kb) -> list[Callable[..., Any]]:
     """Return the seven tool callables bound to this Kb."""
+
+    def _resolve_citation(finding: dict) -> str | None:
+        """The section text a finding's remediation cites, or None if it cites nothing.
+
+        A citation that points nowhere reads exactly like one that points somewhere,
+        which is how a fabricated reference reaches a security report. Kb.get already
+        raises KeyError naming the available anchors, so the message it produces is
+        better than one written here.
+        """
+        remediation = finding.get("remediation")
+        if not remediation:
+            return None
+        doc_key, _, anchor = remediation.partition("#")
+        return kb.get(doc_key, anchor=anchor or None)
 
     def kb_info() -> dict:
         """Report which OWASP knowledge base packs are loaded, their versions, and
@@ -321,9 +346,22 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
 
         chapter_states maps each chapter id to 'APPLIES' or an N/A verdict.
         findings is a list of dicts with req_id, chapter, section, verdict,
-        evidence, and optionally file, line, cwe, remediation, trace. Findings
-        sharing a (file, line, cwe) are merged, keeping every requirement they
-        cover.
+        evidence, and optionally file, line, cwe, remediation, remediation_quote,
+        trace. Findings sharing a (file, line, cwe) are merged, keeping every
+        requirement they cover.
+
+        remediation cites guidance as 'doc_key#anchor', or 'doc_key' for the
+        requirement-level mapping from owasp_related(rel='guidance'). It must
+        resolve against the index or the finding is rejected -- an anchor that
+        points nowhere reads exactly like one that points somewhere, which is how
+        a fabricated reference reaches a report.
+
+        remediation_quote is a verbatim fragment of the cited section, and asserts
+        that you navigated to it and read it. It is checked against the section
+        text, whitespace-normalised, so line breaks do not matter but paraphrase
+        is rejected. Omit it when the citation is the requirement-level mapping
+        rather than a section you read: an anchor alone proves the section exists,
+        not that anyone read it.
 
         A claim asserting a checked outcome is rejected without its adversary's
         trace: a GAP needs owasp-finding-verifier, an 'N/A (verified)' needs
@@ -340,6 +378,12 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         finding's id, verdict, location and covered requirements. It does not
         echo back the evidence you supplied. Pass detail=True for the full
         per-requirement entry list.
+
+        Each finding also carries cwe_corpus: the CWE ids OWASP's mapping holds
+        for the requirements it covers, or [] where the mapping is silent. Report
+        it beside your own cwe rather than in place of it. The mapping is per
+        requirement and a finding is per defect, so a more specific id is often
+        right -- but a reader must be able to tell which came from where.
         """
         try:
             requirements = [
@@ -362,11 +406,35 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                     line=f.get("line"),
                     cwe=f.get("cwe"),
                     remediation=f.get("remediation"),
+                    remediation_quote=f.get("remediation_quote"),
                     trace=f.get("trace"),
                 )
                 for f in (findings or [])
             ]
-            return build_roster(
+            for finding in findings or []:
+                quote = finding.get("remediation_quote")
+                if quote and not finding.get("remediation"):
+                    raise RosterError(
+                        f"{finding.get('req_id')} supplies a remediation_quote with no "
+                        "remediation to check it against. Cite the section you read, or "
+                        "drop the quote."
+                    )
+                try:
+                    section = _resolve_citation(finding)
+                except KeyError as exc:
+                    raise RosterError(
+                        f"{finding.get('req_id')} cites {finding.get('remediation')!r}, "
+                        f"which does not resolve: {exc}"
+                    ) from exc
+                if quote and _normalised(quote) not in _normalised(section or ""):
+                    raise RosterError(
+                        f"{finding.get('req_id')} claims a quote from "
+                        f"{finding.get('remediation')} that is not in that section. "
+                        "Quote the text you read, or omit remediation_quote and the "
+                        "citation is recorded as the requirement-level mapping rather "
+                        "than a section you read."
+                    )
+            roster = build_roster(
                 requirements=requirements,
                 findings=parsed,
                 chapter_states=chapter_states or {},
@@ -374,6 +442,12 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 require_verification=require_verification,
                 detail=detail,
             )
+            for entry in roster["findings"]:
+                mapped: set[str] = set()
+                for req_id in entry["covers"]:
+                    mapped.update(edge.to_id for edge in kb.related(req_id, rel="cwe"))
+                entry["cwe_corpus"] = sorted(mapped)
+            return roster
         except (KeyError, ValueError, RosterError) as exc:
             return _error(exc)
 

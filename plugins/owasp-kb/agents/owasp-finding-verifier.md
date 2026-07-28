@@ -32,7 +32,8 @@ ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_get
 5. If it stands, gather what the report needs:
    - `owasp_related(<req_id>, rel='cwe')` for the weakness class
    - `owasp_related(<req_id>, rel='guidance')`, then `owasp_outline` and `owasp_get` on the
-     cited section, for the remediation citation as `doc_key#anchor`
+     cited section, for the remediation citation as `doc_key#anchor` and a verbatim quote
+     from the text you just read
 
 ## Output
 
@@ -48,6 +49,9 @@ ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_get
 }
 ```
 
+Add `remediation_quote` alongside `remediation` in that same object when you navigated to and
+read the cited section yourself — see *Citing guidance you actually read*, below.
+
 `verdict` is one of `confirmed`, `refuted`, `unclear`.
 
 **A confirmation without a source and a sink is not a confirmation.** If you cannot name
@@ -60,6 +64,38 @@ refuted finding is recorded, not discarded.
 
 The `REPORT COMPLETE` line goes after the JSON block, on its own line. Keep the JSON
 itself parseable — the sentinel is not part of it.
+
+## Citing guidance you actually read
+
+When you navigate to a cheat-sheet section — `owasp_outline` to find it, `owasp_get` to read it —
+cite that section precisely and add a quote alongside `remediation` in the same JSON object
+above, so the report can tell it apart from a mapping edge:
+
+```json
+{"remediation": "Authentication_Cheat_Sheet#password-storage",
+ "remediation_quote": "Store passwords with argon2id."}
+```
+
+`owasp_roster` fetches the section and checks your quote is in it. An anchor on its own proves the
+section exists, not that anyone read it: the same string could be a mapping edge, a section you
+navigated to, or a lucky recall. The quote is what distinguishes them.
+
+Quote verbatim. Whitespace is normalised before comparison, so line breaks do not matter, but
+paraphrase will be rejected — and correctly, because a paraphrase is your words presented as
+OWASP's.
+
+**When `owasp_related` returns no guidance edge, that is not the end of it.** 13 of the 345
+requirements have no mapped guidance, and the corpus often still covers the topic — the mapping
+is coarse, not exhaustive. Use `owasp_search` for the defect you are verifying, or `owasp_outline`
+on a cheat sheet whose subject matches, then `owasp_get` the section and cite it with a quote.
+
+A section you found and read is a better citation than a mapping edge, and `owasp_roster` accepts
+it: the rule is that a citation must resolve, not that it must come from the mapping. The real
+case this exists for had no mapped guidance and the strongest citation in that assessment came
+from navigating to a section nobody had linked.
+
+If you did not read a section, leave the finder's document-level citation alone rather than
+adding an anchor to it.
 
 ## Excluded material
 

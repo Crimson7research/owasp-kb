@@ -47,15 +47,34 @@ Never return `MET` for an implementation you did not read. An unread control is
   "evidence": "buildStaConfig truncates to 31 bytes with no length validation",
   "file": "src/wifi.c",
   "line": 15,
-  "cwe": null
+  "cwe": null,
+  "remediation": "Input_Validation_Cheat_Sheet"
 }
 ```
 
-Leave `cwe` null; the verifier fills it. Leave `file` and `line` null only for
-`INSUFFICIENT EVIDENCE`.
+Leave `cwe` null; the verifier fills it. Attach `remediation` on a `GAP` as described below.
+Leave `file` and `line` null only for `INSUFFICIENT EVIDENCE`.
 
 The `REPORT COMPLETE` line required below goes after the JSON block, on its own
 line. Keep the JSON itself parseable — the sentinel is not part of it.
+
+## Remediation
+
+When your verdict is a `GAP`, attach the guidance the knowledge base already maps to the
+requirement:
+
+```
+owasp_related(req_id, rel='guidance')
+```
+
+Put the returned `doc_key` in the finding's `remediation` field. That is a document-level
+citation from the mapping — it is not a section you read, and you should not pretend otherwise:
+do **not** guess an anchor onto it, and do not supply `remediation_quote`. A verifier that
+navigates to a specific section can replace it with a precise citation later.
+
+If `owasp_related` returns no guidance edge, **omit the field.** 13 of the 345 requirements have
+no mapped guidance, and an invented citation is worse than an absent one — `owasp_roster` rejects
+a citation that does not resolve, and a report reader cannot tell a guessed anchor from a real one.
 
 ## Excluded material
 

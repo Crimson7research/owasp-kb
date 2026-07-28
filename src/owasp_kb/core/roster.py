@@ -46,6 +46,7 @@ class Finding:
     line: int | None = None
     cwe: str | None = None
     remediation: str | None = None
+    remediation_quote: str | None = None
     trace: str | None = None
     covers: tuple[Coverage, ...] = field(default_factory=tuple)
 

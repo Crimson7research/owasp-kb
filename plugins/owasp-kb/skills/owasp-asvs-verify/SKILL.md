@@ -121,6 +121,19 @@ no verdict is graded by the agent that produced it.
 
 Output a table over the roster the tool returned: requirement id, level, verdict, evidence, CWE, remediation.
 
+**Show where a CWE came from.** `owasp_roster` returns `cwe_corpus`, the ids OWASP's mapping
+carries for that requirement. Where your cited `cwe` is not among them, say so — the mapping is
+per requirement and a finding is per defect, so a more specific id is often right, but a reader
+must be able to tell which is which:
+
+`CWE-789 — model-assigned; mapping carries CWE-120 for this requirement`
+
+Where `cwe_corpus` is empty, say the mapping is silent rather than leaving it blank.
+
+**Show whether guidance was read.** A `remediation` with a `remediation_quote` is a section an
+agent navigated to and read. One without is the requirement-level mapping. Mark the difference;
+both are citations from the knowledge base, but only one is specific.
+
 Every requirement appears exactly once, in one of six states:
 
 | Verdict | Meaning |
@@ -151,8 +164,10 @@ says `MET` instead.
   links, `owasp_outline` and `owasp_get` for the remediation section itself.
   Do not answer from memory at any stage — every id, requirement text and remediation
   citation must trace back to a tool call.
-- A `GAP` without a remediation citation is incomplete. The verifier produces it; if one is
-  missing, say so rather than writing remediation from your own knowledge.
+- A `GAP` without a remediation citation is incomplete. The finder attaches the mapped guidance
+  document as a matter of course; the verifier can replace it with a precise section citation and
+  a `remediation_quote` proving they read it. If a `GAP` has neither, say so rather than writing
+  remediation from your own knowledge.
 - CWE coverage is partial — 204 of 345 requirements — because upstream publishes only a
   bleeding-edge mapping. `owasp_related` returns a note saying so when a result is empty.
   Absence of an edge is not evidence that no weakness class applies.

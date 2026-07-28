@@ -134,9 +134,23 @@ uncertain ones into `MET` or `GAP`; carrying them through is the point:
 | `N/A (unverified)` | Chapter **or requirement** exempt, refutation inconclusive |
 | `INSUFFICIENT EVIDENCE` | Could not be determined |
 
-Every `GAP` carries the remediation citation as `doc_key#anchor` — the verifier produces
-it; a `GAP` without one is incomplete, so say so rather than writing remediation from your
+Every `GAP` carries a remediation citation — the finder's mapped guidance document at minimum,
+a precise `doc_key#anchor` with a `remediation_quote` where the verifier navigated to and read a
+section. A `GAP` with neither is incomplete, so say so rather than writing remediation from your
 own knowledge.
+
+**Show where a CWE came from.** `owasp_roster` returns `cwe_corpus`, the ids OWASP's mapping
+carries for that requirement. Where your cited `cwe` is not among them, say so — the mapping is
+per requirement and a finding is per defect, so a more specific id is often right, but a reader
+must be able to tell which is which:
+
+`CWE-789 — model-assigned; mapping carries CWE-120 for this requirement`
+
+Where `cwe_corpus` is empty, say the mapping is silent rather than leaving it blank.
+
+**Show whether guidance was read.** A `remediation` with a `remediation_quote` is a section an
+agent navigated to and read. One without is the requirement-level mapping. Mark the difference;
+both are citations from the knowledge base, but only one is specific.
 
 Report the total requirement count and confirm the table has that many rows.
 `owasp_roster` now supplies both the count and the per-verdict tally, so this is a fact
@@ -155,8 +169,10 @@ you report rather than a claim you make.
   links, `owasp_outline` and `owasp_get` for the remediation section itself.
   Do not answer from memory at any stage — every id, requirement text and remediation
   citation must trace back to a tool call.
-- A `GAP` without a remediation citation is incomplete. The verifier produces it; if one is
-  missing, say so rather than writing remediation from your own knowledge.
+- A `GAP` without a remediation citation is incomplete. The finder attaches the mapped guidance
+  document as a matter of course; the verifier can replace it with a precise section citation and
+  a `remediation_quote` proving they read it. If a `GAP` has neither, say so rather than writing
+  remediation from your own knowledge.
 - Levels are cumulative: at L2 that is 253 requirements (every L1 requirement plus every
   L2 one), not the 183 tagged L2.
 - State that level counts come from the pinned ASVS release, so a future release may shift

@@ -957,3 +957,75 @@ def test_the_v7_run_resolves_its_inapplicable_requirements():
     assert roster["counts"]["INSUFFICIENT EVIDENCE"] == 1
     assert roster["complete"] is True
     assert {e["req_id"] for e in roster["needs_attention"]} == {V7_TRUNCATED[0]}
+
+
+def test_a_finding_can_carry_a_remediation_quote():
+    """A verifier that navigated to a section and read it proves so with a quote.
+    build_roster stores it and does not interpret it -- verifying the quote needs
+    the index, which lives in the tool adapter, not here."""
+    finding = _f(
+        "V6.2.1",
+        "V6",
+        "V6.2",
+        verdict="GAP",
+        file="a.py",
+        line=1,
+        cwe="CWE-1",
+        trace="t",
+        remediation="Authentication_Cheat_Sheet#password-storage",
+        remediation_quote="Store passwords with argon2id.",
+    )
+    assert finding.remediation_quote == "Store passwords with argon2id."
+
+
+def test_the_roster_does_not_echo_the_remediation_quote():
+    """Same reason evidence and trace are not echoed: the caller supplied it, and
+    it was 72% of a 109,038-character response when they were."""
+    import json
+
+    roster = build_roster(
+        requirements=REQS,
+        findings=[
+            _f(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                verdict="GAP",
+                file="a.py",
+                line=1,
+                cwe="CWE-1",
+                trace="t",
+                remediation="Authentication_Cheat_Sheet#password-storage",
+                remediation_quote="a very distinctive quote string",
+            )
+        ],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+    )
+    assert "a very distinctive quote string" not in json.dumps(roster)
+
+
+def _at_a_py_1(req_id, quote):
+    return _f(
+        req_id,
+        "V6",
+        "V6.2",
+        verdict="GAP",
+        file="a.py",
+        line=1,
+        cwe="CWE-1",
+        trace="t",
+        remediation="Authentication_Cheat_Sheet#password-storage",
+        remediation_quote=quote,
+    )
+
+
+def test_findings_merge_despite_differing_remediation_quotes():
+    """A quote is not identity. Two findings at one (file, line, cwe) are one
+    defect against two requirements however differently each was quoted."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[_at_a_py_1("V6.2.1", "quote one"), _at_a_py_1("V6.2.2", "quote two")],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+    )
+    assert len(roster["findings"]) == 1
+    assert set(roster["findings"][0]["covers"]) == {"V6.2.1", "V6.2.2"}
