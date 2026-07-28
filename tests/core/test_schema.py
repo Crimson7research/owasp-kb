@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 
 from owasp_kb.core.db import connect, finalize_for_readonly, is_wal_index
+from owasp_kb.core.registry import PACK_TYPES
 from owasp_kb.core.schema import create_schema
 
 EXPECTED_TABLES = {
@@ -185,6 +186,27 @@ def test_read_only_open_handles_a_path_with_uri_metacharacters(tmp_path):
     served = connect(index, read_only=True)
     assert len(_matches(served, "argon2id")) == 1
     served.close()
+
+
+def test_the_ddl_check_accepts_every_registry_pack_type():
+    """The valid types were enumerated in the DDL, in PACK_TYPES, and in a test
+    tuple. One of the three was widened. This binds the first two together so the
+    next divergence is a red test rather than a failed ingest."""
+    conn = connect(":memory:")
+    create_schema(conn)
+    for i, pack_type in enumerate(PACK_TYPES):
+        conn.execute(
+            "INSERT INTO packs (name, type, version) VALUES (?, ?, '1')",
+            (f"probe-{i}", pack_type),
+        )
+
+
+def test_the_ddl_check_still_rejects_an_unknown_pack_type():
+    """The check must stay a constraint, not become a comment."""
+    conn = connect(":memory:")
+    create_schema(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO packs (name, type, version) VALUES ('probe', 'nonsense', '1')")
 
 
 def test_catalogue_entries_table_exists_with_the_citation_fields():

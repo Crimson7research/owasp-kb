@@ -8,7 +8,7 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS packs (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
-    type        TEXT NOT NULL CHECK (type IN ('checklist', 'corpus')),
+    type        TEXT NOT NULL CHECK (type IN ('checklist', 'corpus', 'catalogue')),
     version     TEXT NOT NULL,
     source_url  TEXT,
     commit_sha  TEXT,

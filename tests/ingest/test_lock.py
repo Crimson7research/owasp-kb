@@ -1,6 +1,7 @@
 import pytest
 import yaml
 
+from owasp_kb.core.registry import PACK_TYPES
 from owasp_kb.ingest.lock import load_lock
 
 LOCK = "sources.lock.yml"
@@ -24,7 +25,7 @@ def test_cheatsheets_pins_a_full_commit_sha():
 
 def test_every_pack_declares_a_known_type_and_license():
     for pack in load_lock(LOCK).packs.values():
-        assert pack.type in ("checklist", "corpus", "catalogue")
+        assert pack.type in PACK_TYPES
         assert pack.license in ("CC-BY-SA-4.0", "LicenseRef-CWE-TOU")
 
 

@@ -5,7 +5,10 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
-PACK_TYPES = ("checklist", "corpus")
+# The packs DDL CHECK in schema.py carries this same list as SQL literals, because
+# the schema is read as a static artefact rather than assembled from Python.
+# test_the_ddl_check_accepts_every_registry_pack_type keeps the two in agreement.
+PACK_TYPES = ("checklist", "corpus", "catalogue")
 
 
 @dataclass(frozen=True)
