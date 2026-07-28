@@ -5512,6 +5512,13 @@ int ret_val = proc_msg ("s",  jnklen);    // Violate assumption of preamble leng
          </Content_History>
       </Category>
       </Categories>
+	<Views>
+      <View ID="1000" Name="Research Concepts" Type="Graph" Status="Draft">
+         <Objective>This view is intended to facilitate research into weaknesses, including their inter-dependencies, and can be leveraged to systematically identify theoretical gaps within CWE. It is mainly organized according to abstractions of behaviors instead of how they can be detected, where they appear in code, or when they are introduced in the development life cycle. By design, this view is expected to include every weakness within CWE.</Objective>
+         <Members>
+            <Has_Member CWE_ID="789" View_ID="1000" /><Has_Member CWE_ID="664" View_ID="1000" /></Members>
+         </View>
+      </Views>
 	<External_References>
 		<External_Reference Reference_ID="REF-1">
 			<Author>NIST</Author>

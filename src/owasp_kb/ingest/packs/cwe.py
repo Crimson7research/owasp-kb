@@ -46,10 +46,18 @@ def _flatten(el: ET.Element | None) -> str:
     Collapsing the whole element to a single line is also wrong. ``_split_oversized``
     in ``core/chunking`` splits only on blank lines and otherwise returns the body as
     one part, so a single-line flatten of a long entry becomes one oversized chunk
-    that the embedder truncates. Measured on 4.20: 12 extended descriptions exceed
-    the 512-token threshold as one line, and preserving paragraphs brings 11 of the
-    12 under it. CWE-451 stays over at a single 581-token paragraph; splitting
-    inside a paragraph would cut mid-sentence and is not worth it for one entry.
+    that the embedder truncates at 512 tokens. Measured on 4.20: 12 extended
+    descriptions exceed the threshold as one line, and preserving paragraphs takes
+    that to 8.
+
+    It does not reach 0, because ``_split_oversized`` never size-checks its *final*
+    block: ``chunk_markdown`` strips the body, so the last paragraph has no trailing
+    blank line to close it and is appended unconditionally. Whether an entry is
+    rescued therefore depends on where its largest paragraph sits. CWE-1240
+    (``[97, 131, 330, 150, 61, 146]``) splits into three chunks because its largest
+    is mid-document; CWE-1251 (``[32, 109, 153, 64, 35, 482]``) stays in one
+    880-token chunk because its largest is last. Tracked as #38 -- the fix belongs
+    in core/chunking, which is shared with the other two packs.
 
     Child tails are not collected, which is safe rather than lucky: no child of any
     Description, Extended_Description or Summary in 4.20 carries a non-whitespace
@@ -81,6 +89,14 @@ def _clear_pack(conn: sqlite3.Connection, pid: int) -> None:
     catalogue_entries references chunks via a foreign key, so it must go first.
     Chunks are deleted through the chunks table, never chunks_fts, so the
     external-content sync triggers remove the matching postings.
+
+    Clearing ``links`` has no precedent in the other packs -- asvs.py does not touch
+    the table -- but without it an edge that upstream withdrew would survive a
+    rebuild, because the inserts are OR IGNORE and nothing else prunes. It is scoped
+    by ``rel`` rather than by ``source``, which carries the catalogue version and so
+    would strand the previous release's rows on a bump. An exact IN list is used
+    deliberately: ``links.py`` stores the ASVS->CWE mapping as ``rel='cwe'``, which
+    a prefix match like ``rel LIKE 'cwe%'`` would wipe along with ours.
     """
     conn.execute("DELETE FROM catalogue_entries WHERE pack_id = ?", (pid,))
     conn.execute(
@@ -92,10 +108,8 @@ def _clear_pack(conn: sqlite3.Connection, pid: int) -> None:
         "DELETE FROM sections WHERE doc_id IN (SELECT id FROM docs WHERE pack_id = ?)", (pid,)
     )
     conn.execute("DELETE FROM docs WHERE pack_id = ?", (pid,))
-    conn.executemany(
-        "DELETE FROM links WHERE rel = ?",
-        [(rel,) for rel in CWE_RELS],
-    )
+    placeholders = ", ".join("?" * len(CWE_RELS))
+    conn.execute(f"DELETE FROM links WHERE rel IN ({placeholders})", CWE_RELS)
 
 
 def _as_markdown(title: str, description: str, extended: str) -> str:
