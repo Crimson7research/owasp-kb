@@ -578,3 +578,81 @@ def test_pyproject_derives_its_version_rather_than_repeating_it():
     assert 'dynamic = ["version"]' in text
     assert 'attr = "owasp_kb.__version__"' in text
     assert '\nversion = "' not in text, "a literal version in pyproject is a second source of truth"
+
+
+def test_the_repo_carries_a_cwe_license_text():
+    """CWE's terms are not in the catalogue XML -- they are a separate document.
+    Vendored rather than fetched at build time: a legal notice should not change
+    silently between builds, and a --network none image must carry it."""
+    text = Path("LICENSE-CWE").read_text()
+    assert "CWE" in text
+    assert len(text) > 500, "a stub is not the terms"
+
+
+def _dockerfile_targets(text: str) -> dict[str, str]:
+    """Split a Dockerfile into {target_name: body}. Both image variants must
+    carry the licenses; a whole-file substring search cannot tell one from two,
+    because the two blocks are identical."""
+    blocks: dict[str, str] = {}
+    name = None
+    for line in text.splitlines():
+        match = re.match(r"^FROM\s+.*\sAS\s+(\S+)", line, re.IGNORECASE)
+        if match:
+            name = match.group(1)
+            blocks[name] = ""
+        elif name:
+            blocks[name] += line + "\n"
+    return blocks
+
+
+EXPECTED_LICENSE_NAMES = {"LICENSE", "LICENSE-DATA", "LICENSE-CWE", "NOTICE"}
+EXPECTED_LICENSES_LABEL = "MIT AND CC-BY-SA-4.0 AND LicenseRef-CWE-TOU"
+
+
+@pytest.mark.parametrize("target_name", ["lite", "full"])
+def test_the_dockerfile_ships_every_license_text(target_name):
+    """The image shipped an OCI label and no notice. docs/licensing.md asks a
+    redistributor to keep LICENSE-DATA with the artifact; the image did not.
+    Checked per target, not as a whole-file substring search: the lite and
+    full blocks are otherwise identical, so a whole-file search cannot tell
+    whether one target's COPY or LABEL was missed entirely."""
+    dockerfile = Path("docker/Dockerfile").read_text()
+    targets = _dockerfile_targets(dockerfile)
+    assert {"lite", "full"} <= targets.keys(), (
+        "the target parser found neither block -- an empty parse would make "
+        "every per-target assertion below vacuously true"
+    )
+    body = targets[target_name]
+
+    copy_lines = [
+        line
+        for line in body.splitlines()
+        if line.strip().startswith("COPY") and "/opt/owasp-kb/licenses/" in line
+    ]
+    assert len(copy_lines) == 1, (
+        f"{target_name}: expected exactly one COPY into /opt/owasp-kb/licenses/, "
+        f"found {len(copy_lines)}"
+    )
+    tokens = copy_lines[0].split()
+    assert tokens[0] == "COPY"
+    assert tokens[-1] == "/opt/owasp-kb/licenses/"
+    copied_names = set(tokens[1:-1])
+    assert copied_names == EXPECTED_LICENSE_NAMES, (
+        f"{target_name}: COPY names {copied_names}, expected {EXPECTED_LICENSE_NAMES}"
+    )
+
+    label_match = re.search(r'org\.opencontainers\.image\.licenses="([^"]*)"', body)
+    assert label_match, f"{target_name}: no org.opencontainers.image.licenses label"
+    assert label_match.group(1) == EXPECTED_LICENSES_LABEL, (
+        f"{target_name}: licenses label is {label_match.group(1)!r}, "
+        f"expected {EXPECTED_LICENSES_LABEL!r}"
+    )
+
+
+def test_licensing_doc_covers_cwe():
+    text = Path("docs/licensing.md").read_text()
+    assert "CWE" in text
+    assert "mitre trademark" in text.lower(), (
+        "this is the sentence the new CWE section introduced; distinct from "
+        "the pre-existing OWASP trademark disclaimer, which never says MITRE"
+    )
