@@ -47,7 +47,10 @@ check "$EXPECTED_MODE" "retrieval mode is $EXPECTED_MODE"
 # turns a stale image into a build failure instead.
 PLUGIN_VERSION=$(python3 -c \
   'import json,sys; print(json.load(open("plugins/owasp-kb/.claude-plugin/plugin.json"))["version"])')
-check "\"server_version\": \"$PLUGIN_VERSION\"" \
+# kb_info's body arrives as escaped JSON inside content[0].text, so the quotes
+# are backslashed. Match loosely but bound it to before the next comma, or a
+# pack version elsewhere in the payload could satisfy it.
+check "server_version[^,]*$PLUGIN_VERSION" \
   "server reports version $PLUGIN_VERSION, matching the plugin"
 
 echo "  PASS"
