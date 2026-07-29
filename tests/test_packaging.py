@@ -1193,3 +1193,32 @@ def test_the_summary_is_gated_on_verification_completing(skill):
     clears, it reports numbers that are still moving."""
     body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
     assert "cannot be written until `verification_complete`" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_require_the_root_cause_reduction_as_a_ratio(skill):
+    """A run stated '51 gap entries are not 51 independent problems. They reduce
+    to five.' -- the single most useful line for someone deciding what to fix
+    first, and not asked for. The rendered example is deliberate: #50 showed an
+    instruction naming an outcome without one produces prose instead."""
+    text = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    body = " ".join(text.split())
+    assert "State the root-cause reduction as a number" in body
+    assert "> 51 gap entries are not 51 independent problems. They reduce to five." in text, (
+        "the example has to be rendered, not described -- an instruction that "
+        "names the outcome yields a list without the count"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_name_the_report_to_mark_it_independent(skill):
+    """Two assessments of one target at one level differ only by filename, and
+    the excluded one is what a reader reaches for by mistake. A run invented both
+    the '-independent-<date>' suffix and the sentence saying the priors were
+    never opened."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "-independent-<YYYY-MM-DD>.md" in body
+    assert "never opened" in body, (
+        "the filename alone does not say the priors went unread; without the "
+        "sentence a reader assumes this report built on them"
+    )

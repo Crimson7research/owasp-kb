@@ -228,6 +228,26 @@ directory -- each of which would otherwise produce a report that looks complete.
 the sections yourself: re-reading forty files costs the context this exists to save, and a dropped
 one would go unnoticed.
 
+**Name the report so it cannot be confused with the one you excluded.** Two assessments of one
+target at one level otherwise differ only by their filename date, and the excluded report is the
+thing a reader is most likely to reach for by mistake:
+
+```
+--out docs/security/asvs-5.0.0-l2-<target>-independent-<YYYY-MM-DD>.md
+```
+
+Then say in `100_title.md` which priors were excluded and that they were never opened. Without that
+sentence a reader assumes this assessment built on them, which is the opposite of what happened, and
+two reports of one target stop being comparable.
+
+**State the root-cause reduction as a number in `101_summary.md`,** not only as a list:
+
+> 51 gap entries are not 51 independent problems. They reduce to five.
+
+Then the five, each naming the requirements it accounts for. The ratio is what tells a reader
+deciding where to start that the work is five changes and not fifty-one; the list alone reads as
+five more items on the pile.
+
 Output a table over the roster the tool returned: requirement id, level, verdict, evidence, CWE, remediation.
 
 **Show where a CWE came from.** `owasp_roster` returns `cwe_corpus`, the ids OWASP's mapping

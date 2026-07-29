@@ -55,6 +55,34 @@ def _exclusions(session_id: str) -> list[str]:
     return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
 
 
+def _under(root: str, excluded: str) -> bool:
+    """Does a search rooted at ``root`` recurse into ``excluded``?
+
+    Both sides arrive in whichever form the writer used: an agent roots a search
+    at ``docs`` or at ``/home/you/src/target/docs``, and the exclusion list holds
+    an absolute path, a repository-relative one, or both. A plain
+    ``excluded.startswith(root)`` only lines up when the two happen to match --
+    and stripping the leading slash off the root to normalise it guaranteed they
+    never would, so every absolute-rooted search was allowed through.
+
+    Comparing on path segments makes the check independent of form: the root
+    contains the file if either one's segment chain appears in the other. That
+    covers all four combinations without the writer having to know which form the
+    agent will use, which is what lets the exclusion list hold one path per report
+    rather than two.
+
+    It is deliberately generous -- a root matching only on its tail counts as
+    containing the file. Over-refusing costs an agent one call that states the
+    exclusion; under-refusing puts another assessment's conclusions in front of it.
+    """
+    r = root.removeprefix("./").strip("/")
+    e = f"/{excluded.strip('/')}"
+    if not r or r == ".":
+        return True
+    segments = r.split("/")
+    return any(f"/{'/'.join(segments[i:])}/" in e for i in range(len(segments)))
+
+
 def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
     """Would this call put ``excluded`` in front of the agent?
 
@@ -75,8 +103,7 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
     if tool_name == "Read":
         return False
 
-    root = target.lstrip("./")
-    if root and not excluded.startswith(root):
+    if target and not _under(target, excluded):
         return False
 
     if re.search(rf"!.*{re.escape(excluded)}", stated):

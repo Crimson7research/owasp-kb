@@ -61,6 +61,54 @@ def test_a_broad_grep_that_would_sweep_it_is_denied(config_dir):
     assert _denied(_run(_call("Grep", pattern="session", path="docs"), config_dir))
 
 
+ABSOLUTE = f"/home/you/src/target/{EXCLUDED}"
+
+
+def _listing(tmp_path, *paths):
+    session = tmp_path / "owasp-kb" / "sessions" / "sess-1"
+    session.mkdir(parents=True)
+    (session / "excluded").write_text("".join(f"{p}\n" for p in paths))
+    return tmp_path
+
+
+@pytest.mark.parametrize("listed", [EXCLUDED, ABSOLUTE], ids=["relative", "absolute"])
+@pytest.mark.parametrize(
+    "root", ["docs", "./docs", "/home/you/src/target/docs"], ids=["rel", "dot", "abs"]
+)
+def test_a_rooted_search_is_denied_whichever_form_each_side_uses(tmp_path, listed, root):
+    """A search rooted at a directory containing the report is the violation
+    actually observed, and the root and the listed path arrive in whichever form
+    their writer happened to use.
+
+    Comparing them as strings meant only matching pairs lined up -- and because
+    the root was normalised by stripping its leading slash while the listed path
+    kept one, an absolute root matched nothing at all and every such search was
+    allowed. All six combinations are denied now, so the list needs one entry per
+    report rather than one per form the agent might use.
+    """
+    assert _denied(_run(_call("Grep", pattern="session", path=root), _listing(tmp_path, listed)))
+
+
+@pytest.mark.parametrize("listed", [EXCLUDED, ABSOLUTE], ids=["relative", "absolute"])
+def test_a_named_file_is_denied_whichever_form_each_side_uses(tmp_path, listed):
+    """The same independence for a call naming the file, which the bidirectional
+    suffix match already gave."""
+    listing = _listing(tmp_path, listed)
+    for cited in (EXCLUDED, ABSOLUTE):
+        assert _denied(_run(_call("Read", file_path=cited), listing))
+
+
+def test_a_sibling_tree_sharing_no_segment_chain_is_still_allowed(tmp_path):
+    """The generosity has a floor. Segment matching would be worthless if it
+    denied every search, so a root that shares no chain with the excluded path
+    stays allowed -- otherwise the hook stops the assessment rather than the leak.
+    """
+    listing = _listing(tmp_path, ABSOLUTE)
+    assert not _denied(
+        _run(_call("Grep", pattern="x", path="/home/you/src/target/firmware"), listing)
+    )
+
+
 def test_a_repo_wide_grep_with_no_path_is_denied(config_dir):
     assert _denied(_run(_call("Grep", pattern="session"), config_dir))
 
