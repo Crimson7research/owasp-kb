@@ -5,6 +5,17 @@ on:
   push:
     branches: [master]
 
+# One run per branch or PR. A rapid series of pushes to the same PR otherwise
+# leaves several ~25-minute build jobs racing to verify commits already
+# superseded. Cancelling is safe here because ci only verifies -- it publishes
+# nothing, so an interrupted run leaves nothing half-done.
+#
+# Not on master: those runs are the record that a merged commit passed, and a
+# later push cancelling an earlier one would leave a commit with no verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
