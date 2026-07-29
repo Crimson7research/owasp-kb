@@ -136,7 +136,39 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    Pass `excluded=` the prior assessments found during scoping. A finding citing one is
    rejected, and the roster will name it.
 
-8. **Cite the exact ASVS version** from `kb_info`.
+
+8. **Do not write the report while `verification_complete` is false.** The roster returns
+   two different facts and they are easy to conflate: `complete` means every requirement
+   carries a verdict, and `verification_complete` means every asserting claim met its
+   adversary. A roster can be `complete: true` with most of its gaps unchecked — one run
+   shipped a report with 35 of 51 gaps unverified, and the field said complete because
+   every requirement had been placed.
+
+   Two fields say what is outstanding, and they name different stages:
+
+   - **`unassessed`** — requirement ids in an applicable chapter that **no finder reported
+     on at all**. These are `INSUFFICIENT EVIDENCE`, and so is a finder's own "I looked and
+     could not determine" — two different facts sharing one verdict. One means the
+     assessment is incomplete; the other is a legitimate result. Dispatch a finder for each.
+   - **`unverified`** — asserting claims that never met their adversary, counted per
+     verdict. Dispatch a verifier for each `GAP (unconfirmed)` and a refuter for each
+     `N/A (unverified)`.
+
+   Loop: dispatch what those two name, append the results, call `owasp_roster` again, and
+   repeat until `verification_complete` is true. It covers both stages, so a requirement
+   nobody looked at blocks the report exactly as an unchecked gap does.
+
+   **A dispatch that errors is not a verdict.** If subagents fail to spawn — a concurrency
+   or session limit — that is a transient failure, not a finding. Dispatch fewer at once and
+   retry rather than accepting the downgrade: `GAP (unconfirmed)` is the honest record of a
+   claim nobody tested, and it is *also* what giving up looks like, so the two are
+   indistinguishable in the output.
+
+   Only when a shortfall genuinely cannot be cleared do you proceed — and then **say so in
+   the Results section**, with the count and the reason. A reader cannot otherwise tell an
+   unverified gap from one that was tested.
+
+9. **Cite the exact ASVS version** from `kb_info`.
 
 ## Output
 
@@ -163,6 +195,26 @@ available -- a chapter roster when its orchestrator returns, a finding when its 
 
 The numeric prefix carries the order. Findings go in the **300 block** and refuted ones in the
 **400 block**, because the merge counts the 300s against the roster.
+
+**Write each section at the earliest point its material exists.** The prefix decides where a
+section lands in the report, so writing order does not matter — which means a section never has
+to wait for its neighbours. Measured on a real run, the report took 17 minutes of the 64 to
+write, almost all of it after verification had finished, because the rosters were batched into
+one moment and the findings were written one after another at the end. None of that had to be
+serial.
+
+| Section | Can be written as soon as |
+|---|---|
+| `100_title` | scope is agreed — before any agent is dispatched |
+| `110_trust_boundaries` | the inventory returns |
+| `120_exemptions` | the refuters return |
+| `2NN_requirement_roster_vNN` | **that chapter's** orchestrator returns — one per chapter, not one batch |
+| `300_findings_intro`, `400_refuted_findings_intro` | the first finding of that kind exists |
+| `3NN_finding_N`, `4NN_refuted_finding_N` | **that finding's** verifier returns |
+| `101_summary` | last — it quotes the roster's final counts, so it cannot be written until `verification_complete` |
+
+Only the summary genuinely has to come last. Everything else can be written while other agents
+are still running, and a run interrupted late then has most of its report already on disk.
 
 Then merge, giving the finding count `owasp_roster` reported:
 
@@ -358,13 +410,13 @@ contain.
 
 ### Recommendation, with its provenance stated
 
-**Every finding gets one**, and it ends in code. If the corpus has nothing to cite, that is a reason
-to label the source — never a reason to omit the fix.
+**Every finding gets one.** If the corpus has nothing to cite, that is a reason to label the source
+— never a reason to omit the fix.
 
-**Show the remediation as a snippet, written against this repository.** Prose steps describe work;
-a snippet shows it. "Extend the property enum with encryption flags and have the mapper emit them"
-leaves the client to guess at the shape you had in mind — the code says it in four lines and is
-checkable against the file it patches:
+**Show the remediation as code when the defect is in the code**, written against this repository.
+A wrong constant, a missing flag, an options object assembled per call site — "extend the property
+enum with encryption flags and have the mapper emit them" leaves the client to guess at the shape you
+had in mind, where the code says it in four lines and is checkable against the file it patches:
 
 ```js
 // lib/session-cookie.ts — new
@@ -372,6 +424,21 @@ export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true, secure: true, sameSite: 'lax', path: '/',
 } as const
 ```
+
+**Where the defect is not in the code, there is no code to show, and inventing some makes the report
+worse.** Three cases come up repeatedly, and each has its own concrete answer:
+
+- **Configuration** — a build flag, a framework setting, a `sdkconfig`/`web.config`/`values.yaml`
+  key. Name the setting and the value it should hold. That is exact and checkable without being code.
+- **Deployment or an external control** — a TLS policy, a firewall rule, a WAF signature, an IAM
+  binding. Name the control and where it lives. You cannot patch it from this repository, and a
+  snippet implying you could sends the reader to the wrong file.
+- **A higher-level structural failure** — "no authentication on the provisioning service" has no
+  four-line patch. It gets the ordered sequence described below.
+
+The harm in forcing a snippet onto these is specific: it misrepresents the size of the work, and a
+client who plans against a patch that does not exist finds out late. Judge which kind the defect is,
+and let that decide whether code appears.
 
 Use the real identifiers, paths and types from the target. A snippet that compiles against an
 imagined API is worse than none, because it looks verified and a client will try to apply it.

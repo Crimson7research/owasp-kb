@@ -395,6 +395,29 @@ def build_roster(
         if entry["verdict"] in UNCERTAIN_VERDICTS:
             needs_attention.append(entry)
 
+    # An asserting verdict that never met its adversary. Counted per verdict so a
+    # caller can dispatch exactly what is missing and re-assemble, rather than
+    # deciding from a single boolean whether to proceed.
+    unverified = {
+        verdict: counts[verdict]
+        for verdict in ("GAP (unconfirmed)", "N/A (unverified)")
+        if counts.get(verdict)
+    }
+
+    # Requirements in an APPLIES chapter that no finder reported on at all.
+    #
+    # These are INSUFFICIENT EVIDENCE, and so is a finder's own "I looked and
+    # could not determine" -- two different facts sharing one verdict,
+    # distinguishable only by finding_id being null, which nothing checked. One
+    # means the assessment is incomplete; the other is a legitimate result.
+    #
+    # Listed rather than counted, because the ids are what a caller dispatches.
+    unassessed = [
+        entry["req_id"]
+        for entry in entries
+        if entry["verdict"] == "INSUFFICIENT EVIDENCE" and entry["finding_id"] is None
+    ]
+
     result = {
         "count": len(requirements),
         "counts": counts,
@@ -410,7 +433,20 @@ def build_roster(
             }
             for index, f in enumerate(merged)
         ],
+        # Placement only: every requirement carries a verdict. This says nothing
+        # about whether the claims were checked, and it was read as "the
+        # assessment is done" -- a run shipped a report with 35 of 51 gaps
+        # unverified while this field said true, correctly per its own contract.
         "complete": sum(counts.values()) == len(requirements),
+        # Whether the adversarial stage finished. Downgrading an unverified GAP to
+        # 'GAP (unconfirmed)' is the honest way past require_verification, but it
+        # is also indistinguishable from giving up -- so the shortfall is now a
+        # field rather than something a reader has to infer from needs_attention.
+        # False when any stage left work undone: a claim unchecked, or a
+        # requirement nobody looked at.
+        "verification_complete": not unverified and not unassessed,
+        "unverified": unverified,
+        "unassessed": unassessed,
         # A waived roster must say so. 'GAP (unconfirmed)' announces itself by
         # landing in needs_attention; require_verification=False would otherwise
         # be invisible, making an unverified roster look identical to a verified

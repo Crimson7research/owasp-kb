@@ -1141,3 +1141,111 @@ def test_blank_and_comment_lines_are_skipped(tmp_path, monkeypatch):
     (d / "findings.jsonl").write_text('# a note\n\n{"req_id": "V1.1.1", "verdict": "GAP"}\n\n')
     monkeypatch.setenv("OWASP_KB_STATE", str(tmp_path))
     assert len(load_session_findings("s1")) == 1
+
+
+# -- the verification gate --------------------------------------------------
+
+
+def _roster(findings, **kw):
+    kw.setdefault("chapter_states", {"V6": "APPLIES", "V7": "APPLIES"})
+    kw.setdefault("require_verification", False)
+    return build_roster(requirements=REQS, findings=findings, **kw)
+
+
+def test_complete_does_not_mean_verified(tmp_path):
+    """complete is placement only: every requirement carries a verdict. It was
+    read as 'the assessment is done', and a run shipped a report with 35 of 51
+    gaps unverified while this field said true -- correctly, per its own
+    contract. The two facts now have two fields."""
+    result = _roster(
+        [_f("V6.2.1", "V6", "V6.2", verdict="GAP (unconfirmed)", evidence="e", file="a.c", line=1)]
+    )
+    assert result["complete"] is True, "every requirement is still placed"
+    assert result["verification_complete"] is False, "but nothing checked the claim"
+
+
+def test_verification_complete_when_every_claim_met_its_adversary():
+    """Every requirement reported on, every asserting claim checked."""
+    result = _roster(
+        [
+            _f(
+                "V6.2.1", "V6", "V6.2", verdict="GAP", evidence="e", file="a.c", line=1, cwe="CWE-1"
+            ),
+            _f("V6.2.2", "V6", "V6.2", verdict="MET", evidence="present"),
+            _f("V7.1.1", "V7", "V7.1", verdict="MET", evidence="present"),
+        ]
+    )
+    assert result["verification_complete"] is True
+    assert result["unverified"] == {}
+    assert result["unassessed"] == []
+
+
+def test_unverified_counts_what_is_missing_per_verdict():
+    """A single boolean cannot tell a caller what to dispatch. The counts can."""
+    result = _roster(
+        [
+            _f(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                verdict="GAP (unconfirmed)",
+                evidence="e",
+                file="a.c",
+                line=1,
+            ),
+            _f(
+                "V6.2.2",
+                "V6",
+                "V6.2",
+                verdict="GAP (unconfirmed)",
+                evidence="e",
+                file="b.c",
+                line=2,
+            ),
+        ],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (unverified)"},
+    )
+    assert result["unverified"]["GAP (unconfirmed)"] == 2
+    assert result["unverified"].get("N/A (unverified)"), "an unverified exemption also counts"
+
+
+def test_a_fully_verified_roster_reports_no_shortfall():
+    """The field must be able to say 'nothing outstanding', or a caller loops
+    forever. An exempt chapter needs no findings -- its requirements are placed
+    by chapter_states, not left unassessed."""
+    result = _roster(
+        [
+            _f("V6.2.1", "V6", "V6.2", verdict="MET", evidence="present"),
+            _f("V6.2.2", "V6", "V6.2", verdict="MET", evidence="present"),
+        ],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+    )
+    assert result["verification_complete"] is True
+    assert result["unverified"] == {}
+    assert result["unassessed"] == []
+
+
+def test_a_requirement_nobody_looked_at_is_not_the_same_as_undeterminable():
+    """Both are INSUFFICIENT EVIDENCE, and that is the problem. One means a
+    finder reported it could not tell; the other means no finder ran. They were
+    distinguishable only by finding_id being null, which nothing checked."""
+    reported = _roster(
+        [
+            _f("V6.2.1", "V6", "V6.2", verdict="INSUFFICIENT EVIDENCE", evidence="could not tell"),
+            _f("V6.2.2", "V6", "V6.2", verdict="MET", evidence="present"),
+            _f("V7.1.1", "V7", "V7.1", verdict="MET", evidence="present"),
+        ]
+    )
+    assert reported["counts"]["INSUFFICIENT EVIDENCE"] == 1
+    assert reported["unassessed"] == [], "a finder did report on it"
+    assert reported["verification_complete"] is True
+
+    silent = _roster(
+        [
+            _f("V6.2.2", "V6", "V6.2", verdict="MET", evidence="present"),
+            _f("V7.1.1", "V7", "V7.1", verdict="MET", evidence="present"),
+        ]
+    )
+    assert silent["counts"]["INSUFFICIENT EVIDENCE"] == 1
+    assert silent["unassessed"] == ["V6.2.1"], "nobody looked, and the id is what to dispatch"
+    assert silent["verification_complete"] is False

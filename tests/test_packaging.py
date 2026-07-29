@@ -224,11 +224,22 @@ def test_the_skills_require_remediation_as_code(skill):
     """The provenance rules said to mark 'any snippet you wrote' as yours while
     nothing ever asked for a snippet -- a rule attached to an artefact that was
     never produced, so recommendations came back as prose steps."""
-    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
-    assert "Show the remediation as a snippet" in body
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "Show the remediation as code when the defect is in the code" in body
+    assert "Where the defect is not in the code, there is no code to show" in body, (
+        "code belongs in a finding when the defect is in code. One run produced one "
+        "snippet across fifteen findings, so the rule had to be stated -- but stated "
+        "unconditionally it invents patches for configuration, deployment and "
+        "structural defects, which misrepresents the size of the work"
+    )
+    for elsewhere in ("Configuration", "Deployment or an external control", "structural"):
+        assert elsewhere in body, (
+            f"{elsewhere!r} is a place a defect lives that has no code fix; without "
+            "naming it, an agent reads the code rule as unconditional"
+        )
     assert "no snippet is offered" in body, (
-        "the architectural exception must be stated, or an agent cannot tell a "
-        "considered omission from a forgotten one"
+        "the omission must still be stated, or an agent cannot tell a considered "
+        "omission from a forgotten one"
     )
 
 
@@ -1124,3 +1135,61 @@ def test_the_skills_arm_the_exclusion_hook(skill):
     assert "the hook stops the read" in body, (
         "the three controls must be distinguished, or one is assumed to cover the others"
     )
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_gate_the_report_on_verification_completing(skill):
+    """A run shipped a report with 35 of 51 gaps unverified. Nothing was broken:
+    complete means every requirement carries a verdict, the agent read that as
+    the assessment being done, and proceeded. The gate the design lacked."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "verification_complete" in body, "no gate on the verification stage"
+    assert "repeat until `verification_complete` is true" in body, "stated, but not a loop"
+    assert "`unassessed`" in body, (
+        "the finder stage is gated too: a requirement nobody looked at and one a finder "
+        "could not determine are both INSUFFICIENT EVIDENCE, and only one is a result"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_treat_a_failed_dispatch_as_transient(skill):
+    """The concurrency limit produced 35 unconfirmed gaps in one run. A spawn
+    failure is not a verdict, and accepting the downgrade makes giving up
+    indistinguishable from honest reporting."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "A dispatch that errors is not a verdict" in body
+    assert "Dispatch fewer at once and retry" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_require_an_uncleared_shortfall_to_be_stated(skill):
+    """If it cannot be cleared, the report must say so with the count and the
+    reason -- otherwise a reader cannot tell an unverified gap from a tested
+    one, which is the whole problem restated."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "say so in the Results section" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_say_when_each_section_can_be_written(skill):
+    """A real run wrote the title two minutes in, on its own initiative, then
+    batched all seventeen chapter rosters into one moment and serialised the
+    findings at the end -- 17 of 64 minutes spent writing after verification had
+    finished. The prefix decides order, so none of that had to be serial.
+
+    Emergent good behaviour does not recur unless specified; that is what #47
+    established about the § marker."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "Can be written as soon as" in body, "no dependency table"
+    assert "that chapter's** orchestrator returns" in body, (
+        "the per-chapter case is the one that was batched"
+    )
+    assert "Only the summary genuinely has to come last" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_summary_is_gated_on_verification_completing(skill):
+    """101_summary quotes the roster's final counts. Written before the loop
+    clears, it reports numbers that are still moving."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "cannot be written until `verification_complete`" in body
