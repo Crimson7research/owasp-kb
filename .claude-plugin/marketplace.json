@@ -8,7 +8,7 @@
       "name": "owasp-kb",
       "source": "./plugins/owasp-kb",
       "description": "OWASP ASVS and Cheat Sheet guidance, plus MITRE's CWE catalogue for checking a cited weakness id, for secure coding, ASVS verification, gap reporting and threat modelling, backed by a local MCP knowledge base",
-      "version": "0.10.0"
+      "version": "0.11.0"
     }
   ]
 }

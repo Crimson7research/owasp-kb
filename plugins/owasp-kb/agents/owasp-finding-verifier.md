@@ -51,6 +51,7 @@ you get that far, not before — a finding you refute never needs them.
   "source": "BLE Reset characteristic write, unauthenticated, any peer in range",
   "sink": "factoryReset() erases NVS and reboots, ProvisioningService.cpp:77",
   "path": "onWrite -> handleReset -> factoryReset",
+  "snippet": "void ProvisioningService::handleReset(std::span<const std::uint8_t> v) {\n  if (v.size() != 1 || v[0] != 0xFF) return;\n  //  ^ :74  the only check is a fixed public magic byte -- framing, not a credential\n  m_Store.eraseAll();\n  //  ^ :77  SINK: erases NVS and reboots, no authorisation consulted\n}",
   "mitigations_present": "none; no rate limit, no pairing requirement",
   "cwe": "CWE-770",
   "remediation": "Authentication_Cheat_Sheet#protect-against-automated-attacks"
@@ -60,11 +61,38 @@ you get that far, not before — a finding you refute never needs them.
 Add `remediation_quote` alongside `remediation` in that same object when you navigated to and
 read the cited section yourself — see *Citing guidance you actually read*, below.
 
+**`snippet` is the code you actually read to confirm the trace**, quoted from the file with the
+real line numbers kept and the offending lines marked — a caret and the line number under the
+column, as above. You have already opened these files to verify the finding; capturing the lines
+costs you nothing and saves the report author from re-deriving them, which is where a wrong line
+number gets introduced.
+
+Quote enough to be readable and no more, and elide with `…` rather than pasting a whole function.
+If the defect is a **single blameable line** with no source and no sink — a missing flag, a wrong
+constant, a disabled check — the snippet is the finding, and it matters more here than in the
+traced case, not less.
+
+Unlike `cwe`, these fields are **not** read by `owasp_roster`; the roster assembles verdicts and
+counts. `snippet` travels back through your orchestrator to whoever writes the report, which is
+what renders it. So the rule about not inventing roster fields does not make this one inert — it
+has a named consumer, and the report's Description block is where it lands.
+
 `verdict` is one of `confirmed`, `refuted`, `unclear`.
 
-**A confirmation without a source and a sink is not a confirmation.** If you cannot name
-where untrusted data enters and where it is used unsafely, return `unclear` — whatever
-your instinct says. That trace is what makes the finding actionable, and its absence
+**A confirmation with nothing located in the code is not a confirmation.** What "located" means
+depends on the defect, and there are three shapes:
+
+- **Tainted data.** Name where untrusted input enters and where it is used unsafely. Both, or
+  return `unclear`.
+- **A missing control.** There is no tainted data, so `source` is the reachable entry point and
+  `sink` is the privileged effect it reaches. Finding that no gate exists is the confirmation.
+- **A single blameable line** — a wrong constant, an unset flag, a disabled check. There is no path
+  at all. Put the line in `snippet`, say so in `path`, and **do not return `unclear` merely because
+  no taint flows.** Downgrading a real one-line defect for want of a trace it can never have is a
+  false negative, and a false negative in this role is the expensive direction.
+
+What earns `unclear` is being unable to point at anything — not being unable to draw an arrow.
+Return it when you cannot locate the defect in the code at all, whatever your instinct says: that
 usually means the finding is weaker than it looked.
 
 If you refute it, say precisely which mitigation defeats the claim and where it is. A

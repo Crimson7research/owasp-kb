@@ -167,6 +167,43 @@ def test_assessment_skills_require_a_remediation_citation(skill):
     assert "owasp_get" in body
 
 
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_show_a_rendered_flow_not_a_description_of_one(skill):
+    """The skills said "Description carries the flow" and never showed one, so
+    every finding in a real run described the trace in prose instead. An
+    instruction that names an artefact without rendering it produces prose."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "SINK:" in body, "no rendered flow block for the agent to copy"
+    assert "└─" in body, "the flow example is not drawn"
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_require_the_offending_code_not_a_file_line(skill):
+    """A real run cited every defect as file:line and quoted no source at all.
+    A reader who must open the file to see the defect has a lookup, not a
+    finding."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "code block" in body
+    assert "^ :9" in body, "no worked example of marking the offending line"
+    assert "single blameable line" in body, (
+        "the no-flow case is where the code block matters most; without it an "
+        "agent drops both blocks and leaves a bare file:line"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_require_remediation_as_code(skill):
+    """The provenance rules said to mark 'any snippet you wrote' as yours while
+    nothing ever asked for a snippet -- a rule attached to an artefact that was
+    never produced, so recommendations came back as prose steps."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "Show the remediation as a snippet" in body
+    assert "no snippet is offered" in body, (
+        "the architectural exception must be stated, or an agent cannot tell a "
+        "considered omission from a forgotten one"
+    )
+
+
 @pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
 def test_the_skills_render_the_corpus_cwe(skill):
     """owasp_roster returns cwe_corpus and this is its only consumer. A field
@@ -724,6 +761,29 @@ def test_the_smoke_test_proves_the_licence_texts_reached_the_image():
         assert f"/opt/owasp-kb/licenses/{name}" in script, (
             f"the smoke test never looks for {name} in the image"
         )
+
+
+def test_the_verifier_returns_the_code_it_read():
+    """The verifier returned source/sink/path as prose and no code, so the
+    report author had to re-open every file it had already read -- which is
+    where a wrong line number gets introduced."""
+    _, body = _agent("owasp-finding-verifier")
+    assert '"snippet"' in body, "no snippet field in the output contract"
+    # Emphasis markers fall inside the phrase ("**not** read by"), so strip them
+    # rather than pinning the assertion to today's formatting.
+    assert "not read by `owasp_roster`" in body.replace("*", ""), (
+        "the agent is told elsewhere that invented roster fields are inert; "
+        "without naming this field's real consumer it reads as one of those"
+    )
+
+
+def test_the_verifier_does_not_downgrade_a_single_line_defect():
+    """'A confirmation without a source and a sink is not a confirmation' would
+    return unclear for a wrong constant or an unset flag, which has no taint
+    path and never will. A false negative here is the expensive direction."""
+    _, body = _agent("owasp-finding-verifier")
+    assert "single blameable line" in body
+    assert "not being unable to draw an arrow" in body
 
 
 def test_the_verifier_verifies_a_cwe_it_did_not_get_from_the_mapping():
