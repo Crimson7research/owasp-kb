@@ -162,7 +162,11 @@ EXCLUDED -- these exist; acknowledge them, never open them:
 else: the main session passes it to you, and you are the only thing that dispatches them. A
 finder is the most likely role to walk into a prior assessment, because it greps the widest.
 
-Do not open them, grep them, or cite them. Another assessment's conclusion is not evidence,
+**Any tool call whose output could include text from these files is forbidden** — Read,
+Grep, Glob, or any search whose results would match inside them. A grep is not exempt
+because you did not open the hit: the text reaches you either way, and that is the thing
+being prevented. If a search would sweep a directory containing one, exclude the path
+explicitly rather than filtering the results afterwards. Another assessment's conclusion is not evidence,
 and reading one makes you likely to confirm it rather than test it. If a verdict would depend
 on excluded material, return `INSUFFICIENT EVIDENCE` and say that a verdict here would depend
 on excluded material — do not name the file, and do not open it to check. Naming it puts the

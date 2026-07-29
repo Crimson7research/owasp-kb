@@ -44,7 +44,11 @@ EXCLUDED -- these exist; acknowledge them, never open them:
   docs/security/asvs-5.0.0-l2-firmware.md
 ```
 
-Do not open them, grep them, or cite them. Another assessment's conclusion is not evidence,
+**Any tool call whose output could include text from these files is forbidden** — Read,
+Grep, Glob, or any search whose results would match inside them. A grep is not exempt
+because you did not open the hit: the text reaches you either way, and that is the thing
+being prevented. If a search would sweep a directory containing one, exclude the path
+explicitly rather than filtering the results afterwards. Another assessment's conclusion is not evidence,
 and reading one makes you likely to confirm it rather than test it. If an item you are
 surveying would depend on excluded material, say that it would depend on excluded material
 and state what you searched for instead — do not name the file, and do not open it to check.
