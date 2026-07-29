@@ -17,5 +17,19 @@
     "secure-coding",
     "threat-modeling"
   ],
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/block_excluded_reads.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }
