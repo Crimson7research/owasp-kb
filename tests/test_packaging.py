@@ -763,6 +763,47 @@ def test_the_smoke_test_proves_the_licence_texts_reached_the_image():
         )
 
 
+# A tool the agent is told to *call*, as opposed to one merely described. The
+# roster is named in every agent as the thing that will reject their output --
+# "owasp_roster rejects a finding that cites an excluded path" -- and no agent
+# calls it, so a plain mention is not evidence of use.
+_TOOL = r"(?:kb_info|owasp_\w+|cwe_\w+)"
+_CALL_FORM = re.compile(rf"`({_TOOL})\(")
+_IMPERATIVE = re.compile(rf"\b(?:use|call|run)\s+`({_TOOL})`", re.IGNORECASE)
+
+
+def _tools_instructed(body: str) -> set[str]:
+    return {m.group(1) for m in _CALL_FORM.finditer(body)} | {
+        m.group(1) for m in _IMPERATIVE.finditer(body)
+    }
+
+
+def _tools_loaded(body: str) -> set[str]:
+    return set(re.findall(r"select:mcp__plugin_owasp-kb_owasp-kb__(\w+)", body))
+
+
+def test_the_call_detector_actually_matches_something():
+    """Guard on the two tests below. Both assert instructed <= loaded, which an
+    empty instructed set satisfies trivially -- so if these patterns stop
+    matching, the coverage checks pass while enforcing nothing."""
+    _, body = _agent("owasp-finding-verifier")
+    found = _tools_instructed(body)
+    assert {"cwe_get", "owasp_related"} <= found, (
+        f"the detector found {sorted(found)}; it is no longer reading the file"
+    )
+
+
+@pytest.mark.parametrize("agent", sorted(EXPECTED_AGENTS))
+def test_every_tool_an_agent_is_told_to_call_is_loaded(agent):
+    """The plugin's MCP tools are deferred: an agent must be permitted by its
+    tools: allowlist *and* load the schema via ToolSearch. The allowlist is the
+    check people make, and it is only half. owasp_search was instructed and
+    never loaded, so that instruction silently did nothing."""
+    _, body = _agent(agent)
+    missing = _tools_instructed(body) - _tools_loaded(body)
+    assert not missing, f"{agent} is told to call {sorted(missing)} but never loads it"
+
+
 def test_the_verifier_returns_the_code_it_read():
     """The verifier returned source/sink/path as prose and no code, so the
     report author had to re-open every file it had already read -- which is

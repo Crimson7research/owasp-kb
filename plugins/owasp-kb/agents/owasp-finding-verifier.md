@@ -20,13 +20,22 @@ Deferred; load before use:
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_related
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_outline
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_get
+ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__owasp_search
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__cwe_get
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__cwe_related
 ToolSearch  query: select:mcp__plugin_owasp-kb_owasp-kb__cwe_search
 ```
 
+`owasp_search` is for the case in *Citing guidance you actually read* where
+`owasp_related` returns no guidance edge — 13 of the 345 requirements have none
+and the corpus often still covers the topic.
+
 The last three are for *Checking a CWE you chose yourself*, below. Load them when
 you get that far, not before — a finding you refute never needs them.
+
+**Every tool you are told to call must appear above.** Your `tools:` frontmatter
+permits them, but these are deferred: permitted and never loaded means the call
+cannot be made, and the instruction to make it silently does nothing.
 
 ## Process
 
