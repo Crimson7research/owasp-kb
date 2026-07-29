@@ -1088,3 +1088,26 @@ def test_the_skills_say_a_correction_is_an_appended_line(skill):
     body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
     assert "append a corrected line for the same `req_id`" in body
     assert "Do not rewrite the file" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_write_the_report_in_sections(skill):
+    """The report was the only stage of an assessment that was not incremental:
+    one 120,000-character write at the end, larger than the checklist call that
+    already proved undeliverable."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "owasp-kb-report merge" in body, "no merge step, so sections would never be assembled"
+    assert "--expect-findings" in body, (
+        "without the count the merge cannot detect a finding with no detail section"
+    )
+    assert "301_finding_1.md" in body, "no rendered example of the section naming"
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_forbid_concatenating_sections_by_hand(skill):
+    """Re-reading forty sections to join them costs the context this exists to
+    save, and a dropped one would go unnoticed."""
+    # Normalised: the sentence wraps differently in the two skills, and pinning
+    # the assertion to today's line breaks makes it fail on a reflow.
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "Do not concatenate the sections yourself" in body
