@@ -67,9 +67,19 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    security review. List their paths, tell the user they exist, and confirm they are to be
    excluded rather than used as source material for the report you are about to produce.
 
-   Pass that list to every agent you dispatch, and to `owasp_roster` as `excluded`. Agents
-   must know these files exist and must not open them: another assessment's conclusion is not
-   evidence, and an agent that reads one tends to confirm it rather than test it. Design
+   **Write the paths, one per line, to
+   `~/.claude/owasp-kb/sessions/$CLAUDE_CODE_SESSION_ID/excluded`.** A `PreToolUse` hook reads
+   that file and refuses any `Read`, `Grep` or `Glob` that would put one of them in front of an
+   agent. Without the file the hook has nothing to enforce and silently allows everything — the
+   list is what arms it, and it is scoped to this session so no other session is affected.
+
+   Then pass the same list to every agent you dispatch, and to `owasp_roster` as `excluded`.
+   The three are different controls: the hook stops the read, the prompt tells an agent why,
+   and the roster rejects a finding that cites one. A previous run had a finder grep an
+   excluded report and quote the hit, and only the orchestrator's diligence caught it.
+
+   Agents must know these files exist and must not open them: another assessment's conclusion
+   is not evidence, and an agent that reads one tends to confirm it rather than test it. Design
    documentation is *not* excluded — it is primary evidence, and documentation-class
    requirements cannot be answered without it.
 
