@@ -186,6 +186,11 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         partial because the upstream mappings predate ASVS 5.0.0, so a missing
         edge is not evidence that none exists.
 
+        Coverage is reported only for relationships that start at a requirement.
+        cwe_child, cwe_peer and cwe_member connect catalogue entries to each
+        other, so they carry an edge count and no coverage -- absent because it
+        does not apply, not because it is zero.
+
         server_version is this build's version, and it is the same number the
         plugin carries. Compare it against the plugin version you expect: a
         reconnect reports success whether or not the image behind it is current,
@@ -204,13 +209,20 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 }
                 for p in info.packs
             ],
+            # The coverage keys are omitted, not nulled, for a relationship no
+            # requirement can reach: the CWE graph connects catalogue entries to
+            # each other, and "0 of 345 covered" reads as a mapping that failed
+            # to load. An absent field cannot be misread; a zero will be.
             "link_coverage": [
-                {
-                    "rel": c.rel,
-                    "edges": c.edges,
-                    "requirements_covered": c.requirements,
-                    "total_requirements": c.total_requirements,
-                }
+                {"rel": c.rel, "edges": c.edges}
+                | (
+                    {
+                        "requirements_covered": c.requirements,
+                        "total_requirements": c.total_requirements,
+                    }
+                    if c.requirements is not None
+                    else {}
+                )
                 for c in info.link_coverage
             ],
         }
