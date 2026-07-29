@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from owasp_kb.ingest.lock import Lock, LockedPack
@@ -68,12 +69,44 @@ def fetch_commit_pack(pack: LockedPack, dest: Path) -> Path:
     return out
 
 
+def fetch_url_pack(pack: LockedPack, dest: Path) -> Path:
+    """Download and unpack a pinned archive from a direct URL.
+
+    Used by packs that are not on GitHub. The archive is expected to hold a
+    single file; zipfile is stdlib, and `unzip` is not present in the
+    devcontainer.
+    """
+    if not pack.url:
+        raise ValueError(f"pack {pack.name!r} has no url to fetch")
+    out = dest / pack.name
+    out.mkdir(parents=True, exist_ok=True)
+    archive = out / Path(pack.url).name
+    _download(pack.url, archive)
+    try:
+        with zipfile.ZipFile(archive) as zf:
+            names = zf.namelist()
+            if len(names) != 1:
+                raise ValueError(
+                    f"expected one file in {archive.name}, found {len(names)}: {names}"
+                )
+            zf.extract(names[0], out)
+    except zipfile.BadZipFile as exc:
+        # A truncated transfer or an HTML error page saved as if it were the
+        # zip both land here; name the url and the file so this is not a bare
+        # "File is not a zip file" with nothing to act on.
+        raise ValueError(f"{pack.url} did not download as a valid zip ({archive})") from exc
+    archive.unlink()  # only reached once extraction succeeded
+    return out
+
+
 def fetch_all(lock: Lock, dest: Path) -> dict[str, Path]:
     """Fetch every pack. Returns pack name to local directory."""
     dest.mkdir(parents=True, exist_ok=True)
     paths = {}
     for name, pack in lock.packs.items():
-        if pack.release:
+        if pack.url:
+            paths[name] = fetch_url_pack(pack, dest)
+        elif pack.release:
             paths[name] = fetch_release_pack(pack, dest)
         elif pack.commit:
             paths[name] = fetch_commit_pack(pack, dest)

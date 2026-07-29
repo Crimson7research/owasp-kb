@@ -9,7 +9,7 @@ lawyer.
 
 ## Both upstream repos are CC-BY-SA-4.0
 
-The two projects this repository ingests content from:
+Two of the three projects this repository ingests content from:
 
 - [OWASP/ASVS](https://github.com/OWASP/ASVS)
 - [OWASP/CheatSheetSeries](https://github.com/OWASP/CheatSheetSeries)
@@ -32,7 +32,11 @@ Two separate CC-BY-SA-4.0 obligations are in play, not one:
   receives a copy of the licensed content, which is exactly what
   "redistribution" means under the license — the attribution requirement
   applies in full, regardless of the fact that it arrives inside a database
-  file rather than as loose markdown.
+  file rather than as loose markdown. The same is true of the CWE catalogue's
+  entry text, which the same file carries verbatim; its obligation comes from
+  MITRE's terms rather than from CC-BY-SA-4.0, and it is the reason LICENSE-CWE
+  travels with the image — see
+  [below](#cwe-is-mitres-under-its-own-terms).
 
 - **The built SQLite index is itself an adaptation, so ShareAlike applies to
   it independently.** The index is not the source content unmodified — it is
@@ -49,8 +53,8 @@ Two separate CC-BY-SA-4.0 obligations are in play, not one:
 
 ## The code/data split
 
-Two licenses cover two disjoint things in this repository, and neither covers
-the other:
+Three licenses cover three disjoint things in this repository, and none of
+them covers another:
 
 - **[LICENSE](../LICENSE) (MIT)** covers this project's own source code only:
   the ingest pipeline (`ingest/`), the domain model and retrieval logic
@@ -61,10 +65,14 @@ the other:
   itself as fetched, and the SQLite index built from it, wherever either
   appears — inside `dist/*.sqlite`, inside the baked images, or in any
   redistribution of either.
+- **[LICENSE-CWE](../LICENSE-CWE)** covers MITRE's CWE terms of use, under
+  which the CWE pack's content is used — see
+  [below](#cwe-is-mitres-under-its-own-terms).
 
 Each Docker image's OCI labels state this split directly
-(`org.opencontainers.image.licenses="MIT AND CC-BY-SA-4.0"`), so the split is
-visible from the image metadata alone, without reading this document.
+(`org.opencontainers.image.licenses="MIT AND CC-BY-SA-4.0 AND
+LicenseRef-CWE-TOU"`), so the split is visible from the image metadata alone,
+without reading this document.
 
 ## What a redistributor must do
 
@@ -78,20 +86,43 @@ should at minimum:
 2. **Carry the CC-BY-SA-4.0 license forward** for the content and the index
    specifically (not necessarily for any of your own original code built
    around it) — a straightforward reading is to keep [LICENSE-DATA](../LICENSE-DATA)
-   alongside the redistributed artifact.
+   alongside the redistributed artifact. Carry [LICENSE-CWE](../LICENSE-CWE)
+   forward too, for the same reason — CWE's terms of use require it.
 3. **State what changed**, if anything, beyond what this project already
    states (chunking, cross-linking, embedding) — CC-BY-SA-4.0 asks that
    modifications be indicated.
 4. **Not imply OWASP endorsement** — see the trademark note below,
    independent of the copyright license entirely.
 
+## CWE is MITRE's, under its own terms
+
+The CWE pack carries MITRE's Common Weakness Enumeration, pinned to a numbered
+release. Its terms are permissive and explicit:
+
+> CWE™ is free to use by any organization or individual for any research,
+> development, and/or commercial purposes, per these CWE Terms of Use.
+
+Two obligations follow. The terms must accompany redistribution, which is why
+[LICENSE-CWE](../LICENSE-CWE) is vendored here rather than fetched at build time —
+a legal notice should not change silently between builds, and an image that runs
+with `--network none` cannot fetch one. And `CWE™` is a MITRE trademark: naming
+the catalogue is attribution, not endorsement, and MITRE disclaims warranty and
+liability for any use of it.
+
+CWE is **not** an OWASP project. It sits in this server because ASVS maps to it,
+not because it shares an upstream.
+
 ## Trademark disclaimer
 
 OWASP® is a registered trademark of the OWASP Foundation. This project is
 **not affiliated with, endorsed by, or sponsored by** the OWASP Foundation.
-The project name leads with "owasp" only because that is what the content is
-— the Application Security Verification Standard and the Cheat Sheet Series,
+The project name leads with "owasp" only because that is what most of the content
+is — the Application Security Verification Standard and the Cheat Sheet Series,
 both OWASP Foundation projects — not because of any relationship with the
-Foundation itself. This matters specifically because the naming choice could
+Foundation itself. Since the CWE pack, the name is also **incomplete** as a
+description: one of the three packs is MITRE's, and the name says nothing about it.
+`kb_info` reports every pack's `license` and `source_url` for that reason, so a
+citation's upstream is always recoverable from the server rather than inferred from
+the repository's name. This matters specifically because the naming choice could
 otherwise read as an implied affiliation; the disclaimer exists precisely to
 foreclose that reading, and is repeated in [NOTICE](../NOTICE).

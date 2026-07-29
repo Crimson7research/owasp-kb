@@ -58,14 +58,23 @@ class Finding:
 
     @property
     def location_key(self) -> tuple | None:
-        """Identity for deduplication, or None when the finding has no location."""
+        """Identity for deduplication, or None when the finding has no location.
+
+        The verdict is part of the identity. Two requirements can legitimately
+        resolve differently at one line -- one met, one gapped, both anchored to
+        the same design document -- and that is valid input rather than a
+        reporting mistake. Merging them kept whichever verdict arrived first and
+        discarded the other, so a real GAP was counted as MET, the failure count
+        came out short, and the answer depended on the order agents happened to
+        report in. Only findings that agree may merge.
+        """
         if self.file is None or self.line is None:
             return None
-        return (self.file, self.line, self.cwe)
+        return (self.file, self.line, self.cwe, self.verdict)
 
 
 def dedupe_findings(findings: list[Finding]) -> list[Finding]:
-    """Merge findings sharing a (file, line, cwe), keeping every requirement.
+    """Merge findings sharing a (file, line, cwe, verdict), keeping every requirement.
 
     The surviving finding carries each requirement id with its chapter and
     section, because a reader must see that one entry covers both -- dropping

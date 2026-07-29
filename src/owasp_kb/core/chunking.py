@@ -13,12 +13,19 @@ _SLUG_STRIP = re.compile(r"[^\w\s-]")
 
 # Sized to the embedder's context window, not chosen freely: bge-small
 # truncates at 512 tokens, so anything larger has its tail silently dropped
-# from the vector index. Measured on the real corpus against retrieval rank:
+# from the vector index. Measured on the then-current 2,894-chunk corpus (ASVS +
+# cheat sheets, before the CWE pack) against retrieval rank:
 #   800 -> 11.9% truncated, hybrid mean rank 2.2
 #   512 -> 4.6% truncated,  hybrid mean rank 2.2   <- chosen
 #   400 -> 2.4% truncated,  hybrid mean rank 2.8   (worse: over-fragmented)
 # Going below the window trades truncation for fragmentation and loses more
 # than it gains, so match the window rather than undercut it.
+#
+# Those three rows are one experiment and are left as measured -- rewriting only
+# the chosen row would leave a comparison whose arms came from different corpora,
+# which is worse than a dated one. On the shipped index the figure is now 2.90%
+# (141 of 4,869): the CWE pack's entries are short, so it roughly halved. Well
+# under the 8% build gate either way (MAX_TRUNCATED_CHUNK_SHARE in integrity.py).
 DEFAULT_MAX_TOKENS = 512
 SPLIT_DEPTHS = (2, 3)
 

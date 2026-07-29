@@ -148,6 +148,18 @@ must be able to tell which is which:
 
 Where `cwe_corpus` is empty, say the mapping is silent rather than leaving it blank.
 
+Where you cite an id the mapping does not carry, `cwe_get` it and give the weakness **name**
+beside the id — a reader cannot judge `CWE-789` but can judge *Memory Allocation with
+Excessive Size Value*. Where the mapped entry is `Obsolete` or is a Category rather than a
+weakness, say that: it is the reason a more specific id is right, and `cwe_get` reports both.
+
+`CWE-798 Use of Hard-coded Credentials — model-assigned; mapping carries CWE-320 Key Management
+Errors, which is an Obsolete Category and lists CWE-798 among its members`
+
+Keep the id itself bare in the roster payload. `cwe_get` is for the report text; `owasp_roster`
+matches `cwe` against `cwe_corpus` and dedupes on it, and an id with a name appended matches
+nothing.
+
 **Show whether guidance was read.** A `remediation` with a `remediation_quote` is a section an
 agent navigated to and read. One without is the requirement-level mapping. Mark the difference;
 both are citations from the knowledge base, but only one is specific.
@@ -170,7 +182,7 @@ Each section follows this shape:
     | | |
     |---|---|
     | **Covers** | V7.3.1 (L2), V7.4.1 (L1) |
-    | **Location** | `firmware/main/adapters/PeerServer.cpp:136` |
+    | **Location** | `src/net/connection_handler.c:136` |
     | **CWE** | CWE-613 — matches the mapping |
     | **Root cause** | #3 — termination is not implemented anywhere |
     | **Technical severity** | High — reasoning below |
@@ -179,16 +191,27 @@ Each section follows this shape:
     > **ASVS 5.0.0 V7.4.1** (L1) — <the requirement text, verbatim from owasp_checklist>
 
     ### Description
+    <what the defect is, in prose>
+
+    **Flow — how the value becomes reachable:**
+    <a rendered flow block, source to sink>
+
+    <a code block showing the offending lines, each one marked>
+
+    **Reachability confirmed:** <the query you ran, and what it showed>
+
     ### Risk
     ### Technical risk assessment
     ### Recommendation
+    <the principle, with its provenance>
+    <a code block showing the fix, written for this repository>
     ### References
 
 **The verdict goes in the heading.** A run can produce 25 verified gaps and 72 unconfirmed ones;
 rendering them alike makes three quarters of the report read as confirmed — which for a client
 artefact is the difference between a finding and a suspicion.
 
-**`Covers` lists every requirement.** Findings sharing a `(file, line, cwe)` merge, so one defect
+**`Covers` lists every requirement.** Findings sharing a `(file, line, cwe, verdict)` merge, so one defect
 routinely covers several, and the heading cannot be an ASVS id.
 
 **`Root cause` points back to the cross-cutting section.** Without it a client fixes 97 symptoms
@@ -197,15 +220,54 @@ instead of the handful of decisions underneath them.
 **Omit the CWE row** when you have no id and `cwe_corpus` is empty. Coverage is 204/345, so absence
 is ordinary; a blank field reads as an oversight.
 
-### Description carries the flow
+### Description carries the flow, and shows the code
 
-Show how the defect is reached, not just that it exists. For injection that is a source-to-sink
-path. For a *missing* control there is no tainted data, so it is the attack path from the absent
-control to the reachable value — either is fine, omitting it is not. A `GAP` with no path is an
-assertion, and a client will treat it as one.
+Two blocks, both rendered, not described. Prose about a trace is not a trace, and a `file:line`
+reference is not a code snippet — a client who has to open the file to see the defect has been
+handed a lookup, not a finding, and will say so.
 
-Then say how you know the control applies here at all. "Is this even applicable to us" is the first
-question you will get back.
+**The flow block.** For injection this is a genuine source-to-sink taint path. For a *missing*
+control there is no tainted data, so it is the attack path from the absent control to the reachable
+effect. Either is fine; omitting it is not, because a `GAP` with no path is an assertion and a
+client will treat it as one.
+
+```
+create()                                     app/actions/session.ts:6
+  └─ cookieStore.set('session_id', …)                          :9   ← no options object
+        └─ Set-Cookie: session_id=…                                 ← no HttpOnly, no Secure
+              └─ document.cookie readable by any script in the origin
+                    └─ SINK: any XSS or malicious dependency exfiltrates a valid session
+```
+
+**The code block.** Show the actual source, and mark the offending lines so the defect is visible
+without counting lines. A caret and the line number under the exact column is enough:
+
+```js
+export async function create(data) {
+  const cookieStore = await cookies()
+
+  cookieStore.set('session_id', 'example')
+  //              ^ :9  no options object at all — no HttpOnly, no Secure, no SameSite
+
+  cookieStore.set('session_id', 'example', { secure: true })
+  //              ^ :11 Secure present, HttpOnly still absent
+}
+```
+
+Quote enough surrounding code to make it readable and no more. Elide with `…` rather than pasting a
+whole function, and keep the real line numbers — a snippet renumbered from 1 cannot be checked
+against the file, and checking it is the first thing a developer will do.
+
+**When there is no path, the code block carries the finding alone.** Plenty of real findings are a
+single blameable line — a missing flag, a wrong constant, a disabled check — with no source and no
+sink. Do not manufacture a flow for those. Say the defect is a single line, drop the flow block, and
+let the marked code block do the work. What you must not do is drop *both* and leave only a
+`file:line` reference.
+
+**Then say how you know the control applies here at all.** "Is this even applicable to us" is the
+first question you will get back. Name the query you ran and what it returned — `grep -rn
+"session_id" app/ --include=*.tsx returns no client-side read, so no functionality depends on script
+access` is checkable; "the cookie is not read by scripts" is not.
 
 ### Technical risk assessment
 
@@ -224,8 +286,27 @@ contain.
 
 ### Recommendation, with its provenance stated
 
-**Every finding gets one.** If the corpus has nothing to cite, that is a reason to label the source
-— never a reason to omit the fix.
+**Every finding gets one**, and it ends in code. If the corpus has nothing to cite, that is a reason
+to label the source — never a reason to omit the fix.
+
+**Show the remediation as a snippet, written against this repository.** Prose steps describe work;
+a snippet shows it. "Extend the property enum with encryption flags and have the mapper emit them"
+leaves the client to guess at the shape you had in mind — the code says it in four lines and is
+checkable against the file it patches:
+
+```js
+// lib/session-cookie.ts — new
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true, secure: true, sameSite: 'lax', path: '/',
+} as const
+```
+
+Use the real identifiers, paths and types from the target. A snippet that compiles against an
+imagined API is worse than none, because it looks verified and a client will try to apply it.
+
+**Where the root cause is that something is assembled ad hoc per call site, patch the class, not the
+site.** Fixing one call site leaves the next to regress, so show the shared helper and the call that
+uses it — that is what removes the finding rather than the instance.
 
 State the provenance every time, *including* when it is corpus-quoted. The principle may be OWASP's;
 the code you write is always yours, and marking only the citation lets your snippet borrow its
@@ -250,9 +331,12 @@ codebase solves this correctly somewhere else, cite that first — it is better 
 tier, and it tells the client the fix is already proven in their own codebase.
 
 Where no minimal fix exists, because the finding is architectural, give an ordered sequence and say
-which requirements become *implementable* once it is done. Do not invent a snippet that
-misrepresents the work involved — a client planning against a one-line fix for a structural change
-will plan wrong.
+which requirements become *implementable* once it is done. **Say plainly that no snippet is offered
+and why** — "no implementation snippet is offered; the existing `compiler_key_id` path in this
+repository is a better reference than anything reconstructed" is an answer. Silently dropping the
+code block is not, because a client cannot tell a considered omission from a forgotten one. Do not
+invent a snippet that misrepresents the work involved — a client planning against a one-line fix for
+a structural change will plan wrong.
 
 ### Findings a verifier refuted
 

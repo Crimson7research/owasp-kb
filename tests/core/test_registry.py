@@ -1,7 +1,7 @@
 import pytest
 
 from owasp_kb.core.db import connect
-from owasp_kb.core.registry import Pack, get_pack, list_packs, pack_id, upsert_pack
+from owasp_kb.core.registry import PACK_TYPES, Pack, get_pack, list_packs, pack_id, upsert_pack
 from owasp_kb.core.schema import create_schema
 
 
@@ -67,6 +67,12 @@ def test_rejects_unknown_pack_type_before_touching_the_database(conn):
     assert "checklist" in str(excinfo.value)
     assert "corpus" in str(excinfo.value)
     assert list_packs(conn) == []
+
+
+def test_catalogue_is_an_accepted_pack_type():
+    """sources.lock.yml declares type: catalogue. Until this passes, ingesting
+    the CWE pack fails on the DDL CHECK and again in the registry validator."""
+    assert "catalogue" in PACK_TYPES
 
 
 def test_list_packs_is_sorted_by_name(conn):

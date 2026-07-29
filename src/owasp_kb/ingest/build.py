@@ -7,6 +7,7 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from sqlite3 import Connection
 
 from owasp_kb.core.db import connect, finalize_for_readonly
 from owasp_kb.core.integrity import run_checks
@@ -17,9 +18,10 @@ from owasp_kb.ingest.links import (
     ingest_nist_links,
     ingest_supersedes_links,
 )
-from owasp_kb.ingest.lock import load_lock
+from owasp_kb.ingest.lock import Lock, load_lock
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
+from owasp_kb.ingest.packs.cwe import ingest_cwe
 
 log = logging.getLogger(__name__)
 EXPECTED_ASVS_REQUIREMENTS = 345
@@ -27,8 +29,27 @@ EXPECTED_ASVS_REQUIREMENTS = 345
 
 @dataclass
 class BuildReport:
+    """What a build produced.
+
+    Every count here comes from the ingest that inserted the rows, or from a
+    COUNT over the table that holds them -- never from the ``packs`` table.
+    That distinction matters: ``upsert_pack`` commits the pack row before any
+    entry is inserted, so a pack row is evidence that an ingest started, not
+    that it produced anything. A report that enumerated ``packs`` and then
+    counted entries would render a failed catalogue ingest as a pack that
+    exists and happens to be empty.
+    """
+
+    # One count per pack, each named for what that pack produces: ASVS
+    # requirements, cheat sheet documents, CWE catalogue entries. Deliberately not
+    # `documents`, which is what this field was called while holding only the cheat
+    # sheet count -- the build then logged "120 documents" for an index whose `docs`
+    # table has 1,528 rows, and a reader diffing that against docs/stack.md saw a 12x
+    # gap with no explanation. `chunks` below is a whole-index COUNT, so the two
+    # scopes sat in one log line looking alike.
     requirements: int = 0
-    documents: int = 0
+    cheatsheet_documents: int = 0
+    catalogue_entries: int = 0
     chunks: int = 0
     guidance_links: int = 0
     cwe_links: int = 0
@@ -57,7 +78,15 @@ def build_index(
     with_vectors: bool = False,
     check_edge_floors: bool = True,
 ) -> BuildReport:
-    """Build an index. Raises RuntimeError if integrity checks fail."""
+    """Build an index. Raises RuntimeError if integrity checks fail.
+
+    Owns the output file's whole lifecycle: nothing that fails part-way leaves an
+    index behind. That used to hold only for an integrity failure, which was the
+    only failure the build had. It is not any more -- ``ingest_cwe`` rejects a
+    catalogue that parses but yields no entries, which is what an upstream
+    namespace bump produces, and the pack row it already committed would have sat
+    in a half-written file that looks publishable.
+    """
     sources, out = Path(sources_dir), Path(out_path)
     lock = load_lock(lock_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -65,7 +94,42 @@ def build_index(
         out.unlink()
 
     conn = connect(out, load_vec=with_vectors)
-    create_schema(conn)
+    try:
+        create_schema(conn)
+        report = _populate(
+            conn,
+            sources,
+            lock,
+            expected_requirements=expected_requirements,
+            with_vectors=with_vectors,
+            check_edge_floors=check_edge_floors,
+        )
+    except BaseException:
+        conn.close()
+        out.unlink(missing_ok=True)
+        raise
+
+    conn.execute("PRAGMA optimize")
+    # Must run before the file is packaged: WAL mode persists in the header and a
+    # WAL index cannot be opened read-only from the image's non-writable directory.
+    finalize_for_readonly(conn)
+    conn.close()
+    return report
+
+
+def _populate(
+    conn: Connection,
+    sources: Path,
+    lock: Lock,
+    *,
+    expected_requirements: int,
+    with_vectors: bool,
+    check_edge_floors: bool,
+) -> BuildReport:
+    """Ingest every pack and every link set, then gate the result.
+
+    Raises rather than cleaning up: the caller owns the file.
+    """
     report = BuildReport()
 
     asvs_cfg = lock.packs["asvs"]
@@ -77,12 +141,27 @@ def build_index(
     )
 
     cs_cfg = lock.packs["cheatsheets"]
-    report.documents = ingest_cheatsheets(
+    report.cheatsheet_documents = ingest_cheatsheets(
         conn,
         sources / "cheatsheets" / "cheatsheets",
         version=cs_cfg.version,
         commit_sha=cs_cfg.commit,
         license=cs_cfg.license,
+    )
+
+    # Indexed like the other two -- a KeyError if the lock stops declaring it,
+    # rather than a silent skip. A build that quietly omitted the catalogue would
+    # leave the ASVS-to-CWE mapping unresolvable and both CWE integrity checks
+    # inert, which is the state this pack exists to end.
+    #
+    # Before the mapping links below, so the entries a citation resolves against
+    # are in place before anything points at them.
+    cwe_cfg = lock.packs["cwe"]
+    report.catalogue_entries = ingest_cwe(
+        conn,
+        _one(sources / "cwe", "cwec_v*.xml"),
+        version=cwe_cfg.version,
+        license=cwe_cfg.license,
     )
 
     report.guidance_links = ingest_guidance_links(conn, sources / "cheatsheets" / "IndexASVS.md")
@@ -117,18 +196,11 @@ def build_index(
         check_edge_floors=check_edge_floors,
     )
     if report.integrity_failures:
-        conn.close()
-        out.unlink(missing_ok=True)
         raise RuntimeError(
             "index integrity checks failed, refusing to publish:\n  - "
             + "\n  - ".join(report.integrity_failures)
         )
 
-    conn.execute("PRAGMA optimize")
-    # Must run before the file is packaged: WAL mode persists in the header and a
-    # WAL index cannot be opened read-only from the image's non-writable directory.
-    finalize_for_readonly(conn)
-    conn.close()
     return report
 
 
@@ -156,17 +228,21 @@ def main(argv: list[str] | None = None) -> int:
             with_vectors=args.with_vectors,
             check_edge_floors=not args.no_edge_floors,
         )
-    except (RuntimeError, FileNotFoundError) as exc:
+    # ValueError is how a pack rejects its own source -- ingest_cwe raises it for a
+    # catalogue that parses but yields no entries. Uncaught it exits non-zero by
+    # traceback anyway, so this is here for the actionable log line, not the code.
+    except (RuntimeError, FileNotFoundError, ValueError) as exc:
         log.error("%s", exc)
         return 1
 
     log.info(
-        "built %s: %d requirements, %d documents, %d chunks (%d truncated), %d guidance links, "
-        "%d CWE links (%d dropped), %d supersedes links, %d NIST links (%d unmatched), "
-        "%d vectors",
+        "built %s: %d ASVS requirements, %d cheat sheet documents, %d CWE catalogue "
+        "entries, %d chunks index-wide (%d truncated), %d guidance links, %d CWE links "
+        "(%d dropped), %d supersedes links, %d NIST links (%d unmatched), %d vectors",
         args.out,
         report.requirements,
-        report.documents,
+        report.cheatsheet_documents,
+        report.catalogue_entries,
         report.chunks,
         report.truncated_chunks,
         report.guidance_links,

@@ -5,6 +5,14 @@ on:
     - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
   workflow_dispatch:
 
+# One refresh at a time, and never cancelled: this job writes a branch and opens
+# a pull request, so interrupting it can leave a partially pushed branch or a PR
+# describing a lock file it did not finish updating. A manual dispatch racing the
+# Monday schedule queues behind it instead.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write

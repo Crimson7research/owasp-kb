@@ -11,6 +11,7 @@ import itertools
 from collections.abc import Callable
 from typing import Any
 
+from owasp_kb import __version__
 from owasp_kb.core.kb import Kb
 from owasp_kb.core.roster import Finding, RosterError, build_roster
 
@@ -33,6 +34,12 @@ def _normalised(text: str) -> str:
 # only part of the requirement set. An empty owasp_related result for one of
 # these must not be read as "no such mapping exists".
 PARTIAL_COVERAGE_RELS = ("cwe", "nist", "supersedes")
+
+# The pack ingest/packs/cwe.py registers. Named here rather than imported because
+# the server never loads ingest; pinned against it by
+# test_the_searched_pack_name_matches_what_the_ingest_writes, because a typo would
+# turn cwe_search into an error about an unknown pack.
+CWE_PACK = "cwe"
 
 TOOL_TRIGGER_TOPICS = (
     "authentication",
@@ -93,9 +100,17 @@ def _truncate(text: str, limit: int) -> str:
 def _error(exc: Exception) -> dict:
     """Core raises with actionable messages; surface them as plain strings.
 
-    KeyError stringifies with surrounding quotes, which reads badly to an agent.
+    KeyError.__str__ is repr(args[0]), which wraps the message in quotes -- and in
+    double quotes whenever the message itself contains a single one, which every
+    message raised here does, because they all embed a value with !r. A
+    ``.strip("'")`` therefore stripped nothing at any of the six raise sites, and
+    every KeyError this module reported has shipped double-quote-wrapped. So read
+    the argument rather than trying to strip whichever quoting repr chose.
+
+    Pinned by test_no_error_message_is_quote_wrapped.
     """
-    return {"error": str(exc).strip("'")}
+    message = exc.args[0] if isinstance(exc, KeyError) and len(exc.args) == 1 else str(exc)
+    return {"error": str(message)}
 
 
 def _grouped(rows) -> list[dict]:
@@ -132,7 +147,11 @@ def _grouped(rows) -> list[dict]:
 
 
 def build_tools(kb: Kb) -> list[Callable[..., Any]]:
-    """Return the seven tool callables bound to this Kb."""
+    """Return every tool callable bound to this Kb.
+
+    The cwe_ tools are not owasp_-prefixed: CWE is MITRE's, and that prefix exists
+    because the other tools serve OWASP material.
+    """
 
     def _resolve_citation(finding: dict) -> str | None:
         """The section text a finding's remediation cites, or None if it cites nothing.
@@ -155,9 +174,15 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
 
         Also reports per-relationship link coverage: cwe and nist are
         partial because the upstream mappings predate ASVS 5.0.0, so a missing
-        edge is not evidence that none exists."""
+        edge is not evidence that none exists.
+
+        server_version is this build's version, and it is the same number the
+        plugin carries. Compare it against the plugin version you expect: a
+        reconnect reports success whether or not the image behind it is current,
+        so this is how you tell a stale server from a fresh one."""
         info = kb.info()
         return {
+            "server_version": __version__,
             "retrieval_mode": info.retrieval_mode,
             "packs": [
                 {
@@ -328,6 +353,146 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 )
         return response
 
+    def cwe_get(entry_id: str) -> dict:
+        """Look up one CWE weakness or category by id -- its name, abstraction,
+        status and description.
+
+        Call this before citing a CWE id that OWASP's ASVS mapping does not
+        carry, which is the common case: of 95 ids cited in one real assessment,
+        42 were not from the mapping. An id that is not in the catalogue is an
+        error, not an empty result.
+
+        status matters. CWE-320 'Key Management Errors' is Obsolete and eight
+        ASVS requirements map to it, so substituting a live, specific weakness
+        there is an improvement you can now evidence rather than assert.
+
+        abstraction is the weakness's level -- Pillar, Class, Base, Variant or
+        Compound -- and is null for a category, which has no level. It is stated
+        rather than omitted so a comparison of two cited ids can see that one of
+        them has nothing to compare.
+        """
+        try:
+            entry = kb.catalogue_entry(entry_id)
+        except KeyError as exc:
+            return _error(exc)
+        # Not truncated: measured on CWE 4.20 the longest description is 1,231
+        # characters and the longest extended description 3,677, so the whole entry
+        # is smaller than one cheat-sheet section.
+        #
+        # 1,231 is CWE-361, a Category: a Category has no Description element, so its
+        # Summary is what lands in this column, and Summaries run longer than
+        # Descriptions. The longest Weakness description is 505 -- which is the figure
+        # this comment used to give for the whole catalogue, understating by 2.4x by
+        # measuring only half of what cwe_get can return.
+        return {
+            "entry_id": entry.entry_id,
+            "kind": entry.kind,
+            "name": entry.name,
+            "abstraction": entry.abstraction,
+            "status": entry.status,
+            "description": entry.description,
+            "extended_description": entry.extended_description,
+        }
+
+    def cwe_search(query: str, limit: int = 8) -> dict:
+        """Search the CWE catalogue by describing a weakness in your own words.
+
+        Use this when you know what the defect is but not which CWE names it --
+        for instance when OWASP's mapping is silent for a requirement, which it
+        is for 141 of 345. Returns citable ids; a miss comes back as an empty hit
+        list WITH a message saying the query found nothing, because 'no results'
+        on its own reads as 'no such weakness exists'.
+
+        entry_id on each hit is what you cite, and cwe_get on it gives the
+        abstraction and status the citation needs.
+
+        Hits are lexically ranked and near-ties are common: two entries can score
+        identically and order arbitrarily between them. Read the top few and choose
+        on the names and descriptions, not on rank.
+
+        Args:
+            query: Natural-language description of the defect.
+            limit: Maximum hits to return.
+        """
+        try:
+            hits = kb.search(query, pack=CWE_PACK, limit=limit)
+        except (KeyError, ValueError) as exc:
+            # KeyError before LookupError, as in owasp_search: an index built
+            # without the CWE pack is a fact about this build, and reporting it as
+            # "no match" would read as "no such weakness exists".
+            return _error(exc)
+        except LookupError as exc:
+            return {"hits": [], "message": str(exc)}
+        return {
+            "hits": [
+                {
+                    # doc_key is the entry id: the ingest keys one document per
+                    # catalogue entry on it.
+                    "entry_id": h.doc_key,
+                    "citation": h.citation,
+                    "heading_path": h.heading_path,
+                    "excerpt": _truncate(h.text, MAX_EXCERPT_CHARS),
+                }
+                for h in hits
+            ]
+        }
+
+    def cwe_related(entry_id: str, ancestors: bool = False) -> dict:
+        """Relationships for a CWE id: parents, peers, or a category's members.
+
+        Call this before claiming that one CWE id refines, substitutes for, or is
+        unrelated to another -- for instance when you are citing an id the ASVS
+        mapping does not carry and need to say how it relates to the one it does.
+        Pass ancestors=True on both ids and compare the chains.
+
+        ancestors=True returns the whole ChildOf chain rather than direct parents,
+        each node carrying its abstraction. On every edge, abstraction is the
+        target's (to_id) and not the id you asked about, and it is null where the
+        target is outside this catalogue.
+
+        Deciding whether a cited id refines a mapped one or substitutes for it is
+        your judgement, not this tool's: comparing two chains, a shared Pillar
+        means almost nothing (28% of weakness pairs share some ancestor, only 4%
+        share a non-Pillar one) while a shared Base or Class is meaningful. Say
+        which you found and why in the report.
+
+        cwe_peer is a catch-all, not PeerOf, and reading it as similarity is a
+        mistake. It carries every non-ChildOf Related_Weakness nature: of 284 edges,
+        CanPrecede 143, PeerOf 98, CanAlsoBe 27, Requires 13, StartsWith 3. The
+        plurality is CanPrecede, a *sequence* relation, and it is stored in one
+        direction only -- so a cwe_peer edge does not imply the reverse edge exists,
+        and "these two are peers" is not what most of them say. Treat it as "these
+        are related somehow, go read both entries" and do not infer symmetry.
+
+        An id absent from the catalogue is an error, as it is for cwe_get: an
+        empty edge list must mean "this entry records no relationships" and never
+        "no such id", or a mis-cited number passes silently.
+
+        truncated says whether the walk stopped before running out of ancestors.
+        It is false for every chain in the published catalogue, and if it is ever
+        true the chain you have is missing its coarsest end -- which is exactly
+        where the Pillar sits, so do not read a shared Class off a truncated chain.
+        """
+        try:
+            graph = kb.catalogue_related(entry_id, ancestors=ancestors)
+        except KeyError as exc:
+            return _error(exc)
+        return {
+            "entry_id": entry_id,
+            "ancestors": ancestors,
+            "truncated": graph.truncated,
+            "edges": [
+                {
+                    "rel": e.rel,
+                    "to_kind": e.to_kind,
+                    "to_id": e.to_id,
+                    "abstraction": e.abstraction,
+                    "source": e.source,
+                }
+                for e in graph.edges
+            ],
+        }
+
     def owasp_roster(
         pack: str = "asvs",
         chapter_states: dict | None = None,
@@ -347,7 +512,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         chapter_states maps each chapter id to 'APPLIES' or an N/A verdict.
         findings is a list of dicts with req_id, chapter, section, verdict,
         evidence, and optionally file, line, cwe, remediation, remediation_quote,
-        trace. Findings sharing a (file, line, cwe) are merged, keeping every
+        trace. Findings sharing a (file, line, cwe, verdict) are merged, keeping every
         requirement they cover.
 
         remediation cites guidance as 'doc_key#anchor', or 'doc_key' for the
@@ -459,4 +624,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         owasp_checklist,
         owasp_related,
         owasp_roster,
+        cwe_get,
+        cwe_related,
+        cwe_search,
     ]

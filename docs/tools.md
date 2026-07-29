@@ -1,9 +1,14 @@
 # Tools
 
-Seven MCP tools, built in `server/tools.py`. Six wrap methods on `core/kb.Kb`;
-the seventh, `owasp_roster`, wraps `core/roster.build_roster` instead — it
+Ten MCP tools, built in `server/tools.py`. Nine wrap methods on `core/kb.Kb`;
+the tenth, `owasp_roster`, wraps `core/roster.build_roster` instead — it
 assembles verdicts an assessment already produced rather than reading the
 knowledge base itself.
+
+Three of the ten (`cwe_get`, `cwe_search`, `cwe_related`) address the CWE pack
+specifically. The other seven are pack-agnostic. CWE is MITRE's, not OWASP's, and
+is in this server because ASVS maps its requirements to CWE ids — see
+[docs/licensing.md](licensing.md).
 Every tool description is written as a trigger list rather than a summary —
 see [docs/discoverability.md](discoverability.md) for why. This document
 covers the mechanics: signatures, argument semantics, return shapes, error
@@ -46,7 +51,9 @@ whenever a citation needs an exact version string.
      "commit_sha": null, "license": "CC-BY-SA-4.0"},
     {"name": "cheatsheets", "type": "corpus", "version": "20260724",
      "commit_sha": "7d1c2d3daf632206e8f2c685214c699ff8f11938",
-     "license": "CC-BY-SA-4.0"}
+     "license": "CC-BY-SA-4.0"},
+    {"name": "cwe", "type": "catalogue", "version": "4.20",
+     "commit_sha": null, "license": "LicenseRef-CWE-TOU"}
   ]
 }
 ```
@@ -65,8 +72,8 @@ owasp_search(query: str, pack: str | None = None, level: str | None = None,
   internally reduced to a set of search terms (stopwords stripped for the
   lexical half — see [docs/build.md](build.md) and
   `core/retrieval/lexical.to_fts_query`).
-- `pack` — restrict to one pack (`"asvs"` or `"cheatsheets"`). Omit to search
-  both.
+- `pack` — restrict to one pack (`"asvs"`, `"cheatsheets"` or `"cwe"`). Omit to
+  search all three. `cwe_search` is exactly this call with `pack="cwe"`.
 - `level` — ASVS level `"1"`, `"2"`, or `"3"`. Applies to requirement hits
   only; cheat sheet hits are unaffected since they carry no level.
 - `limit` — maximum hits returned (default 8).
@@ -87,7 +94,7 @@ For a cheat sheet hit, `req_id` is `null` and `doc_key`/`anchor` are set
 instead; `citation` is `"{doc_key}#{anchor}"` in that case.
 
 **Error cases:**
-- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: asvs, cheatsheets"}`.
+- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: asvs, cheatsheets, cwe"}`.
 - **No match → `{"hits": [], "message": "..."}`, not `{"hits": []}` and never
   a bare `[]`.** This is deliberate and worth stating explicitly: an agent
   that receives `[]` for a search reads it as "no security requirements apply
@@ -282,6 +289,175 @@ since `owasp_related` is also legitimately callable with a fresh, uncached
 `doc_key` from a search hit — treating that as a hard failure would be overly
 strict for a tool meant to be chained after `owasp_search`).
 
+## The three CWE tools
+
+These three exist because `owasp_related(req_id, rel='cwe')` answers "which CWE id
+does OWASP map to this requirement" and nothing answered "what is this CWE id". Of
+95 CWE ids cited in findings in one real assessment, 42 were not in OWASP's mapping,
+and the mapping reaches only 204 of 345 requirements — so the id an agent ends up
+citing is frequently one it chose itself. Every tool description in this group is
+written to be read before the citation is made, not after.
+
+Where these tool docstrings and this document disagree, **the docstring is
+authoritative**: it is the text the agent actually reads.
+
+### `cwe_get`
+
+```
+cwe_get(entry_id: str) -> dict
+```
+
+One entry by id: `kind` (`weakness` or `category`), `name`, `abstraction`, `status`,
+`description`, `extended_description`.
+
+**An id absent from the catalogue is an error, not an empty result.** This is the
+opposite of `owasp_related` and deliberately so: the catalogue's id space is closed
+and enumerable, so `CWE-99999` is not a coverage gap, it is a wrong number. The
+`KeyError` names the id and says that Views are deliberately not ingested (a View is
+a perspective on the catalogue, not a definition of a weakness), so a caller can tell
+"I cited something that does not exist" from "this pack does not carry that kind of
+entry".
+
+**Return shape:**
+```json
+{
+  "entry_id": "CWE-789",
+  "kind": "weakness",
+  "name": "Memory Allocation with Excessive Size Value",
+  "abstraction": "Variant",
+  "status": "Draft",
+  "description": "The product allocates memory based on an untrusted, large size value, but it does not ensure that the size is within expected limits, allowing arbitrary amounts of memory to be allocated.",
+  "extended_description": "..."
+}
+```
+
+Two fields carry more weight than they look like they do:
+
+- **`status`.** `CWE-320` "Key Management Errors" is `Obsolete`, and **8 ASVS
+  requirements map to it**. Substituting a live, specific weakness there is an
+  improvement a report can now evidence rather than assert.
+- **`abstraction`** — `Pillar`, `Class`, `Base`, `Variant` or `Compound`, and
+  **`null` for a category**, which has no level. It is stated rather than omitted so
+  that a comparison between two cited ids can see that one of them has nothing to
+  compare.
+
+No truncation. Measured on CWE 4.20 the longest `description` is 505 characters and
+the longest `extended_description` 3,677, so a whole entry is smaller than one
+cheat-sheet section.
+
+### `cwe_search`
+
+```
+cwe_search(query: str, limit: int = 8) -> dict
+```
+
+Lexical search restricted to the CWE pack — for when the defect is understood but
+the id is not known. OWASP's mapping is silent for **141 of 345** requirements, which
+is the case this exists for.
+
+**Return shape:**
+```json
+{
+  "hits": [
+    {"entry_id": "CWE-789", "citation": "CWE-789#description",
+     "heading_path": "CWE-789: Memory Allocation with Excessive Size Value > Description",
+     "excerpt": "The product allocates memory based on an untrusted, large size value..."}
+  ]
+}
+```
+
+`entry_id` is what you cite; `cwe_get` on it gives the `abstraction` and `status` the
+citation needs. Excerpts are capped at `MAX_EXCERPT_CHARS`, as in `owasp_search`.
+
+**A miss returns `{"hits": [], "message": ...}` — an empty list *with* a message**,
+never a bare empty list, because "no results" on its own reads to an agent as "no
+such weakness exists". An index built without the CWE pack is reported as an error
+instead, for the same reason: that is a fact about the build, not about the query.
+
+Hits are lexically ranked and **near-ties are common** — two entries can score
+identically and order arbitrarily between them. Read the top few and choose on the
+names and descriptions rather than on rank.
+
+### `cwe_related`
+
+```
+cwe_related(entry_id: str, ancestors: bool = False) -> dict
+```
+
+The entry's edges: `cwe_child` (ChildOf, toward the abstract), `cwe_peer` (see below —
+**not** PeerOf) and `cwe_member` (a Category's members). With `ancestors=True`, the
+whole ChildOf chain nearest-first rather than direct parents only.
+
+**`cwe_peer` is a catch-all and its name is misleading.** The ingest maps every
+non-`ChildOf` `Related_Weakness` nature onto it, so "peer" is the minority reading.
+Of the 284 `cwe_peer` edges in CWE 4.20:
+
+| Nature | Edges | Share | What it means |
+|---|---|---|---|
+| `CanPrecede` | 143 | 50.4% | A **sequence**: this weakness can lead to that one |
+| `PeerOf` | 98 | 34.5% | Similar, at the same level |
+| `CanAlsoBe` | 27 | 9.5% | The same defect is sometimes classified as that one |
+| `Requires` | 13 | 4.6% | That weakness must also be present for this one to matter |
+| `StartsWith` | 3 | 1.1% | A sequence, at its start |
+
+The plurality is a *directed* relation, and the edge is stored in one direction only,
+so a `cwe_peer` from A to B does **not** imply one from B to A. An agent that reads
+`cwe_peer` as "these are equivalent, either id will do" is wrong half the time, and
+wrong about direction more often than that. Read it as "related somehow — go read
+both entries", and do not substitute one id for the other on the strength of it.
+The nature itself is not stored: if you need it, the entry text is the only source.
+
+**Return shape** (`CWE-789`, `ancestors=True`):
+```json
+{
+  "entry_id": "CWE-789",
+  "ancestors": true,
+  "truncated": false,
+  "edges": [
+    {"rel": "cwe_child", "to_kind": "cwe", "to_id": "CWE-770", "abstraction": "Base", "source": "cwec_v4.20.xml"},
+    {"rel": "cwe_child", "to_kind": "cwe", "to_id": "CWE-400", "abstraction": "Class", "source": "cwec_v4.20.xml"},
+    {"rel": "cwe_child", "to_kind": "cwe", "to_id": "CWE-665", "abstraction": "Class", "source": "cwec_v4.20.xml"},
+    {"rel": "cwe_child", "to_kind": "cwe", "to_id": "CWE-664", "abstraction": "Pillar", "source": "cwec_v4.20.xml"}
+  ]
+}
+```
+
+`abstraction` on an edge is the **target's** (`to_id`), not the id you asked about,
+and is `null` where the target lies outside this catalogue. The join to
+`catalogue_entries` is a LEFT JOIN for that reason: `CWE-320`'s `Has_Member` targets
+are not all ingested, and an inner join would return nothing at all for it rather
+than four member edges with a null abstraction.
+
+`truncated` says whether the ancestor walk stopped before running out of ancestors.
+It is `false` for every entry in the published catalogue: the walk is bounded by
+`MAX_ANCESTOR_DEPTH = 20` (`core/kb.py`) and the deepest real walk is **5 levels**, so
+the cap has four times the headroom it needs. **If it is ever `true`, the chain is
+missing its coarsest end** — which is exactly where the Pillar sits, so a
+shared-ancestor comparison read off a truncated chain is unsound in the one direction
+that matters.
+
+"5 levels" is BFS depth, the thing the cap actually bounds; the longest simple
+`ChildOf` path happens to be 5 as well, but those are different measurements and
+"chain length" names neither. Mean depth is 2.39 over the 969 Weaknesses. For scale on
+how little slack a smaller cap would leave: at 4 the walk truncates for 19 entries, at
+3 for 107.
+
+**What the tool does not decide.** Whether a self-chosen id refines a mapped one,
+substitutes for it, or is simply unrelated is the caller's judgement. The measured
+asymmetry to reason with: **28% of weakness pairs share some ancestor and only 4%
+share a non-Pillar one**, so a shared `Pillar` means almost nothing while a shared
+`Base` or `Class` is meaningful. A report should say which it found.
+
+Those two figures are random pairs of the 969 Weaknesses, ancestors taken
+transitively over `ChildOf` only, a node excluded from its own ancestor set — stated
+because the pair they replace (35%/5%) could not be reproduced under any methodology,
+precisely because none had been recorded. Rounded on purpose: a tenth of a percent
+would imply the sampling was pinned more tightly than it is.
+
+As with `cwe_get`, an id absent from the catalogue raises rather than returning `[]`
+— an empty edge list must be readable as "this entry records no relationships" and
+never as "no such id".
+
 ## `owasp_roster`
 
 ```
@@ -295,7 +471,7 @@ Assembles the verdicts an assessment produced into a complete, checked
 roster. Call this at the end of an assessment instead of tallying by hand:
 every requirement in scope lands in exactly one of six verdicts, and one you
 never reported a finding for becomes `INSUFFICIENT EVIDENCE` rather than
-silently vanishing. Unlike the other six tools, it does not read the
+silently vanishing. Unlike the other nine tools, it does not read the
 knowledge base for content — it takes the verdicts the caller already
 determined and checks them for completeness and internal consistency. It
 wraps `core/roster.build_roster`, not a method on `Kb`.
@@ -307,7 +483,7 @@ wraps `core/roster.build_roster`, not a method on `Kb`.
 - `findings` — a list of dicts, each with `req_id`, `chapter`, `section`,
   `verdict` (one of the six in `VERDICTS`), `evidence`, and optionally
   `file`, `line`, `cwe`, `remediation`, `trace`. Findings that share a
-  `(file, line, cwe)` triple are merged into one entry that covers every
+  `(file, line, cwe, verdict)` key are merged into one entry that covers every
   requirement any of them named — dropping the second would silently cost a
   chapter its coverage in the roster.
 - `excluded` — paths to prior assessment reports found in the target. A

@@ -4,6 +4,14 @@ on:
   push:
     tags: ["v*"]
 
+# Never cancelled. This publishes images to a registry, and a cancelled publish
+# can leave a tag pointing at a partially uploaded manifest -- which is worse
+# than a slow release, because the tag looks published. Grouped per tag so two
+# releases cannot race.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
@@ -32,6 +40,7 @@ jobs:
           packs = yaml.safe_load(open("sources.lock.yml"))["packs"]
           print(f"asvs={packs['asvs']['version']}")
           print(f"cs={packs['cheatsheets']['version']}")
+          print(f"cwe={packs['cwe']['version']}")
           PY
 
       - name: Fetch sources and model
@@ -65,13 +74,17 @@ jobs:
           IMAGE: ghcr.io/${{ github.repository_owner }}/owasp-kb
           ASVS: ${{ steps.versions.outputs.asvs }}
           CS: ${{ steps.versions.outputs.cs }}
+          CWE: ${{ steps.versions.outputs.cwe }}
         run: |
           # GHCR requires a lowercase image path; repository_owner is "Yimura".
           IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          # Every pack in the index gets named in the immutable tag -- see the
+          # PINNED_TAG comment in the Makefile for why CWE had to join it.
+          PINNED="asvs$ASVS-cs$CS-cwe$CWE"
           for target in lite full; do
             docker build -f docker/Dockerfile --target "$target" \
               -t "$IMAGE_LC:$target" \
-              -t "$IMAGE_LC:$target-asvs$ASVS-cs$CS" .
+              -t "$IMAGE_LC:$target-$PINNED" .
           done
           chmod +x scripts/docker_smoke.sh
           # Smoke test gates the push: a broken image is never published.

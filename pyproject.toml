@@ -1,11 +1,15 @@
 [project]
 name = "owasp-kb"
-version = "0.1.0"
-description = "OWASP ASVS and Cheat Sheet knowledge bases as an MCP server"
+dynamic = ["version"]
+description = "OWASP ASVS and Cheat Sheet knowledge bases, plus MITRE's CWE catalogue, as an MCP server"
 requires-python = ">=3.13"
 license = "MIT"
 dependencies = [
-    "mcp>=1.28.1",
+    # Upper bound is load-bearing: mcp 2.0.0 (2026-07-28) moved FastMCP out of
+    # mcp.server, which server/app.py imports. CI resolves the newest match, so an
+    # unbounded spec broke every build the day 2.0.0 shipped while pinned
+    # devcontainers kept passing. Raising this bound is a migration, not a bump.
+    "mcp>=1.28.1,<2",
     "pydantic>=2.7",
     "pyyaml>=6.0",
     "sqlite-vec>=0.1.6",
@@ -28,12 +32,19 @@ owasp-kb-server = "owasp_kb.server.app:main"
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.dynamic]
+version = {attr = "owasp_kb.__version__"}
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Tests that assert against a fetched upstream corpus rather than a fixture. They
+# skip when data/ is absent, so the default `pytest -q` run stays hermetic; the ci
+# build job selects them explicitly once the fetch has happened.
+markers = ["realdata: requires the fetched catalogue under data/"]
 
 [tool.ruff]
 line-length = 100

@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 
 from owasp_kb.core.db import connect, finalize_for_readonly, is_wal_index
+from owasp_kb.core.registry import PACK_TYPES
 from owasp_kb.core.schema import create_schema
 
 EXPECTED_TABLES = {
@@ -185,3 +186,61 @@ def test_read_only_open_handles_a_path_with_uri_metacharacters(tmp_path):
     served = connect(index, read_only=True)
     assert len(_matches(served, "argon2id")) == 1
     served.close()
+
+
+def test_the_ddl_check_accepts_every_registry_pack_type():
+    """The valid types were enumerated in the DDL, in PACK_TYPES, and in a test
+    tuple. One of the three was widened. This binds the first two together so the
+    next divergence is a red test rather than a failed ingest."""
+    conn = connect(":memory:")
+    create_schema(conn)
+    for i, pack_type in enumerate(PACK_TYPES):
+        conn.execute(
+            "INSERT INTO packs (name, type, version) VALUES (?, ?, '1')",
+            (f"probe-{i}", pack_type),
+        )
+
+
+def test_the_ddl_check_still_rejects_an_unknown_pack_type():
+    """The check must stay a constraint, not become a comment."""
+    conn = connect(":memory:")
+    create_schema(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO packs (name, type, version) VALUES ('probe', 'nonsense', '1')")
+
+
+def test_catalogue_entries_table_exists_with_the_citation_fields():
+    """A CWE citation needs kind, status and abstraction, not just an id.
+    kind because a Category is not a Weakness and its graph is Has_Member rather
+    than ChildOf; status because CWE-320 is Obsolete and eight ASVS requirements
+    cite it, which is how an agent justifies departing from the mapping."""
+    conn = connect(":memory:")
+    create_schema(conn)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(catalogue_entries)")}
+    assert cols == {
+        "id",
+        "pack_id",
+        "entry_id",
+        "kind",
+        "name",
+        "abstraction",
+        "status",
+        "description",
+        "extended_description",
+        "chunk_id",
+    }
+
+
+def test_catalogue_entries_is_indexed_by_kind():
+    """cwe_search filters by kind. Without the index that is a scan of 1,391 rows
+    on every query; more importantly, an unasserted index is one nothing notices
+    the loss of."""
+    conn = connect(":memory:")
+    create_schema(conn)
+    names = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='catalogue_entries'"
+        )
+    }
+    assert "idx_catalogue_kind" in names

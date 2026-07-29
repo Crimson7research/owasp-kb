@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -6,6 +7,20 @@ from owasp_kb.core.db import connect, is_wal_index
 from owasp_kb.ingest.build import build_index
 
 FIXTURES = Path("tests/fixtures")
+
+# cwe_mapping_sample.json cites CWE-521 and CWE-307, and cwec_sample.xml contains
+# neither. That is fine for the per-module fixtures, which never run the integrity
+# gate, but a build does: once the catalogue is populated, every mapped id must
+# resolve to an entry in it or the build is refused. So this tree maps to two ids
+# the fixture catalogue actually defines, keeping the shape the edge-count test
+# asserts -- three usable pairs over two requirements, one key that does not
+# translate. Written inline rather than as a fifth mapping fixture because it only
+# makes sense next to the catalogue it has to agree with.
+BUILD_CWE_MAPPING = {
+    "v5.0.be-2.1.1": [789],
+    "v5.0.be-2.1.2": [789, 664],
+    "v5.0.be-9.9.9": [999],
+}
 
 
 @pytest.fixture
@@ -16,9 +31,7 @@ def sources(tmp_path):
     (asvs / "OWASP_ASVS_5.0.0_en.flat.json").write_text(
         (FIXTURES / "asvs_sample.flat.json").read_text(encoding="utf-8")
     )
-    (asvs / "v5.0.be_cwe_mapping.json").write_text(
-        (FIXTURES / "cwe_mapping_sample.json").read_text(encoding="utf-8")
-    )
+    (asvs / "v5.0.be_cwe_mapping.json").write_text(json.dumps(BUILD_CWE_MAPPING))
     (asvs / "mapping_v5.0.be_to_v5.0.0.yml").write_text(
         (FIXTURES / "mapping_be_to_500_sample.yml").read_text(encoding="utf-8")
     )
@@ -38,6 +51,12 @@ def sources(tmp_path):
             (FIXTURES / "cheatsheets" / name).read_text(encoding="utf-8")
         )
     (cs / "IndexASVS.md").write_text((FIXTURES / "IndexASVS_sample.md").read_text(encoding="utf-8"))
+
+    # Named as fetch.py unpacks it: cwec_v<version>.xml, matched by glob so a
+    # version bump needs no change here.
+    cwe = tmp_path / "cwe"
+    cwe.mkdir()
+    (cwe / "cwec_v4.20.xml").write_text((FIXTURES / "cwec_sample.xml").read_text(encoding="utf-8"))
     return tmp_path
 
 
@@ -54,17 +73,79 @@ def test_build_creates_a_queryable_index(sources, tmp_path):
     report = _build(sources, out)
     assert out.exists()
     assert report.requirements == 3
-    assert report.documents == 3
+    assert report.cheatsheet_documents == 3
     assert report.integrity_failures == []
 
 
-def test_build_populates_all_four_relationship_types(sources, tmp_path):
-    """owasp_related advertises four; a build producing fewer is broken."""
+def test_build_populates_every_relationship_type(sources, tmp_path):
+    """The four owasp_related advertises, plus CWE's own graph.
+
+    Was four, and asserted as an equality, which is what made it worth keeping: a
+    build that ingests the catalogue and produces none of its three edge types is
+    broken in a way no entry count reveals.
+    """
     out = tmp_path / "kb.sqlite"
     _build(sources, out)
     conn = connect(out)
     rels = {r[0] for r in conn.execute("SELECT DISTINCT rel FROM links")}
-    assert rels == {"guidance", "cwe", "supersedes", "nist"}
+    assert rels == {
+        "guidance",
+        "cwe",
+        "supersedes",
+        "nist",
+        "cwe_child",
+        "cwe_peer",
+        "cwe_member",
+    }
+
+
+def test_build_ingests_the_cwe_catalogue(sources, tmp_path):
+    """The pack has to be built in, not merely implemented.
+
+    Until build.py dispatched on the lock's cwe entry, catalogue_entries was empty
+    in every real build and both CWE integrity checks skipped silently -- the pack
+    existed only in its own unit tests.
+    """
+    out = tmp_path / "kb.sqlite"
+    report = _build(sources, out)
+    # Measured against cwec_sample.xml: 11 weaknesses and 2 categories. Note the
+    # roster in tests/ingest/test_cwe.py names ten weaknesses and omits CWE-400,
+    # which the file does contain -- count the fixture, do not read that comment.
+    assert report.catalogue_entries == 13
+
+    conn = connect(out)
+    entries = conn.execute("SELECT COUNT(*) FROM catalogue_entries").fetchone()[0]
+    assert entries == report.catalogue_entries, "the report disagrees with the built index"
+
+    pack = conn.execute("SELECT type, version, license FROM packs WHERE name = 'cwe'").fetchone()
+    assert pack is not None, "no cwe pack row; the ingest never ran"
+    assert pack["type"] == "catalogue"
+    assert pack["version"] == "4.20"
+    assert "CWE" in pack["license"], f"license is {pack['license']!r}"
+
+
+def test_the_catalogue_makes_the_mapping_check_enforceable(sources, tmp_path):
+    """The reason the pack is in the index at all.
+
+    An ASVS-mapped CWE id that resolves to nothing is unverifiable, and before the
+    catalogue shipped nothing could tell. The check is inert without it, so this
+    asserts it now bites: one bad id has to sink the build.
+    """
+    out = tmp_path / "kb.sqlite"
+    _build(sources, out)
+    conn = connect(out)
+    conn.execute(
+        "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source)"
+        " VALUES ('requirement', 'V6.2.1', 'cwe', 'CWE-99999', 'cwe', 'test')"
+    )
+    conn.commit()
+    conn.close()
+
+    from owasp_kb.core.integrity import run_checks
+
+    conn = connect(out)
+    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    assert any("CWE-99999" in f for f in failures), failures
 
 
 def test_build_reports_edge_counts(sources, tmp_path):
@@ -100,12 +181,57 @@ def test_build_raises_when_integrity_fails_and_removes_the_file(sources, tmp_pat
     assert not out.exists(), "a failing build must not leave a partial index behind"
 
 
+def test_a_rejected_catalogue_leaves_no_index_behind(sources, tmp_path):
+    """A namespace bump is the case this guards.
+
+    upsert_pack commits the pack row before the entry loops, so a catalogue that
+    parses and yields nothing leaves a packs row with zero catalogue_entries.
+    ingest_cwe raises on that, which aborts the build -- but the raise used to
+    escape with the half-written file still on disk, because only an integrity
+    failure removed it. A publishable-looking index beside a traceback is worse
+    than either alone.
+    """
+    (sources / "cwe" / "cwec_v4.20.xml").write_text(
+        '<Weakness_Catalog xmlns="http://cwe.mitre.org/cwe-99" />'
+    )
+    out = tmp_path / "kb.sqlite"
+    with pytest.raises(ValueError, match="no Weakness or Category"):
+        _build(sources, out)
+    assert not out.exists(), "a rejected pack must not leave a partial index behind"
+
+
+def test_main_returns_nonzero_when_a_pack_is_rejected(sources, tmp_path):
+    """An unhandled ValueError exits non-zero by traceback, so the exit code alone
+    would not have caught this. What it would not do is log an actionable line, and
+    it is the one failure mode a fresh upstream release is most likely to produce.
+    """
+    from owasp_kb.ingest import build as build_mod
+
+    (sources / "cwe" / "cwec_v4.20.xml").write_text(
+        '<Weakness_Catalog xmlns="http://cwe.mitre.org/cwe-99" />'
+    )
+    out = tmp_path / "rejected.sqlite"
+    rc = build_mod.main(
+        [
+            "--sources",
+            str(sources),
+            "--out",
+            str(out),
+            "--expected-requirements",
+            "3",
+            "--no-edge-floors",
+        ]
+    )
+    assert rc == 1
+    assert not out.exists()
+
+
 def test_build_is_rerunnable_over_an_existing_file(sources, tmp_path):
     out = tmp_path / "kb.sqlite"
     _build(sources, out)
     report = _build(sources, out)
     assert report.requirements == 3
-    assert report.documents == 3
+    assert report.cheatsheet_documents == 3
 
 
 def test_build_missing_source_raises_actionably(tmp_path):

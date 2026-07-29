@@ -6,6 +6,14 @@ import sqlite3
 
 EXPECTED_REL_TYPES = {"guidance", "cwe", "supersedes", "nist"}
 
+# CWE's own relationship graph, which only exists when the catalogue pack is
+# ingested. Kept out of EXPECTED_REL_TYPES because that set is checked by
+# absence -- requiring these unconditionally would fail every build that omits
+# the pack. Requiring them when the pack IS present matters just as much: the
+# entries can all land while Related_Weaknesses parsing produces nothing, and no
+# other check in this module notices.
+CATALOGUE_REL_TYPES = {"cwe_child", "cwe_peer", "cwe_member"}
+
 # Mirrors embed.MAX_LENGTH (bge-small-en-v1.5's 512-token window). Duplicated
 # rather than imported so this module stays free of any embedder coupling --
 # it runs in the lite path too, where onnxruntime is not installed.
@@ -23,11 +31,23 @@ MAX_TRUNCATED_CHUNK_SHARE = 0.08
 # upstream drift does not trip them, while a collapse to near-zero does.
 # Measured against the pinned sources: guidance 167, cwe 204, supersedes 265,
 # nist 48.
+#
+# The CWE graph floors are measured against CWE 4.20: 1,160 / 284 / 4,260. Note
+# 1,160 rather than the 1,318 ChildOf declarations -- 158 are repeated and the
+# links primary key stores distinct pairs. A rel absent entirely is skipped here
+# (see the ``0 < count`` guard below) and handled by the rel-type checks instead,
+# so listing the three costs a catalogue-less build nothing. These three sit at
+# 30% headroom against measured, tighter than the 40-58% the ASVS-derived four
+# carry, because CWE releases are additive: the graph grows between versions
+# rather than churning, so less room is needed for legitimate drift.
 MIN_EDGES_PER_REL = {
     "guidance": 100,
     "cwe": 100,
     "supersedes": 150,
     "nist": 20,
+    "cwe_child": 800,
+    "cwe_peer": 200,
+    "cwe_member": 3000,
 }
 
 
@@ -87,12 +107,49 @@ def run_checks(
     # ids, so every entry was dropped and the drop-and-count design made a total
     # failure read as normal operation. owasp_related advertises all four, and
     # advertising a relationship that never exists is a silent lie.
+    # catalogue_entries always exists -- create_schema creates every table -- so
+    # this counts whether the pack is populated, not whether the table is present.
+    has_catalogue = bool(conn.execute("SELECT COUNT(*) FROM catalogue_entries").fetchone()[0])
+
     present = {r[0] for r in conn.execute("SELECT DISTINCT rel FROM links")}
-    for rel in sorted(EXPECTED_REL_TYPES - present):
+    expected_rels = EXPECTED_REL_TYPES | (CATALOGUE_REL_TYPES if has_catalogue else set())
+    for rel in sorted(expected_rels - present):
         failures.append(
             f"no {rel!r} links were produced; owasp_related advertises this "
             "relationship, so zero edges means the mapping failed to resolve"
         )
+
+    # Skipped when the CWE pack is absent: a build without the catalogue carries
+    # the ASVS-to-CWE links with nothing to resolve them against, and that is not
+    # a fault. Scoped to rel = 'cwe' exactly -- cwe_child/cwe_peer/cwe_member are
+    # CWE's own graph, whose edges legitimately point outside an ingested subset,
+    # so rel LIKE 'cwe%' would turn correct rows into a build failure.
+    if has_catalogue:
+        unresolved = [
+            row[0]
+            for row in conn.execute(
+                "SELECT DISTINCT l.to_id FROM links l"
+                " WHERE l.rel = 'cwe'"
+                " AND NOT EXISTS ("
+                "  SELECT 1 FROM catalogue_entries e WHERE e.entry_id = l.to_id)"
+            )
+        ]
+        if unresolved:
+            shown = ", ".join(sorted(unresolved)[:5])
+            # The population this check counts is the mapping *after* translation to
+            # 5.0.0: 115 distinct ids, four of them Categories (CWE-255, 310, 320,
+            # 1002). The upstream file has a fifth, CWE-16, but both of its only
+            # citers are bleeding-edge ids that do not translate, so no build can
+            # ever surface it here. That roster stays in this comment rather than in
+            # the message: a build error should say what to fix, and a measurement
+            # embedded in one is the clause that goes stale -- this one already did.
+            failures.append(
+                f"{len(unresolved)} ASVS-mapped CWE id(s) resolve to no catalogue "
+                f"entry ({shown}). Either the CWE pack is stale relative to the "
+                "mapping, or the ingest is dropping entries the mapping needs -- it "
+                "must keep Categories as well as Weaknesses, and Deprecated and "
+                "Obsolete entries too, because the mapping cites all of them"
+            )
 
     total_chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
     if total_chunks:

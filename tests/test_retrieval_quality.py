@@ -62,9 +62,30 @@ def _doc_rank(kb: Kb, query: str, expected: str, limit: int = 20) -> int | None:
 
 def test_full_index_has_the_expected_content(full):
     info = full.info()
-    assert {p.name for p in info.packs} == {"asvs", "cheatsheets"}
+    assert {p.name for p in info.packs} == {"asvs", "cheatsheets", "cwe"}
     assert next(p.version for p in info.packs if p.name == "asvs") == "5.0.0"
     assert len(full.checklist("asvs")) == 345
+
+
+@pytest.mark.parametrize("index", ["full", "lite"])
+def test_both_indexes_carry_the_cwe_catalogue(index, request):
+    """Against the built index, not a fixture.
+
+    The pack's own tests all ingest it by hand, so every one of them passed while
+    build.py imported nothing from packs/cwe.py and catalogue_entries was empty in
+    both shipped indexes. Lite is asserted too: it differs from full only by
+    --with-vectors, so it gets the catalogue as well, and a claim that the pack is
+    full-only would be false.
+    """
+    kb = request.getfixturevalue(index)
+    packs = {p.name: p for p in kb.info().packs}
+    assert packs["cwe"].type == "catalogue"
+    assert packs["cwe"].version == "4.20"
+    assert "CWE" in packs["cwe"].license, f"license is {packs['cwe'].license!r}"
+    # CWE-320 is an Obsolete Category, and eight ASVS requirements cite it. If the
+    # ingest ever narrowed to current Weaknesses, those citations would stop
+    # resolving; this is the entry that says so first.
+    assert kb.catalogue_entry("CWE-320").kind == "category"
 
 
 def test_level_filters_are_cumulative_as_asvs_defines_them(full):

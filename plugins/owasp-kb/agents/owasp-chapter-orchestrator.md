@@ -78,8 +78,9 @@ whole round exists to prevent, and attaching a trace to it makes it indistinguis
 real one.
 
 Do not judge a requirement inapplicable because its vocabulary differs from the codebase's.
-`PeerSessionState` is a session by function though nothing is named one. Judge by what the
-requirement protects against.
+A struct that accumulates credentials across several requests and commits them as a unit is a
+session by function, though nothing in it is named one. Judge by what the requirement protects
+against.
 
 ## Process
 
