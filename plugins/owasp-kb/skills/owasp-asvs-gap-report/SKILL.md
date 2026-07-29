@@ -130,6 +130,42 @@ the work happens in subagents so that no verdict is graded by the agent that pro
 
 ## Output
 
+**Write the report in numbered sections, not one file.** An assessment takes an hour and 150-odd
+subagents; the report was the only stage that was not incremental, and a single 120,000-character
+write depends on all of it surviving in your context until one call succeeds. That call is larger
+than `owasp_checklist(level='2')`, which already proved undeliverable. For a client deliverable the
+cost of losing it at the last step is the whole assessment.
+
+Write each section to `~/.claude/owasp-kb/sessions/<session-id>/report/` as its material becomes
+available -- a chapter roster when its orchestrator returns, a finding when its verifier finishes:
+
+```
+100_title.md
+101_summary.md            scope and assumptions, results, cross-cutting root causes
+110_trust_boundaries.md
+120_exemptions.md
+201_requirement_roster_v1.md ... 217_requirement_roster_v17.md
+300_findings_intro.md
+301_finding_1.md ... 3NN_finding_N.md
+400_refuted_findings_intro.md
+401_refuted_finding_1.md ...
+```
+
+The numeric prefix carries the order. Findings go in the **300 block** and refuted ones in the
+**400 block**, because the merge counts the 300s against the roster.
+
+Then merge, giving the finding count `owasp_roster` reported:
+
+```
+owasp-kb-report merge --session <session-id> \
+    --out docs/security/asvs-5.0.0-l2-<target>.md --expect-findings 38
+```
+
+It refuses on a duplicate number, on a count that disagrees with the roster, and on an empty
+directory -- each of which would otherwise hand a client a report that looks complete. Do not
+concatenate the sections yourself: re-reading forty files costs the context this exists to save, and
+a dropped one would go unnoticed.
+
 Grouped by chapter, with a per-chapter count of met / gap / not applicable — this is the
 client-readable artefact — plus the full table: requirement id, level, verdict, evidence,
 CWE, remediation.
