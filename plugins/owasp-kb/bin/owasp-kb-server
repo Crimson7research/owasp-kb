@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+# Start the knowledge base server with the session state directory mounted.
+#
+# The state directory holds per-assessment material the agent writes and the
+# server reads -- the exclusion list the PreToolUse hook enforces, and the
+# findings an assessment accumulates. Keeping findings on disk is what lets a
+# corrected verdict travel as one line instead of re-sending every finding: a
+# realistic L2 submission is ~61 KB, of which `evidence` alone is 47%.
+#
+# MOUNTED READ-ONLY. The server reads this directory and never writes to it,
+# so the image keeps its property of being unable to modify anything on the
+# host. It also sidesteps a uid mismatch: the container runs as 10001 and the
+# directory belongs to whoever runs Claude Code.
+#
+# --network none is unchanged. Nothing here can leave the machine.
+#
+# The directory is created here rather than by docker, because a bind mount
+# whose source is missing is created by the daemon and owned by root, which
+# would then be unwritable by the agent that has to populate it.
+set -eu
+
+STATE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb"
+mkdir -p "$STATE"
+
+exec docker run -i --rm \
+    --network none \
+    -v "$STATE:/state:ro" \
+    "${OWASP_KB_IMAGE:-owasp-kb:full}"

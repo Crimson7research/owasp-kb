@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from owasp_kb.core.roster import (
@@ -7,6 +9,7 @@ from owasp_kb.core.roster import (
     RosterError,
     build_roster,
     dedupe_findings,
+    load_session_findings,
     resolve_exemption,
     resolve_finding,
 )
@@ -1065,3 +1068,78 @@ def test_findings_merge_despite_differing_remediation_quotes():
     )
     assert len(roster["findings"]) == 1
     assert set(roster["findings"][0]["covers"]) == {"V6.2.1", "V6.2.2"}
+
+
+# -- session state on disk (#46) --------------------------------------------
+
+
+def _write_session(tmp_path, session, lines):
+    d = tmp_path / "sessions" / session
+    d.mkdir(parents=True)
+    (d / "findings.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    return tmp_path
+
+
+def test_findings_load_from_the_session_state_file(tmp_path, monkeypatch):
+    """A realistic L2 submission is ~61 KB and evidence alone is 47% of it, so a
+    corrected verdict re-sent the whole set. On disk it costs one line."""
+    _write_session(tmp_path, "s1", [{"req_id": "V1.1.1", "verdict": "GAP", "evidence": "e"}])
+    monkeypatch.setenv("OWASP_KB_STATE", str(tmp_path))
+    loaded = load_session_findings("s1")
+    assert [f["req_id"] for f in loaded] == ["V1.1.1"]
+
+
+def test_a_later_line_supersedes_an_earlier_one_for_the_same_requirement(tmp_path, monkeypatch):
+    """The correction path: append rather than resubmit. This is the one place
+    order carries meaning, and it is amendment history rather than a tie-break --
+    once resolved, assembly sees one entry per req_id and stays order-independent,
+    which is what #43 established has to hold."""
+    _write_session(
+        tmp_path,
+        "s1",
+        [
+            {"req_id": "V1.1.1", "verdict": "MET", "evidence": "first"},
+            {"req_id": "V2.1.1", "verdict": "GAP", "evidence": "other"},
+            {"req_id": "V1.1.1", "verdict": "GAP", "evidence": "corrected"},
+        ],
+    )
+    monkeypatch.setenv("OWASP_KB_STATE", str(tmp_path))
+    loaded = {f["req_id"]: f for f in load_session_findings("s1")}
+    assert loaded["V1.1.1"]["verdict"] == "GAP"
+    assert loaded["V1.1.1"]["evidence"] == "corrected"
+    assert loaded["V2.1.1"]["verdict"] == "GAP", "an unrelated finding must survive"
+
+
+def test_a_missing_session_file_raises_rather_than_reading_as_empty(tmp_path, monkeypatch):
+    """An empty set would produce a roster reporting every requirement as
+    INSUFFICIENT EVIDENCE, which reads as an assessment result rather than as a
+    missing file. Unlike the exclusion hook, this fails closed."""
+    monkeypatch.setenv("OWASP_KB_STATE", str(tmp_path))
+    with pytest.raises(RosterError, match="no findings for session"):
+        load_session_findings("absent")
+
+
+@pytest.mark.parametrize(
+    "bad,match",
+    [("{not json", "not valid JSON"), ('{"verdict": "GAP"}', "no req_id")],
+    ids=["malformed", "no-req-id"],
+)
+def test_an_unusable_line_names_its_line_number(tmp_path, monkeypatch, bad, match):
+    """A silently skipped line is a finding that vanishes from the assessment."""
+    d = tmp_path / "sessions" / "s1"
+    d.mkdir(parents=True)
+    (d / "findings.jsonl").write_text('{"req_id": "V1.1.1", "verdict": "GAP"}\n' + bad + "\n")
+    monkeypatch.setenv("OWASP_KB_STATE", str(tmp_path))
+    with pytest.raises(RosterError, match=match) as exc:
+        load_session_findings("s1")
+    assert "line 2" in str(exc.value)
+
+
+def test_blank_and_comment_lines_are_skipped(tmp_path, monkeypatch):
+    d = tmp_path / "sessions" / "s1"
+    d.mkdir(parents=True)
+    (d / "findings.jsonl").write_text(
+        '# a note\n\n{"req_id": "V1.1.1", "verdict": "GAP"}\n\n'
+    )
+    monkeypatch.setenv("OWASP_KB_STATE", str(tmp_path))
+    assert len(load_session_findings("s1")) == 1

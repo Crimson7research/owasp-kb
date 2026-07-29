@@ -9,7 +9,7 @@ never opened it.
 
 SCOPE. The exclusion list lives at
 
-    ${CLAUDE_CONFIG_DIR:-~/.claude}/owasp-kb/excluded/<session-id>
+    ${CLAUDE_CONFIG_DIR:-~/.claude}/owasp-kb/sessions/<session-id>/excluded
 
 keyed on the session that wrote it. A session that never ran an assessment has no
 such file, so every call is allowed and this cannot interfere with unrelated
@@ -44,7 +44,7 @@ SEARCH_TOOLS = {"Read", "Grep", "Glob"}
 
 def _list_file(session_id: str) -> Path:
     base = os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
-    return Path(base) / "owasp-kb" / "excluded" / session_id
+    return Path(base) / "owasp-kb" / "sessions" / session_id / "excluded"
 
 
 def _exclusions(session_id: str) -> list[str]:

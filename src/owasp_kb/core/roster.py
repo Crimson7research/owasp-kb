@@ -7,7 +7,10 @@ verdicts; this module decides whether the roster is complete.
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from types import MappingProxyType
 
 VERDICTS = (
@@ -145,6 +148,57 @@ def resolve_finding(verdicts: list[str]) -> str:
 
 class RosterError(ValueError):
     """The supplied verdicts cannot form a complete, consistent roster."""
+
+
+# Mounted read-only from the host at ${CLAUDE_CONFIG_DIR:-~/.claude}/owasp-kb.
+# Overridable so tests do not need the mount.
+STATE_ROOT = "OWASP_KB_STATE"
+
+
+def session_findings_path(session: str) -> Path:
+    root = os.environ.get(STATE_ROOT, "/state")
+    return Path(root) / "sessions" / session / "findings.jsonl"
+
+
+def load_session_findings(session: str) -> list[dict]:
+    """Read an assessment's accumulated findings from the session state file.
+
+    One JSON object per line. A later line supersedes an earlier one for the
+    same req_id, which is what makes a correction cost one appended line rather
+    than a resubmission of every finding -- a realistic L2 payload is ~61 KB and
+    `evidence` alone is 47% of it.
+
+    That supersession is the *only* place order carries meaning, and it is the
+    amendment history rather than a tie-break. Once resolved, assembly sees one
+    entry per req_id and is order-independent exactly as before, which is the
+    property #43 established has to hold.
+
+    Raises rather than returning nothing. A missing or unreadable file would
+    otherwise produce a roster reporting every requirement as INSUFFICIENT
+    EVIDENCE, which reads as an assessment result instead of a missing file.
+    """
+    path = session_findings_path(session)
+    try:
+        lines = path.read_text().splitlines()
+    except OSError as exc:
+        raise RosterError(
+            f"no findings for session {session!r} at {path}. Write one JSON object "
+            "per line there before calling with a session, or pass findings inline."
+        ) from exc
+
+    resolved: dict[str, dict] = {}
+    for number, line in enumerate(lines, start=1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError as exc:
+            raise RosterError(f"{path} line {number} is not valid JSON: {exc}") from exc
+        if not isinstance(entry, dict) or "req_id" not in entry:
+            raise RosterError(f"{path} line {number} has no req_id")
+        resolved[entry["req_id"]] = entry
+    return list(resolved.values())
 
 
 UNCERTAIN_VERDICTS = frozenset({"INSUFFICIENT EVIDENCE", "N/A (unverified)", "GAP (unconfirmed)"})
