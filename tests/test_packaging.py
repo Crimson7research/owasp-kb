@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -677,6 +679,69 @@ def test_one_version_governs_the_package_the_plugin_and_the_marketplace():
     marketplace = json.loads(MARKETPLACE.read_text())["plugins"][0]["version"]
     assert plugin == __version__, f"plugin.json {plugin} != owasp_kb {__version__}"
     assert marketplace == __version__, f"marketplace {marketplace} != owasp_kb {__version__}"
+
+
+def _plugin_digest():
+    """Load scripts/plugin_digest.py by path.
+
+    It is repository tooling rather than shipped code, so it is not importable as
+    a module: `python -m pytest` happens to put the working directory on the
+    import path and bare `pytest`, which CI runs, does not. Importing it as
+    `scripts.plugin_digest` passed locally and failed in CI for exactly that
+    reason -- the same shape as the defect these tests exist to catch, a check
+    that was correct about a copy nobody runs.
+    """
+    spec = importlib.util.spec_from_file_location("plugin_digest", Path("scripts/plugin_digest.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_recorded_digest_matches_what_the_plugin_currently_ships():
+    """The version is the delivery mechanism, not decoration on a release.
+
+    The plugin cache is keyed on it, so shipping a content change without a bump
+    leaves the installed copy unreachable rather than merely stale: `/plugin`
+    reports "already at the latest version", `/mcp` reports a successful
+    reconnect, and `/reload-plugins` reloads the old files. Three green statuses,
+    every one of them true about the wrong artefact -- the same class of failure
+    as `gh pr checks` showing a pre-rebase result. Recovery needs a manual
+    uninstall and reinstall, and nothing says so.
+
+    It cost exactly that once: the hook fix in #61 was verified in the repository,
+    in the tests and in CI, and was not running. So forgetting the bump is a
+    failing test now. Run `python scripts/plugin_digest.py --write` after bumping
+    `owasp_kb.__version__`.
+    """
+    from owasp_kb import __version__
+
+    module = _plugin_digest()
+    have = module.recorded()
+    assert have is not None, "no digest recorded; run scripts/plugin_digest.py --write"
+    version, value = have
+    assert version == __version__, (
+        f"digest was recorded against {version} but the package is {__version__}; "
+        "bump one or rerun --write"
+    )
+    assert value == module.digest(), (
+        "plugins/ has changed since the digest was recorded. Bump "
+        "owasp_kb.__version__ and rerun scripts/plugin_digest.py --write -- "
+        "without a new version the cache cannot deliver this change"
+    )
+
+
+def test_the_digest_covers_paths_and_not_only_contents():
+    """A renamed agent is as broken as a rewritten one -- the skills dispatch by
+    name. Hashing contents alone would let a rename ship silently."""
+    digest = _plugin_digest().digest
+
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw) / "plugin"
+        (root / "agents").mkdir(parents=True)
+        (root / "agents" / "finder.md").write_text("body")
+        before = digest(root)
+        (root / "agents" / "finder.md").rename(root / "agents" / "verifier.md")
+        assert digest(root) != before
 
 
 def test_pyproject_derives_its_version_rather_than_repeating_it():

@@ -25,7 +25,10 @@ index-full: model ## Build the full index (hybrid)
 		--out $(DIST)/owasp-kb-full.sqlite --with-vectors
 
 test: ## Run unit tests
-	$(EXEC) python -m pytest -q
+	# Bare pytest, as CI runs it. `python -m pytest` adds the working directory
+	# to the import path, so a test importing repository tooling passes here and
+	# fails there -- which happened once and cost a red CI run.
+	$(EXEC) pytest -q
 
 test-quality: ## Run the retrieval quality gate against built indexes
 	$(EXEC) python -m pytest tests/test_retrieval_quality.py -v -s
@@ -33,6 +36,9 @@ test-quality: ## Run the retrieval quality gate against built indexes
 lint: ## Lint and format-check
 	$(EXEC) python -m ruff check .
 	$(EXEC) python -m ruff format --check .
+
+plugin-digest: ## Record the plugin content digest after bumping the version
+	$(EXEC) python scripts/plugin_digest.py --write
 
 serve: ## Run the MCP server against the full index (for manual stdio testing)
 	$(EXEC) python -m owasp_kb.server.app --index $(DIST)/owasp-kb-full.sqlite
