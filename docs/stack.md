@@ -448,6 +448,9 @@ same record: the recommended chunk size of 400 tokens cut truncation hardest
 was chosen instead, at 4.6% truncation and no rank regression. In both cases
 the stated recommendation was wrong and the measurement was cheap. (Those three
 truncation figures are one experiment on the pre-CWE 2,894-chunk corpus and are
-quoted as measured; on the shipped index 512 now truncates **2.90%**, 141 of
-4,869. Restating one arm of a comparison from a different corpus would break the
-comparison, which is the point of the anecdote.)
+quoted as measured; on the shipped index 512 now truncates **1.4%**, 68 chunks.
+Most of the original 4.6% turned out to be a defect rather than a property --
+`_split_oversized` never size-checked its final block, so whether a document
+split depended on where its largest paragraph sat. Restating one arm of a
+comparison from a different corpus would break the comparison, which is the
+point of the anecdote.)

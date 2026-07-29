@@ -203,7 +203,7 @@ where it came from. Rules that matter beyond the obvious:
 - **Oversized sections are split further** on blank-line boundaries, never
   inside a fence, targeting `DEFAULT_MAX_TOKENS = 512` (a `len(text)//4`
   estimate, not a real tokenizer count — cheap and sufficient for a split
-  threshold), matching the embedder's context window exactly. 2.90% of chunks
+  threshold), matching the embedder's context window exactly. 1.4% of chunks
   still exceed that limit (141 of 4,869), against an 8% build gate: the worst
   offender is 97% a single fenced code block,
   which cannot be split further without breaking the fence invariant above.

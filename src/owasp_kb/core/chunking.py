@@ -23,9 +23,11 @@ _SLUG_STRIP = re.compile(r"[^\w\s-]")
 #
 # Those three rows are one experiment and are left as measured -- rewriting only
 # the chosen row would leave a comparison whose arms came from different corpora,
-# which is worse than a dated one. On the shipped index the figure is now 2.90%
-# (141 of 4,869): the CWE pack's entries are short, so it roughly halved. Well
-# under the 8% build gate either way (MAX_TRUNCATED_CHUNK_SHARE in integrity.py).
+# which is worse than a dated one. The live figure is now 68 of ~4,970 (1.4%),
+# after _split_oversized began checking its final block: that alone took the
+# cheat sheets from 133 to 67 and the catalogue from 8 to 1. What remains is a
+# single paragraph too long to split on a blank line, which is the residual the
+# gate in integrity.py is calibrated against.
 DEFAULT_MAX_TOKENS = 512
 SPLIT_DEPTHS = (2, 3)
 
@@ -66,7 +68,20 @@ def _iter_lines_with_fence_state(text: str):
 
 
 def _split_oversized(body: str, max_tokens: int) -> list[str]:
-    """Split on blank lines, never inside a fence, keeping parts under max_tokens."""
+    """Split on blank lines, never inside a fence, keeping parts under max_tokens.
+
+    The trailing block is checked like every other one. It used to be appended
+    unconditionally, because the threshold was tested only where a blank line
+    ended a block and ``chunk_markdown`` strips the body -- so the last paragraph
+    never reached a boundary. Whether a document split therefore depended on
+    where its largest paragraph happened to sit, which is not a property anyone
+    meant to encode.
+
+    A single block larger than the window is still returned whole. It cannot be
+    split on blank lines, and cutting mid-sentence to satisfy the limit is worse
+    than a truncated tail -- the embedder drops the overflow either way, and a
+    part that ends mid-clause reads as corruption rather than as a long section.
+    """
     parts: list[str] = []
     current: list[str] = []
     current_tokens = 0
@@ -85,7 +100,11 @@ def _split_oversized(body: str, max_tokens: int) -> list[str]:
         current.append(block)
         current_tokens += block_tokens
     if buffer:
-        current.append("\n".join(buffer))
+        block = "\n".join(buffer)
+        if current and current_tokens + estimate_tokens(block) > max_tokens:
+            parts.append("\n".join(current).strip())
+            current = []
+        current.append(block)
     tail = "\n".join(current).strip()
     if tail:
         parts.append(tail)
