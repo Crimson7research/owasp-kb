@@ -1068,3 +1068,23 @@ def test_the_image_tag_records_every_packs_version():
     assert "CWE_VERSION" in makefile, "the Makefile does not read the CWE version"
     for text, name in ((makefile, "Makefile"), (release, "release.yml")):
         assert "-cwe" in text, f"{name} builds a tag that does not name the CWE pack"
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_accumulate_findings_on_disk(skill):
+    """owasp_roster gained a session parameter that reads findings.jsonl, and
+    nothing told an agent to write one -- a consumer with no producer, which is
+    the inert-feature failure this project keeps shipping. Without this the
+    feature exists and is never reached."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "findings.jsonl" in body, "nothing writes the file the roster reads"
+    assert "session=$CLAUDE_CODE_SESSION_ID" in body, "the roster is never told which session"
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_say_a_correction_is_an_appended_line(skill):
+    """The saving only materialises if corrections append. An agent that rewrites
+    the file pays the full cost anyway and loses the amendment history."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "append a corrected line for the same `req_id`" in body
+    assert "Do not rewrite the file" in body
