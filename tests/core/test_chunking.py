@@ -1,4 +1,10 @@
-from owasp_kb.core.chunking import DEFAULT_MAX_TOKENS, chunk_markdown, slugify
+from owasp_kb.core.chunking import (
+    DEFAULT_MAX_TOKENS,
+    _split_oversized,
+    chunk_markdown,
+    estimate_tokens,
+    slugify,
+)
 
 DOC = """# Authentication Cheat Sheet
 
@@ -176,3 +182,40 @@ def test_default_max_tokens_fits_the_embedder_window():
     from owasp_kb.core.embed import MAX_LENGTH
 
     assert DEFAULT_MAX_TOKENS == MAX_LENGTH
+
+
+def _paragraphs(sizes: list[int]) -> str:
+    """A body of blank-line-separated paragraphs of roughly the given token sizes."""
+    return "\n\n".join("word " * (n * 4 // 5) for n in sizes)
+
+
+def test_splitting_does_not_depend_on_where_the_largest_paragraph_sits():
+    """The threshold was only checked on the boundary path, and the trailing
+    block never reaches one -- chunk_markdown strips the body, so the last
+    paragraph has no blank line after it and is appended unconditionally.
+
+    So the same content split or did not split depending on paragraph order,
+    which is not a property anyone intended to encode."""
+    sizes = [30, 110, 150, 60, 35, 480]
+    largest_last = _split_oversized(_paragraphs(sizes), DEFAULT_MAX_TOKENS)
+    largest_middle = _split_oversized(_paragraphs(sorted(sizes, reverse=True)), DEFAULT_MAX_TOKENS)
+    assert len(largest_last) > 1, "the trailing block escaped the threshold check"
+    assert len(largest_middle) > 1
+
+
+def test_no_part_exceeds_the_limit_when_the_blocks_can_be_separated():
+    """Every part under the window is the whole point: a part over it has its
+    tail dropped at embedding time, invisibly to vector search."""
+    parts = _split_oversized(_paragraphs([30, 110, 150, 60, 35, 480]), DEFAULT_MAX_TOKENS)
+    assert all(estimate_tokens(p) <= DEFAULT_MAX_TOKENS for p in parts), [
+        estimate_tokens(p) for p in parts
+    ]
+
+
+def test_a_single_block_larger_than_the_window_is_still_returned_whole():
+    """One paragraph over the limit cannot be split on blank lines, and cutting
+    mid-sentence is worse than a truncated tail. It is returned as one part
+    rather than dropped -- absence would be the worse failure."""
+    parts = _split_oversized(_paragraphs([700]), DEFAULT_MAX_TOKENS)
+    assert len(parts) == 1
+    assert estimate_tokens(parts[0]) > DEFAULT_MAX_TOKENS

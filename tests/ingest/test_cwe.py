@@ -213,17 +213,20 @@ def test_no_chunk_from_the_fixture_exceeds_the_embedder_window(ingested):
 
 
 @pytest.mark.realdata
-def test_the_real_catalogue_has_exactly_eight_oversized_chunks(conn):
+def test_the_real_catalogue_has_exactly_one_oversized_chunk(conn):
     """Pins the residue of #38 so it cannot drift in either direction.
 
-    Fails at 12 if the paragraph-preserving flatten regresses to a single line, and
-    fails if #38 is fixed and the count drops -- which is the desired change, and
-    one that should be noticed here rather than pass silently.
+    Was 8 before the final-block check landed, and 12 before the
+    paragraph-preserving flatten. Both counts are worth keeping in view: this
+    fails at 12 if the flatten regresses to a single line, and fails if the
+    remaining one is ever split.
 
-    The 8 survive because _split_oversized never size-checks its final block:
-    chunk_markdown strips the body, so an entry whose largest paragraph comes last
-    escapes the check entirely. CWE-1251's largest is last and it stays in one
-    chunk; CWE-1240's is mid-document and it splits into three.
+    Only CWE-451 survives, and for a reason no chunker fix will remove -- its
+    largest paragraph is a single 581-token block, so there is no blank line to
+    split on. Cutting mid-sentence to satisfy the window would read as
+    corruption rather than as a long section, so it is left whole and its tail
+    is dropped at embedding time. CWE-1251, whose 880-token chunk was the
+    motivating case, now splits and its largest part is 482.
     """
     if not CATALOGUE.exists():
         pytest.skip(f"no catalogue at {CATALOGUE}; run the fetch step first")
@@ -238,16 +241,17 @@ def test_the_real_catalogue_has_exactly_eight_oversized_chunks(conn):
             (DEFAULT_MAX_TOKENS,),
         )
     }
-    assert len(oversized) == 8, (
-        f"expected the 8 oversized chunks tracked in #38, got {len(oversized)}: "
-        f"{sorted(oversized)}. If #38 is fixed, lower this count and note it here."
+    assert len(oversized) == 1, (
+        f"expected the single unsplittable chunk from #38, got {len(oversized)}: "
+        f"{sorted(oversized)}. A rise means the chunker regressed; a fall means "
+        "something split CWE-451's one long paragraph, which needs its own note."
     )
-    # The named entry is the mechanism rather than a coincidence: its largest
-    # paragraph sits last, so it escapes the final-block check. The exact token
-    # count is deliberately not asserted -- that would couple this to
-    # estimate_tokens' len//4 and to MITRE's exact wording, so a reword in 4.21
-    # would redden it with no indication why.
-    assert oversized["CWE-1251"] > DEFAULT_MAX_TOKENS
+    # The named entry is the mechanism rather than a coincidence: one paragraph
+    # with no blank line inside it. The exact token count is deliberately not
+    # asserted -- that would couple this to estimate_tokens' len//4 and to
+    # MITRE's exact wording, so a reword in 4.21 would redden it with no
+    # indication why.
+    assert oversized["CWE-451"] > DEFAULT_MAX_TOKENS
 
 
 # --- the graph ---------------------------------------------------------------

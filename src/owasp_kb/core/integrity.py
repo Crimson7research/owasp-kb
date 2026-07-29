@@ -20,12 +20,22 @@ CATALOGUE_REL_TYPES = {"cwe_child", "cwe_peer", "cwe_member"}
 EMBEDDER_MAX_TOKENS = 512
 
 # Chunks longer than the embedder's window have their tails truncated at
-# embedding time, invisible to vector search. Some residual is unavoidable --
-# a single oversized fenced code block cannot be split without corrupting it --
-# but a regression in the chunker would show up as a jump here. Measured 4.6%
-# at the current default; the floor sits above that with room for upstream
-# content drift, and well below the 11.9% the old 800-token default produced.
-MAX_TRUNCATED_CHUNK_SHARE = 0.08
+# embedding time, invisible to vector search. Some residual is genuinely
+# unavoidable -- a single paragraph or fenced block longer than the window has
+# no blank line to split on, and cutting mid-sentence to fit reads as corruption
+# rather than as a long section -- but a regression in the chunker shows up as a
+# jump here.
+#
+# Recalibrated after #38. The 4.6% this was originally set against was inflated
+# by a defect: _split_oversized never size-checked its final block, so whether a
+# document split depended on where its largest paragraph sat. With that fixed the
+# measured share is 1.4% (68 chunks: 67 cheat sheets, 1 catalogue), and every one
+# is an unsplittable block rather than an ordering accident.
+#
+# 8% against 1.4% would tolerate a sixfold regression, so the ceiling comes down
+# to 4% -- still ample room for upstream content drift, and still well below the
+# 11.9% the old 800-token default produced.
+MAX_TRUNCATED_CHUNK_SHARE = 0.04
 
 # Floors, not targets — set well below the measured real counts so ordinary
 # upstream drift does not trip them, while a collapse to near-zero does.
