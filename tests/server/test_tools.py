@@ -165,6 +165,22 @@ def test_kb_info_exposes_link_coverage(tools):
     assert coverage["guidance"]["total_requirements"] == 3
 
 
+def test_kb_info_omits_coverage_for_a_relationship_no_requirement_reaches(tools):
+    """Rendering the CWE graph as '0 of 345 requirements covered' invites the
+    conclusion that it failed to load. kb_info's own description tells an agent
+    to call it first and frames coverage as mapping completeness, so three
+    relationships at 0% is the wrong signal about a graph that is complete."""
+    coverage = {c["rel"]: c for c in tools["kb_info"]()["link_coverage"]}
+    for rel in ("cwe_child", "cwe_peer", "cwe_member"):
+        assert coverage[rel]["edges"] > 0
+        assert "requirements_covered" not in coverage[rel], (
+            f"{rel} still reports a coverage figure that does not apply"
+        )
+        assert "total_requirements" not in coverage[rel]
+    assert coverage["cwe"]["requirements_covered"] == 2
+    assert coverage["guidance"]["total_requirements"] == 3
+
+
 def test_kb_info_reports_the_catalogue_pack_type_and_license(tools):
     """Pins the projection, not the build.
 

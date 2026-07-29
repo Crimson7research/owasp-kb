@@ -53,14 +53,28 @@ MAX_ANCESTOR_DEPTH = 20
 
 @dataclass(frozen=True)
 class LinkCoverage:
+    """How much of the requirement set a relationship reaches.
+
+    ``requirements`` and ``total_requirements`` are None for a relationship that
+    does not start at a requirement at all -- the CWE graph connects catalogue
+    entries to each other, so "0 of 345 covered" is a denominator that does not
+    apply, and rendering it reads as a mapping that failed to load.
+
+    A requirement-scoped relationship that resolved nothing still reports 0.
+    That is a real defect and must stay visible; the distinction here is
+    structural, not "the count came out zero".
+    """
+
     rel: str
     edges: int
-    requirements: int
-    total_requirements: int
+    requirements: int | None
+    total_requirements: int | None
 
     @property
-    def share(self) -> float:
-        return self.requirements / self.total_requirements if self.total_requirements else 0.0
+    def share(self) -> float | None:
+        if self.requirements is None or not self.total_requirements:
+            return None
+        return self.requirements / self.total_requirements
 
 
 @dataclass(frozen=True)
@@ -113,6 +127,12 @@ class Kb:
         chapter id, so counting DISTINCT from_id would undercount guidance badly
         -- guidance is keyed on sections, giving 78 rather than the 332
         requirements that can actually reach it.
+
+        A relationship with no edge anchored to any requirement identifier is not
+        requirement-scoped, and reports None rather than 0. from_kind alone does
+        not decide this: guidance is keyed on 'asvs_section' and is still
+        reachable by 332 requirements, while the CWE graph is keyed on 'cwe' and
+        is reachable by none.
         """
         total = self._conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0]
         rows = self._conn.execute(
@@ -128,7 +148,13 @@ class Kb:
                                  r.section_id,
                                  r.chapter_id
                                )
-                      )) AS reqs
+                      )) AS reqs,
+                   EXISTS (
+                     SELECT 1 FROM links y
+                      JOIN requirements r2
+                        ON y.from_id IN (r2.req_id, r2.section_id, r2.chapter_id)
+                     WHERE y.rel = l.rel
+                   ) AS anchored
               FROM links l
              GROUP BY l.rel
              ORDER BY l.rel
@@ -138,8 +164,8 @@ class Kb:
             LinkCoverage(
                 rel=r["rel"],
                 edges=r["edges"],
-                requirements=r["reqs"],
-                total_requirements=total,
+                requirements=r["reqs"] if r["anchored"] else None,
+                total_requirements=total if r["anchored"] else None,
             )
             for r in rows
         ]

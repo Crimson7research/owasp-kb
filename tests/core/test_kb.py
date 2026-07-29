@@ -464,3 +464,41 @@ def test_no_real_catalogue_entry_truncates_its_ancestor_walk(tmp_path):
         "Every one of those reports a chain missing its coarsest end, which reads as "
         "a shared Base where there is none."
     )
+
+
+def test_link_coverage_omits_requirement_counts_for_a_graph_that_has_no_requirements(
+    catalogue_conn,
+):
+    """cwe_child, cwe_peer and cwe_member connect catalogue entries to each
+    other, so no requirement is ever their from_id and 'covered 0 of 345' is a
+    denominator that does not apply.
+
+    kb_info's own description tells an agent to call it first and reads the
+    coverage field as mapping completeness, so three relationships rendered at
+    0% invite the conclusion that the CWE graph failed to load. It is complete:
+    1,160 + 284 + 4,260 is every relationship in the catalogue.
+    """
+    coverage = {c.rel: c for c in Kb(catalogue_conn).info().link_coverage}
+
+    for rel in ("cwe_child", "cwe_peer", "cwe_member"):
+        assert coverage[rel].edges > 0, f"{rel} produced no edges at all"
+        assert coverage[rel].requirements is None, (
+            f"{rel} reports a requirement count; no requirement can reach it"
+        )
+        assert coverage[rel].total_requirements is None
+        assert coverage[rel].share is None
+
+
+def test_link_coverage_still_reports_a_rel_requirements_can_reach(kb):
+    """The distinction must be structural, not 'the count came out zero'. A
+    requirement-scoped mapping that resolved nothing is a real defect and has to
+    stay visible as 0, not be reclassified as not-applicable.
+
+    guidance is the sharp case: it is keyed on 'asvs_section' rather than
+    'requirement', so a from_kind test would wrongly classify it as unscoped
+    even though requirements reach it through their section id."""
+    coverage = {c.rel: c for c in kb.info().link_coverage}
+    for rel in ("cwe", "guidance"):
+        assert coverage[rel].total_requirements is not None, f"{rel} lost its denominator"
+        assert coverage[rel].requirements is not None
+        assert coverage[rel].share is not None
