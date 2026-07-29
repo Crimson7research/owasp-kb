@@ -8,6 +8,7 @@ noun gets skipped. That is an observed failure mode, not a hypothetical one.
 from __future__ import annotations
 
 import itertools
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -18,6 +19,15 @@ from owasp_kb.core.roster import Finding, RosterError, build_roster
 MAX_EXCERPT_CHARS = 1200
 MAX_GET_CHARS = 30_000
 LARGE_CHECKLIST_ROWS = 100
+
+# The ceiling a tool result must stay under to be delivered at all. Enforced
+# here rather than only asserted in the tests, which measured fixture-scale
+# responses and so never saw the real enumeration exceed it: measured against
+# ASVS 5.0.0, level='1' is 22,780 characters, level='2' is 76,845 and the full
+# 345 are 103,134. A caller hit the transport limit on level='2' and could not
+# read the response at all -- including the note inside it advising the
+# chapter-at-a-time call that would have worked.
+MAX_RESPONSE_CHARS = 40_000
 
 
 def _normalised(text: str) -> str:
@@ -308,8 +318,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         }
         # No truncation: a gap report needs every requirement, and silently
         # dropping rows from a compliance enumeration is worse than a large
-        # response. Measured, the full 345-requirement ASVS enumeration is
-        # ~140,000 characters.
+        # response.
         if len(rows) > LARGE_CHECKLIST_ROWS:
             chapter_ids = [c["id"] for c in chapters]
             response["note"] = (
@@ -318,6 +327,31 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 f"({', '.join(chapter_ids)}) and keep a running tally -- the totals must "
                 f"sum to {len(rows)}."
             )
+        # Refuse rather than truncate, and refuse in a form the caller can act
+        # on. The chapter argument already works and the largest single chapter
+        # at level='2' is 9,808 characters, so the per-chapter path is not a
+        # degraded fallback -- it is the call that should have been made. The
+        # counts come back with it so the caller can reconcile its tally against
+        # the total without a second enumeration.
+        if len(json.dumps(response)) > MAX_RESPONSE_CHARS:
+            return {
+                "error": (
+                    f"{len(rows)} requirements exceed the response limit. Nothing is "
+                    "truncated and nothing is lost: call once per chapter with "
+                    f"chapter='V1' and so on, and the totals must sum to {len(rows)}."
+                ),
+                "pack": pack,
+                "pack_version": version,
+                "count": len(rows),
+                "chapters": [
+                    {
+                        "id": c["id"],
+                        "name": c["name"],
+                        "requirements": sum(len(s["requirements"]) for s in c["sections"]),
+                    }
+                    for c in chapters
+                ],
+            }
         return response
 
     def owasp_related(id: str, rel: str | None = None) -> dict:

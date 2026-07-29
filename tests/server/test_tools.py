@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -14,9 +15,11 @@ from owasp_kb.ingest.links import (
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 from owasp_kb.ingest.packs.cwe import ingest_cwe
-from owasp_kb.server.tools import TOOL_TRIGGER_TOPICS, build_tools
-
-MAX_RESPONSE_CHARS = 40_000
+from owasp_kb.server.tools import (
+    MAX_RESPONSE_CHARS,
+    TOOL_TRIGGER_TOPICS,
+    build_tools,
+)
 
 
 def _flat(result):
@@ -632,6 +635,71 @@ def test_no_tool_response_exceeds_the_context_ceiling(tools):
     ]
     for response in responses:
         assert len(json.dumps(response)) < MAX_RESPONSE_CHARS
+
+
+def test_an_oversized_checklist_refuses_with_the_call_that_works(tools, monkeypatch):
+    """The old guard appended a note advising the chapter-at-a-time call and
+    still returned the full payload -- so the advice travelled inside the
+    response that was too large to deliver, and the caller saw neither."""
+    import owasp_kb.server.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "MAX_RESPONSE_CHARS", 200)
+    result = tools["owasp_checklist"]("asvs")
+
+    assert "error" in result
+    assert all("sections" not in c for c in result["chapters"]), (
+        "the refusal must not carry the payload it just refused to send"
+    )
+    assert "chapter=" in result["error"], "the refusal must name the call to make instead"
+    assert result["chapters"], "a refusal with no chapter list is not actionable"
+    assert all({"id", "name", "requirements"} <= set(c) for c in result["chapters"])
+
+
+def test_a_refused_checklist_still_reports_the_total_to_reconcile_against(tools, monkeypatch):
+    """Without the total the caller cannot tell whether its per-chapter tally is
+    complete, which is the whole reason it was enumerating."""
+    import owasp_kb.server.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "MAX_RESPONSE_CHARS", 200)
+    result = tools["owasp_checklist"]("asvs")
+    assert result["count"] == sum(c["requirements"] for c in result["chapters"])
+
+
+REAL_INDEX = Path("dist/owasp-kb-full.sqlite")
+
+
+@pytest.mark.realdata
+def test_the_real_checklist_is_deliverable_at_every_level():
+    """The ceiling test above runs against the fixture index, where every
+    response is small, so it never saw the real enumeration break the limit --
+    a caller hit it on level='2' and could not read the response at all.
+
+    Every level must either fit or refuse in a form naming the call that works.
+    Measured against ASVS 5.0.0: level='1' is 22,780 characters and fits;
+    level='2' is 76,845 and level='3' 103,134, both of which refuse. The largest
+    single chapter at level='2' is 9,808, so the per-chapter path this directs a
+    caller to is not a degraded fallback.
+    """
+    if not REAL_INDEX.exists():
+        pytest.skip(f"no index at {REAL_INDEX}; run the index step first")
+    kb = Kb(connect(REAL_INDEX, read_only=True))
+    tools = {t.__name__: t for t in build_tools(kb)}
+
+    for level in (None, "1", "2", "3"):
+        result = tools["owasp_checklist"]("asvs", level=level)
+        assert len(json.dumps(result)) <= MAX_RESPONSE_CHARS, (
+            f"level={level} is undeliverable and did not refuse"
+        )
+        if "error" in result:
+            assert result["chapters"], f"level={level} refused without saying what to call"
+            assert result["count"] == sum(c["requirements"] for c in result["chapters"])
+
+    fits = tools["owasp_checklist"]("asvs", level="1")
+    assert "error" not in fits, "level='1' fits and must not refuse"
+    assert fits["count"] == 70
+
+    per_chapter = tools["owasp_checklist"]("asvs", level="2", chapter="V10")
+    assert "error" not in per_chapter, "the path the refusal directs a caller to must work"
 
 
 def test_every_response_is_json_serialisable(tools):
