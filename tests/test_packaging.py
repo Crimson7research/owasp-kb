@@ -66,42 +66,42 @@ def test_plugin_declares_its_mcp_config():
     assert MCP_CONFIG.exists()
 
 
-SERVER_WRAPPER = Path("plugins/owasp-kb/bin/owasp-kb-server")
-
-
-def test_mcp_config_starts_the_server_through_the_wrapper():
-    """The docker invocation moved into a wrapper so the state directory can be
-    mounted with a path only a shell can resolve. The wrapper resolves by name
-    from the plugin's bin/, which Claude Code puts on PATH -- rather than by
-    ${...} expansion inside .mcp.json, which no installed plugin relies on and
-    which would fail silently if unsupported."""
+def _server_command() -> str:
+    """The single shell command that starts the server."""
     server = json.loads(MCP_CONFIG.read_text())["mcpServers"]["owasp-kb"]
-    assert server["command"] == "owasp-kb-server"
-    assert SERVER_WRAPPER.is_file()
-    assert SERVER_WRAPPER.stat().st_mode & 0o111, "wrapper is not executable"
+    assert server["command"] == "sh", "the command must be one a bare PATH always resolves"
+    return " ".join(server["args"])
 
 
-def test_the_server_wrapper_runs_the_container_without_network():
-    """The property the old assertion protected, checked where it now lives."""
-    script = SERVER_WRAPPER.read_text()
-    assert "--network none" in script
-    assert "docker run -i --rm" in script.replace("\\\n", "").replace("\n", " ")
+def test_the_server_command_needs_no_path_lookup_or_variable_expansion():
+    """A wrapper on the plugin's bin/ failed with ENOENT: that directory is on
+    PATH for shell tools, and the MCP subprocess does not inherit it. ${...}
+    expansion inside .mcp.json is equally unverified -- no installed plugin
+    relies on it, and it would fail silently rather than loudly.
+
+    sh is resolvable anywhere, and the shell does the expansion itself."""
+    args = _server_command()
+    assert "-c" in json.loads(MCP_CONFIG.read_text())["mcpServers"]["owasp-kb"]["args"]
+    assert "$HOME" in args, "the state path must be expanded by the shell, not by the harness"
+
+
+def test_the_server_command_runs_the_container_without_network():
+    assert "--network none" in _server_command()
 
 
 def test_the_state_mount_is_read_only():
     """The image gains read access to one directory and no write access at all.
-    The server reads the exclusion list and the findings an agent wrote; it never
-    writes there, and a read-only mount also sidesteps the uid mismatch -- the
-    container runs as 10001 and the directory belongs to the host user."""
-    script = SERVER_WRAPPER.read_text()
-    assert ":/state:ro" in script, "the state mount must be read-only"
-    assert ':/state"' not in script, "a writable state mount would let the image modify the host"
+    A read-only mount also sidesteps a uid mismatch: the container runs as 10001
+    and the directory belongs to the host user."""
+    args = _server_command()
+    assert ":/state:ro" in args, "the state mount must be read-only"
+    assert ':/state"' not in args, "a writable state mount would let the image modify the host"
 
 
-def test_the_wrapper_creates_the_state_directory_itself():
+def test_the_server_command_creates_the_state_directory_itself():
     """A bind mount whose source is missing is created by the docker daemon and
     owned by root, which the agent then cannot write to."""
-    assert "mkdir -p" in SERVER_WRAPPER.read_text()
+    assert "mkdir -p" in _server_command()
 
 
 def test_all_four_skills_exist():

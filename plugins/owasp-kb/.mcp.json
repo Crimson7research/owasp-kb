@@ -1,8 +1,11 @@
 {
   "mcpServers": {
     "owasp-kb": {
-      "command": "owasp-kb-server",
-      "args": []
+      "command": "sh",
+      "args": [
+        "-c",
+        "mkdir -p \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb\" && exec docker run -i --rm --network none -v \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb:/state:ro\" ${OWASP_KB_IMAGE:-owasp-kb:full}"
+      ]
     }
   }
 }
