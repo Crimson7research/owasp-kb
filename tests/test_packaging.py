@@ -1111,3 +1111,16 @@ def test_the_skills_forbid_concatenating_sections_by_hand(skill):
     # the assertion to today's line breaks makes it fail on a reflow.
     body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
     assert "Do not concatenate the sections yourself" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_arm_the_exclusion_hook(skill):
+    """The PreToolUse hook reads sessions/<id>/excluded and nothing wrote it, so
+    it would have allowed everything in a real run -- a consumer with no
+    producer, the same gap findings.jsonl had. It fails open by design, so an
+    unarmed hook is indistinguishable from one with nothing to block."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "sessions/$CLAUDE_CODE_SESSION_ID/excluded" in body, "nothing arms the hook"
+    assert "the hook stops the read" in body, (
+        "the three controls must be distinguished, or one is assumed to cover the others"
+    )
