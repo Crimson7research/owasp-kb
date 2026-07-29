@@ -204,6 +204,31 @@ def test_the_skills_require_remediation_as_code(skill):
     )
 
 
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_name_the_marker_for_a_citation_that_was_read(skill):
+    """The skills said "Mark the difference" and never said with what, so a real
+    run invented the marker, defined its own legend and applied it to 42
+    citations. That worked -- which is why nobody noticed the instruction was
+    incomplete -- but it was the agent's judgement, so the next run picks a
+    different glyph and two reports stop being comparable.
+
+    The CWE half of the same section renders its examples and did recur
+    correctly. This asserts the rendered form, not the mere presence of the
+    character, which the legend text alone would satisfy."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "#password-storage §" in body, "no rendered example of a marked citation"
+    assert "no section was read" in body, "the unmarked case is not shown beside it"
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_say_an_unmarked_citation_is_not_a_failure(skill):
+    """13 of 345 requirements have no guidance edge, so some citations are always
+    document-level. Without this an agent reads an unmarked one as a defect and
+    goes looking for a section that does not exist."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "not a defect to drive to zero" in body
+
+
 @pytest.mark.parametrize("skill", ASSESSMENT_SKILLS)
 def test_the_skills_render_the_corpus_cwe(skill):
     """owasp_roster returns cwe_corpus and this is its only consumer. A field

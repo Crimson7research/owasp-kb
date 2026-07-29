@@ -161,8 +161,22 @@ matches `cwe` against `cwe_corpus` and dedupes on it, and an id with a name appe
 nothing.
 
 **Show whether guidance was read.** A `remediation` with a `remediation_quote` is a section an
-agent navigated to and read. One without is the requirement-level mapping. Mark the difference;
-both are citations from the knowledge base, but only one is specific.
+agent navigated to and read. One without is the requirement-level mapping. Both are citations from
+the knowledge base, but only one is specific, so mark it with **`§`**:
+
+`Authentication_Cheat_Sheet#password-storage §` — read, and quoted in the finding detail
+`Authentication_Cheat_Sheet` — the requirement-level mapping; no section was read
+
+Define the marker where the reader meets it, so a glyph never appears unexplained:
+
+> Remediation citations marked **§** are sections an agent navigated to and read, and carry a
+> verbatim quote in the finding detail. Citations without **§** are the requirement-level mapping
+> only — the document is the right one, but no specific section was read.
+
+**An unmarked citation is not a defect to drive to zero.** The mapping is coarse and 13 of the 345
+requirements have no guidance edge at all, so some proportion will always be document-level. The
+marker exists to make that visible, not to push the count up — an agent that reads an unmarked
+citation as a failure goes hunting for a section that does not exist.
 
 Report the total requirement count and confirm the table has that many rows.
 `owasp_roster` now supplies both the count and the per-verdict tally, so this is a fact
