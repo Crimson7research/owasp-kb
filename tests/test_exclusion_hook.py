@@ -40,9 +40,9 @@ def _denied(out: dict | None) -> bool:
 
 @pytest.fixture
 def config_dir(tmp_path):
-    listing = tmp_path / "owasp-kb" / "excluded"
+    listing = tmp_path / "owasp-kb" / "sessions" / "sess-1"
     listing.mkdir(parents=True)
-    (listing / "sess-1").write_text(f"{EXCLUDED}\n")
+    (listing / "excluded").write_text(f"{EXCLUDED}\n")
     return tmp_path
 
 

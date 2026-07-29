@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "owasp-kb": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "--network", "none", "owasp-kb:full"]
+      "command": "owasp-kb-server",
+      "args": []
     }
   }
 }

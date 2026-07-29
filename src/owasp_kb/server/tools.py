@@ -14,7 +14,12 @@ from typing import Any
 
 from owasp_kb import __version__
 from owasp_kb.core.kb import Kb
-from owasp_kb.core.roster import Finding, RosterError, build_roster
+from owasp_kb.core.roster import (
+    Finding,
+    RosterError,
+    build_roster,
+    load_session_findings,
+)
 
 MAX_EXCERPT_CHARS = 1200
 MAX_GET_CHARS = 30_000
@@ -547,6 +552,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         level: str | None = None,
         require_verification: bool = True,
         detail: bool = False,
+        session: str | None = None,
     ) -> dict:
         """Assemble assessment verdicts into a complete, checked roster.
 
@@ -606,6 +612,13 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                 }
                 for r in kb.checklist(pack, level=level)
             ]
+            # Findings may arrive inline or from the session state file. The file
+            # is what keeps a correction to one appended line instead of
+            # re-sending every finding; inline still works unchanged, which is
+            # what every existing caller and test uses.
+            supplied = list(findings or [])
+            if session is not None:
+                supplied = load_session_findings(session) + supplied
             parsed = [
                 Finding(
                     req_id=f["req_id"],
@@ -620,9 +633,9 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
                     remediation_quote=f.get("remediation_quote"),
                     trace=f.get("trace"),
                 )
-                for f in (findings or [])
+                for f in supplied
             ]
-            for finding in findings or []:
+            for finding in supplied:
                 quote = finding.get("remediation_quote")
                 if quote and not finding.get("remediation"):
                     raise RosterError(

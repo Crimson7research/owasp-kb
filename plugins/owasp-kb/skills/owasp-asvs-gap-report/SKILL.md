@@ -103,7 +103,19 @@ the work happens in subagents so that no verdict is graded by the agent that pro
      the remediation citation.
    - Escalate to a **second** verifier only where the first returned `unclear`.
 
-6. **Assemble with `owasp_roster`.** Pass your `chapter_states` and every finding,
+6. **Accumulate findings on disk as they are confirmed**, one JSON object per line, in
+   `~/.claude/owasp-kb/sessions/$CLAUDE_CODE_SESSION_ID/findings.jsonl`. Append each
+   finding when its verifier returns rather than holding them all in context: a full L2
+   submission is ~61,000 characters, of which `evidence` alone is 47%, and re-sending it
+   to correct one verdict is the single most expensive thing you can do.
+
+   **To correct a verdict, append a corrected line for the same `req_id`.** The later line
+   supersedes the earlier one, so a correction costs ~170 characters rather than a
+   resubmission — getting a verdict right stays cheap instead of becoming something to
+   avoid. Do not rewrite the file.
+
+7. **Assemble with `owasp_roster`, passing `session=$CLAUDE_CODE_SESSION_ID`** so it reads
+   what you accumulated. Pass your `chapter_states` and any findings not already on disk —
    including each orchestrator's `not_applicable` entries — those are findings with an
    N/A verdict, not omissions. Dropping them re-files a determined N/A as
    INSUFFICIENT EVIDENCE. Do not tally by hand — the tool places every requirement in
@@ -114,7 +126,7 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    Pass `excluded=` the prior assessments found during scoping. A finding citing one is
    rejected, and the roster will name it.
 
-7. **Cite the exact ASVS version** from `kb_info`.
+8. **Cite the exact ASVS version** from `kb_info`.
 
 ## Output
 
