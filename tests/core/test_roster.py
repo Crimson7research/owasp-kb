@@ -1138,8 +1138,6 @@ def test_an_unusable_line_names_its_line_number(tmp_path, monkeypatch, bad, matc
 def test_blank_and_comment_lines_are_skipped(tmp_path, monkeypatch):
     d = tmp_path / "sessions" / "s1"
     d.mkdir(parents=True)
-    (d / "findings.jsonl").write_text(
-        '# a note\n\n{"req_id": "V1.1.1", "verdict": "GAP"}\n\n'
-    )
+    (d / "findings.jsonl").write_text('# a note\n\n{"req_id": "V1.1.1", "verdict": "GAP"}\n\n')
     monkeypatch.setenv("OWASP_KB_STATE", str(tmp_path))
     assert len(load_session_findings("s1")) == 1

@@ -95,7 +95,7 @@ def test_the_state_mount_is_read_only():
     container runs as 10001 and the directory belongs to the host user."""
     script = SERVER_WRAPPER.read_text()
     assert ":/state:ro" in script, "the state mount must be read-only"
-    assert ":/state\"" not in script, "a writable state mount would let the image modify the host"
+    assert ':/state"' not in script, "a writable state mount would let the image modify the host"
 
 
 def test_the_wrapper_creates_the_state_directory_itself():
