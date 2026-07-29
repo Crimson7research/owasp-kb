@@ -965,7 +965,7 @@ def test_cwe_corpus_lists_every_mapped_id(tools):
 
 
 def test_cwe_corpus_unions_the_mappings_of_a_merged_finding(tools):
-    """Two findings at the same (file, line, cwe) merge into one covering both
+    """Two findings at the same (file, line, cwe, verdict) merge into one covering both
     requirements. Its corpus mapping is the union -- one defect, two requirements,
     and a reader wants both mappings."""
     result = tools["owasp_roster"](

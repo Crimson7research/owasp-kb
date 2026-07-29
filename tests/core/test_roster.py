@@ -52,6 +52,42 @@ def test_merged_finding_keeps_every_requirement_with_its_context():
     assert {c.section for c in covered} == {"V6.2", "V8.3"}
 
 
+def test_a_met_and_a_gap_at_the_same_location_do_not_merge():
+    """Two requirements can legitimately resolve differently at one line -- one
+    met, one gapped, both anchored to the same doc line. Merging kept whichever
+    verdict arrived first and discarded the other, so a real GAP was counted as
+    MET and the failure count came out short. Under-reporting failures is the
+    worst available direction for this tool."""
+    met = Finding(**{**vars(_finding("V2.1.1", "V2", "V2.1", cwe=None)), "verdict": "MET"})
+    gap = _finding("V2.1.3", "V2", "V2.1", cwe=None)
+    out = dedupe_findings([met, gap])
+    assert len(out) == 2, "the GAP was absorbed into the MET"
+    assert {f.verdict for f in out} == {"MET", "GAP"}
+
+
+def test_merging_does_not_depend_on_the_order_findings_arrive_in():
+    """Whichever verdict arrived first used to win, so the same set of findings
+    produced a different pass/fail count depending on dispatch order."""
+    met = Finding(**{**vars(_finding("V2.1.1", "V2", "V2.1", cwe=None)), "verdict": "MET"})
+    gap = _finding("V2.1.3", "V2", "V2.1", cwe=None)
+    forward = sorted(f.verdict for f in dedupe_findings([met, gap]))
+    reverse = sorted(f.verdict for f in dedupe_findings([gap, met]))
+    assert forward == reverse == ["GAP", "MET"]
+
+
+def test_same_verdict_at_the_same_location_still_merges():
+    """The merge is what stops one defect reading as four independent problems.
+    Narrowing it to same-verdict must not disable it."""
+    merged = dedupe_findings(
+        [
+            _finding("V6.2.1", "V6", "V6.2", cwe=None),
+            _finding("V8.3.1", "V8", "V8.3", cwe=None),
+        ]
+    )
+    assert len(merged) == 1
+    assert {c.req_id for c in merged[0].covers} == {"V6.2.1", "V8.3.1"}
+
+
 def test_different_locations_do_not_merge():
     merged = dedupe_findings(
         [
@@ -1020,7 +1056,7 @@ def _at_a_py_1(req_id, quote):
 
 
 def test_findings_merge_despite_differing_remediation_quotes():
-    """A quote is not identity. Two findings at one (file, line, cwe) are one
+    """A quote is not identity. Two findings at one (file, line, cwe, verdict) are one
     defect against two requirements however differently each was quoted."""
     roster = build_roster(
         requirements=REQS,

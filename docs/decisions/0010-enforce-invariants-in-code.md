@@ -61,7 +61,7 @@ raises `RosterError` rather than warning:
 
 The decision rules that follow are deterministic for the same reason: one
 refutation outweighs any number of confirmations, an errored adversary escalates
-rather than counting as agreement, and findings dedupe on `(file, line, cwe)`
+rather than counting as agreement, and findings dedupe on `(file, line, cwe, verdict)`
 with unlocated findings never merging.
 
 **An instruction with no consumer gets skipped; a required field cannot be.**

@@ -483,7 +483,7 @@ wraps `core/roster.build_roster`, not a method on `Kb`.
 - `findings` — a list of dicts, each with `req_id`, `chapter`, `section`,
   `verdict` (one of the six in `VERDICTS`), `evidence`, and optionally
   `file`, `line`, `cwe`, `remediation`, `trace`. Findings that share a
-  `(file, line, cwe)` triple are merged into one entry that covers every
+  `(file, line, cwe, verdict)` key are merged into one entry that covers every
   requirement any of them named — dropping the second would silently cost a
   chapter its coverage in the roster.
 - `excluded` — paths to prior assessment reports found in the target. A

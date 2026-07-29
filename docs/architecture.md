@@ -376,7 +376,7 @@ is the deliberate way past it, and the response says so.
 Resolution is deterministic, in code rather than prose. One refutation outweighs
 any number of confirmations — finding the exempted construct is positive
 evidence, failing to find it is not — and an errored adversary escalates rather
-than counting as agreement. Findings dedupe on `(file, line, cwe)`; a finding
+than counting as agreement. Findings dedupe on `(file, line, cwe, verdict)`; a finding
 with no location never merges with another. `unclear` is not `exemption_holds`:
 a claim that survives only because nobody could disprove it is unverified, and
 attaching the refuter's `searched` line to it as a trace would make it

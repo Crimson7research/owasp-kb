@@ -205,7 +205,7 @@ Each section follows this shape:
 **The verdict goes in the heading.** A run can produce 25 verified gaps and 72 unconfirmed ones;
 rendering them alike makes three quarters of the report read as confirmed.
 
-**`Covers` lists every requirement.** Findings sharing a `(file, line, cwe)` merge, so one defect
+**`Covers` lists every requirement.** Findings sharing a `(file, line, cwe, verdict)` merge, so one defect
 routinely covers several — the heading cannot be an ASVS id.
 
 **`Root cause` points back to the cross-cutting list.** Without it, 97 findings read as 97

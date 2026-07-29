@@ -211,7 +211,7 @@ Each section follows this shape:
 rendering them alike makes three quarters of the report read as confirmed — which for a client
 artefact is the difference between a finding and a suspicion.
 
-**`Covers` lists every requirement.** Findings sharing a `(file, line, cwe)` merge, so one defect
+**`Covers` lists every requirement.** Findings sharing a `(file, line, cwe, verdict)` merge, so one defect
 routinely covers several, and the heading cannot be an ASVS id.
 
 **`Root cause` points back to the cross-cutting section.** Without it a client fixes 97 symptoms

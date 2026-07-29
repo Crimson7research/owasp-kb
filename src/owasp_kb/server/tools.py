@@ -512,7 +512,7 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         chapter_states maps each chapter id to 'APPLIES' or an N/A verdict.
         findings is a list of dicts with req_id, chapter, section, verdict,
         evidence, and optionally file, line, cwe, remediation, remediation_quote,
-        trace. Findings sharing a (file, line, cwe) are merged, keeping every
+        trace. Findings sharing a (file, line, cwe, verdict) are merged, keeping every
         requirement they cover.
 
         remediation cites guidance as 'doc_key#anchor', or 'doc_key' for the

@@ -151,7 +151,7 @@ matches the defect without looking it up.
 
 **Put the name in your prose, not in the JSON.** `cwe` stays the bare id, exactly as in the
 output block above: `owasp_roster` matches it against the requirement's mapped ids and dedupes
-findings on `(file, line, cwe)`, and `"CWE-789 (Memory Allocation with Excessive Size Value)"`
+findings on `(file, line, cwe, verdict)`, and `"CWE-789 (Memory Allocation with Excessive Size Value)"`
 matches nothing and dedupes with nothing. A key you add to that object is not an error either —
 the roster reads the fields it knows and drops the rest silently — so an invented field is not a
 richer report, it is a line nobody reads.
