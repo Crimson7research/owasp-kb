@@ -1,9 +1,24 @@
 name: ci
 
+# Paths that no job can be affected by. `test` reads a surprising amount of the
+# tree -- NOTICE, README.md, docs/licensing.md, docs/stack.md, docs/kb-packs.md,
+# the Dockerfile, the Makefile and every file under plugins/ are all asserted
+# against -- so this list is deliberately narrow and is pinned by
+# test_ci_ignores_only_paths_no_test_reads. A docs commit that touches
+# docs/stack.md still runs, correctly.
+#
+# A PR touching only ignored paths gets no checks at all, which reads as
+# "pending forever" to anything waiting on a conclusion rather than on a run
+# existing.
 on:
   pull_request:
+    paths-ignore: &ignored
+      - '.claude/skills/**'
+      - 'docs/decisions/**'
+      - 'docs/superpowers/**'
   push:
     branches: [master]
+    paths-ignore: *ignored
 
 # One run per branch or PR. A rapid series of pushes to the same PR otherwise
 # leaves several ~25-minute build jobs racing to verify commits already

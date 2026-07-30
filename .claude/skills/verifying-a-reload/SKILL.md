@@ -102,9 +102,48 @@ The general form, worth carrying beyond this repo: **when a success message and 
 care about are two different facts, verify the fact.** Read the served schema, the file on disk,
 the timestamp — something the stale path could not produce.
 
+## When a reload cannot fix it: reinstall
+
+The cache is keyed on version, so editing content **within** an already-shipped version leaves the
+installed copy not merely stale but unreachable. All three signals report success:
+
+```
+/plugin          → "owasp-kb is already at the latest version (0.12.0)"
+/mcp             → "Reconnected to plugin:owasp-kb:owasp-kb"
+/reload-plugins  → "Reloaded: 12 plugins · 6 skills · 22 agents · 4 hooks"
+```
+
+The cached `0.12.0` still held the previous file. `/plugin` is describing the marketplace, which
+genuinely has nothing newer. Recovery is **uninstall and reinstall**, and nothing indicates it is
+needed — so verify against the cache directory rather than any of those messages:
+
+```bash
+grep -c "<text you added>" ~/.claude/plugins/cache/owasp-kb/owasp-kb/<version>/hooks/*.py
+```
+
+`scripts/plugin_digest.py` and its test now make this a failing test rather than a discovery: the
+digest of everything under `plugins/` is recorded against `__version__`, so changing plugin content
+without a bump fails the suite. Run `make plugin-digest` after bumping. That guard exists because
+this cost a full verification cycle — the fix was correct in the repo, in its tests and in CI, and
+was not the code running.
+
+## The same failure on other surfaces
+
+Not reload-specific. Every one of these is "the check was sound and measured the wrong copy":
+
+| Surface | The stale reading | The check that works |
+|---|---|---|
+| `gh pr checks` after a force-push | green from the pre-rebase commit | compare the SHA the checks ran against to local `HEAD` |
+| `pytest` invocation | `python -m pytest` puts cwd on `sys.path`, bare `pytest` does not — a test importing repo tooling passes locally, fails CI | run tests the way CI runs them |
+| `cp -a` to a scratch tree | an editable install still resolves to the original `src/` | assert the module resolves inside the scratch tree |
+| a built image | the source tree has the fix | `docker run --entrypoint sh … grep` inside the image |
+
 ## Related
 
 `kb_info` returning `link_coverage` was useful for confirming a subagent had reached the current
 build, because that field only exists in newer versions. Any field that changed recently works
 as a build fingerprint. Issue #13 tracks making this a first-class check by having `kb_info`
 report the server build identity directly, which would collapse all of the above into one call.
+
+`mutation-checking-a-test` — a green suite proves nothing if the tests cannot fail.
+`shipping-through-ci` — the commit-versus-PR version of the same mistake.

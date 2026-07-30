@@ -101,3 +101,9 @@ blocks that specified an artefact with no consumer, were faithfully transcribed,
 review because the code did match the spec. If you are writing a plan, name the consumer for each
 new artefact in the plan itself — it is far cheaper than discovering it after several subagents
 have built on top.
+
+## Related
+
+`mutation-checking-a-test` — a test whose subject has no consumer often cannot fail either, so the
+two checks catch the same defect from opposite ends.
+`verifying-a-reload` — the consumer may exist and still be running an older copy of it.

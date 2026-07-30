@@ -1287,3 +1287,39 @@ def test_the_skills_name_the_report_to_mark_it_independent(skill):
         "the filename alone does not say the priors went unread; without the "
         "sentence a reader assumes this report built on them"
     )
+
+
+def test_ci_ignores_only_paths_no_test_reads():
+    """A `paths-ignore` entry covering a path the suite asserts against would
+    stop verifying it, silently and only for changes to that path.
+
+    The list has to stay narrow because `test` reads far more of the tree than
+    its name suggests -- NOTICE, README.md, three files under docs/, the
+    Dockerfile, the Makefile, sources.lock.yml and everything under plugins/.
+    Enumerating the safe paths by hand is how that drifts, so this compares the
+    ignore patterns against every repo-relative path literal in tests/ and fails
+    on an overlap. Adding a test that reads an ignored path is then a failure
+    here rather than a check that quietly stopped running.
+    """
+    workflow = yaml.safe_load(Path(".github/workflows/ci.yml").read_text())
+    # YAML 1.1 reads a bare `on:` as the boolean True, so the trigger block is
+    # not under the key it is written as.
+    triggers = workflow.get("on") or workflow[True]
+    patterns = triggers["pull_request"]["paths-ignore"]
+    assert patterns, "no paths-ignore to check"
+
+    literals = set()
+    for source in Path("tests").glob("*.py"):
+        for match in re.finditer(r'"((?:[\w.-]+/)+[\w.-]+)"', source.read_text()):
+            candidate = match.group(1)
+            if Path(candidate).exists():
+                literals.add(candidate)
+    assert literals, "found no path literals, so this test would pass vacuously"
+
+    for pattern in patterns:
+        prefix = pattern.removesuffix("/**").removesuffix("/*")
+        hit = sorted(p for p in literals if p == prefix or p.startswith(f"{prefix}/"))
+        assert not hit, (
+            f"ci.yml ignores {pattern!r} but the suite reads {hit} -- a change to "
+            "those files would skip the tests that assert on them"
+        )
