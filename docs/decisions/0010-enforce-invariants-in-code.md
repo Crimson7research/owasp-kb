@@ -41,17 +41,20 @@ into a report. It is the single point every assessment must pass through, and it
 raises `RosterError` rather than warning:
 
 - **An untraced claim is rejected.** `CLAIMS_NEEDING_AN_ADVERSARY` maps `GAP` to
-  `owasp-finding-verifier` and `N/A (verified)` to `owasp-exemption-refuter`. A
+  `owasp-finding-verifier`, `N/A (verified)` to `owasp-exemption-refuter`, and
+  `INSUFFICIENT EVIDENCE (gap refuted)` back to `owasp-finding-verifier` — a
+  verifier's refutation is itself a claim that must carry its own check (#64). A
   verdict asserting that someone checked something must carry that check.
-  `GAP (unconfirmed)` and `N/A (unverified)` are the honest ways past it and
-  both land in `needs_attention`; `require_verification=False` is the deliberate
-  way past it, and the response reports `verification_required: false` so the
-  choice is visible.
+  `GAP (unconfirmed)`, `N/A (unverified)` and plain `INSUFFICIENT EVIDENCE` are
+  the honest ways past it and land in `needs_attention`; `require_verification=False`
+  is the deliberate way past it, and the response reports `verification_required:
+  false` so the choice is visible.
 - **A finding citing an excluded prior assessment is rejected** — see ADR
   [0011](0011-prior-assessments-excluded.md).
 - **A `GAP` with no file and line is rejected.** A gap with no location reaches
-  the report pointing at nothing. (`N/A` and `INSUFFICIENT EVIDENCE` have no
-  location by design.)
+  the report pointing at nothing. (`N/A` and a plain `INSUFFICIENT EVIDENCE` have
+  no location by design; `INSUFFICIENT EVIDENCE (gap refuted)` may carry one —
+  the location of the mitigation that defeated the claim.)
 - **An incomplete roster is rejected, or completed.** A chapter with no
   applicability state fails outright. A finding citing a requirement outside the
   assessed set fails — scope and findings disagreeing is an error, not something
@@ -93,7 +96,7 @@ own reasoning, where no assembly-point check can see:
 
 - **The report can no longer look complete when it is not.** The counts come
   from the tool and sum to the total, so the skill reports a fact rather than
-  making a claim. The three uncertain verdicts are the point of the design, and
+  making a claim. The four uncertain verdicts are the point of the design, and
   they are surfaced in `needs_attention` rather than being absorbed into
   confident ones.
 - **This catches what reaches the report, not what an agent read.** It does not

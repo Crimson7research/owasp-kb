@@ -46,7 +46,7 @@ verdicts into a checked roster:
 | `cwe_get` | Look up one CWE weakness or category by id — name, abstraction, status, description. Call it before citing an id OWASP's mapping does not carry; an id that is not in the catalogue is an error, not an empty result. |
 | `cwe_search` | Search the CWE catalogue by describing a defect in your own words, for when you know what the weakness is but not which CWE names it. OWASP's mapping is silent for 141 of 345 requirements. |
 | `cwe_related` | Parents, peers, or a category's members for a CWE id — and with `ancestors=True`, the whole `ChildOf` chain with each node's abstraction, for comparing a self-chosen id against the mapped one. |
-| `owasp_roster` | Assemble an assessment's verdicts into a complete, checked roster — every requirement lands in exactly one of six verdicts, and a claim of a checked outcome (a `GAP` or a verified `N/A`) is rejected without its adversary's trace. Call this at the end of an assessment instead of tallying by hand. |
+| `owasp_roster` | Assemble an assessment's verdicts into a complete, checked roster — every requirement lands in exactly one of seven verdicts, and a claim of a checked outcome (a `GAP`, a verified `N/A`, or a refuted gap) is rejected without its adversary's trace. Call this at the end of an assessment instead of tallying by hand. |
 
 Full argument semantics, return shapes, error cases, and worked examples are in
 [docs/tools.md](docs/tools.md).

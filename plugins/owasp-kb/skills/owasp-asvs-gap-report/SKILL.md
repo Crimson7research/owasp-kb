@@ -124,6 +124,15 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    resubmission — getting a verdict right stays cheap instead of becoming something to
    avoid. Do not rewrite the file.
 
+   **A verifier that returns `refuted` still produces a line.** Its verdict is
+   `INSUFFICIENT EVIDENCE (gap refuted)`, its `trace` is the verifier's `mitigations_present`
+   and `mitigation_location`, and its `file`/`line` are that location. Dropping the line re-files
+   the requirement as though no finder ever looked at it. If the verifier named no location,
+   record `mitigations_present` alone as the `trace` — the roster requires a trace, not a
+   location, and recording plain `INSUFFICIENT EVIDENCE` instead, for want of one, lands in
+   the verdict that also means nobody looked: it carries a `finding_id`, so it never appears
+   in `unassessed`, is not counted in `unverified`, and leaves `verification_complete` true.
+
 7. **Assemble with `owasp_roster`, passing `session=$CLAUDE_CODE_SESSION_ID`** so it reads
    what you accumulated. Pass your `chapter_states` and any findings not already on disk —
    including each orchestrator's `not_applicable` entries — those are findings with an
@@ -252,7 +261,7 @@ Grouped by chapter, with a per-chapter count of met / gap / not applicable — t
 client-readable artefact — plus the full table: requirement id, level, verdict, evidence,
 CWE, remediation.
 
-Every requirement appears exactly once, in one of six states. Do not collapse the three
+Every requirement appears exactly once, in one of seven states. Do not collapse the four
 uncertain ones into `MET` or `GAP`; carrying them through is the point:
 
 | Verdict | Meaning |
@@ -263,6 +272,7 @@ uncertain ones into `MET` or `GAP`; carrying them through is the point:
 | `N/A (verified)` | Chapter **or requirement** exempt, and a refuter searched and returned `exemption_holds` |
 | `N/A (unverified)` | Chapter **or requirement** exempt, refutation inconclusive |
 | `INSUFFICIENT EVIDENCE` | Could not be determined |
+| `INSUFFICIENT EVIDENCE (gap refuted)` | A gap was reported and a verifier disproved it; nothing positive was established about the control |
 
 Every `GAP` carries a remediation citation — the finder's mapped guidance document at minimum,
 a precise `doc_key#anchor` with a `remediation_quote` where the verifier navigated to and read a
@@ -499,10 +509,14 @@ a structural change will plan wrong.
 
 ### Findings a verifier refuted
 
-These get a section too, and they are among the most useful entries in the report. They are
-recorded `INSUFFICIENT EVIDENCE` rather than `MET`: refuting the reported defect is not the same as
-establishing the control is adequate, and nobody produced that finding. Their Recommendation slot
-becomes *what would need to be assessed to reach `MET`*.
+These get a section too, and they are among the most useful entries. Record them
+`INSUFFICIENT EVIDENCE (gap refuted)`, never `MET`: refuting the reported defect is not the same
+as establishing the control is adequate, and nobody produced that finding.
+
+The verifier returns `mitigations_present` and `mitigation_location` on this branch. Write both
+into the finding's `trace` and put the mitigation's `file` and `line` on the finding — the roster
+rejects this verdict without a trace, because a verdict nothing checked is a label anyone can
+apply. Their Recommendation slot becomes *what would need to be assessed to reach `MET`*.
 
 ## Rules
 

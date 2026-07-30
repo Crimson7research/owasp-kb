@@ -191,8 +191,11 @@ def test_a_confirmed_finding_is_a_gap():
     assert resolve_finding(["confirmed"]) == "GAP"
 
 
-def test_a_refuted_finding_is_dropped():
-    assert resolve_finding(["refuted"]) == "DROPPED"
+def test_a_refuted_finding_is_insufficient_evidence_gap_refuted():
+    """A refutation disproves the reported defect; it does not establish the
+    control is adequate, so it resolves to `INSUFFICIENT EVIDENCE (gap
+    refuted)` -- not a dropped line and not `MET`."""
+    assert resolve_finding(["refuted"]) == "INSUFFICIENT EVIDENCE (gap refuted)"
 
 
 def test_finding_unclear_once_escalates():
@@ -206,7 +209,7 @@ def test_finding_unclear_twice_is_unconfirmed():
 def test_a_refutation_beats_a_confirmation_for_findings():
     """A false positive in a client deliverable costs more than a false
     negative, which is recoverable."""
-    assert resolve_finding(["confirmed", "refuted"]) == "DROPPED"
+    assert resolve_finding(["confirmed", "refuted"]) == "INSUFFICIENT EVIDENCE (gap refuted)"
 
 
 def _f(req_id, chapter, section, verdict="GAP", **kw):
@@ -1249,3 +1252,132 @@ def test_a_requirement_nobody_looked_at_is_not_the_same_as_undeterminable():
     assert silent["counts"]["INSUFFICIENT EVIDENCE"] == 1
     assert silent["unassessed"] == ["V6.2.1"], "nobody looked, and the id is what to dispatch"
     assert silent["verification_complete"] is False
+
+
+# -- a refuted gap is not "nobody looked" (#64) ----------------------------
+
+
+def test_a_refuted_gap_is_accepted_with_the_verifiers_trace():
+    """A verifier disproved a reported gap. That is a determined outcome, and it
+    is not MET: refuting the reported defect does not establish the control is
+    adequate."""
+    roster = build_roster(
+        requirements=REQS,
+        findings=[
+            _f(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                verdict="INSUFFICIENT EVIDENCE (gap refuted)",
+                file="src/net/connection_handler.c",
+                line=212,
+                trace="teardown clears the staging buffer at connection_handler.c:212",
+            )
+        ],
+        chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+    )
+    assert roster["counts"]["INSUFFICIENT EVIDENCE (gap refuted)"] == 1
+
+
+def test_a_refuted_gap_without_a_trace_is_rejected():
+    """The verdict asserts a verifier ran. Without the trace it is a label
+    anyone can apply, which is the reason a reason-field was not the design."""
+    with pytest.raises(RosterError, match="owasp-finding-verifier"):
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", verdict="INSUFFICIENT EVIDENCE (gap refuted)")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+
+
+def test_the_refuted_gap_rejection_offers_the_plain_verdict_as_the_way_out():
+    """Its fallback is plain INSUFFICIENT EVIDENCE -- no adversary was involved.
+    Offering 'GAP (unconfirmed)' here, as the hardcoded message did, tells the
+    caller to record a gap that a verifier just disproved."""
+    with pytest.raises(RosterError) as excinfo:
+        build_roster(
+            requirements=REQS,
+            findings=[_f("V6.2.1", "V6", "V6.2", verdict="INSUFFICIENT EVIDENCE (gap refuted)")],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+        )
+    message = str(excinfo.value)
+    assert "V6.2.1" in message
+    assert "owasp-finding-verifier" in message
+    assert "'INSUFFICIENT EVIDENCE'" in message
+    assert "GAP (unconfirmed)" not in message
+
+
+def test_every_adversary_fallback_is_a_real_verdict():
+    """A fallback the roster would itself reject sends the caller in a circle."""
+    for adversary, fallback in CLAIMS_NEEDING_AN_ADVERSARY.values():
+        assert adversary.startswith("owasp-")
+        assert fallback in VERDICTS
+        assert fallback not in CLAIMS_NEEDING_AN_ADVERSARY, (
+            f"{fallback!r} itself needs an adversary; recording it as the way out "
+            "sends the caller right back through this same check"
+        )
+
+
+def test_a_refuted_gap_surfaces_for_attention_but_does_not_gate_the_report():
+    """It is settled -- a verifier ran and returned -- so it is not outstanding
+    work. But nobody made a positive statement about the control, so it must not
+    read as a resolved requirement either."""
+    roster = _roster(
+        [
+            _f(
+                "V6.2.1",
+                "V6",
+                "V6.2",
+                verdict="INSUFFICIENT EVIDENCE (gap refuted)",
+                trace="teardown clears the buffer at connection_handler.c:212",
+            ),
+            _f("V6.2.2", "V6", "V6.2", verdict="MET", evidence="present"),
+            _f("V7.1.1", "V7", "V7.1", verdict="MET", evidence="present"),
+        ]
+    )
+    assert "V6.2.1" in {e["req_id"] for e in roster["needs_attention"]}
+    assert roster["unassessed"] == []
+    assert roster["verification_complete"] is True
+    assert roster["by_chapter"]["V6"]["INSUFFICIENT EVIDENCE (gap refuted)"] == 1
+
+
+def test_the_three_states_of_not_knowing_are_distinguishable():
+    """#64: 32 of 253 requirements sat in one verdict meaning two things. Three
+    facts, three states -- nobody looked, a finder could not tell, a verifier
+    refuted the reported gap."""
+    roster = _roster(
+        [
+            _f("V6.2.2", "V6", "V6.2", verdict="INSUFFICIENT EVIDENCE", evidence="could not tell"),
+            _f(
+                "V7.1.1",
+                "V7",
+                "V7.1",
+                verdict="INSUFFICIENT EVIDENCE (gap refuted)",
+                trace="input is length-checked at parser.c:88",
+            ),
+        ]
+    )
+    assert roster["counts"]["INSUFFICIENT EVIDENCE"] == 2, "V6.2.2 plus nobody-looked V6.2.1"
+    assert roster["counts"]["INSUFFICIENT EVIDENCE (gap refuted)"] == 1
+    assert roster["unassessed"] == ["V6.2.1"], "only the one no finder reported on"
+
+
+def test_a_refuted_gap_citing_a_prior_assessment_is_rejected():
+    """Unlike a plain INSUFFICIENT EVIDENCE, this verdict asserts that a specific
+    mitigation exists at a specific place -- exactly the conclusion a prior
+    report could hand it. It stays inside the exclusion scan (ADR 0011)."""
+    with pytest.raises(RosterError, match="excluded"):
+        build_roster(
+            requirements=REQS,
+            findings=[
+                _f(
+                    "V6.2.1",
+                    "V6",
+                    "V6.2",
+                    verdict="INSUFFICIENT EVIDENCE (gap refuted)",
+                    trace=f"already dismissed in {PRIOR}",
+                )
+            ],
+            chapter_states={"V6": "APPLIES", "V7": "N/A (verified)"},
+            excluded=[PRIOR],
+        )

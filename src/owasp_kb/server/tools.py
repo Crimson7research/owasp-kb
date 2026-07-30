@@ -581,20 +581,26 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         not that anyone read it.
 
         A claim asserting a checked outcome is rejected without its adversary's
-        trace: a GAP needs owasp-finding-verifier, an 'N/A (verified)' needs
-        owasp-exemption-refuter. Record it as 'GAP (unconfirmed)' or
-        'N/A (unverified)' instead if it was not checked. Pass
+        trace: a GAP and an 'INSUFFICIENT EVIDENCE (gap refuted)' need
+        owasp-finding-verifier, an 'N/A (verified)' needs owasp-exemption-refuter.
+        Record it as 'GAP (unconfirmed)', 'N/A (unverified)' or plain
+        'INSUFFICIENT EVIDENCE' instead if it was not checked. Pass
         require_verification=False only for a deliberately quick pass.
+
+        'INSUFFICIENT EVIDENCE (gap refuted)' is for a gap a verifier disproved.
+        Refuting a reported defect does not establish the control is adequate, so
+        it is not MET -- and it is not the plain verdict either, which means a
+        finder could not tell or nobody looked.
 
         excluded lists prior assessment reports found in the target. Any finding
         citing one is rejected -- another assessment's conclusion is not evidence.
         Acknowledge such reports exist and do not open them.
 
         Returns counts, per-chapter totals, the entries needing attention
-        (INSUFFICIENT EVIDENCE, N/A (unverified), GAP (unconfirmed)) and each
-        finding's id, verdict, location and covered requirements. It does not
-        echo back the evidence you supplied. Pass detail=True for the full
-        per-requirement entry list.
+        (INSUFFICIENT EVIDENCE, INSUFFICIENT EVIDENCE (gap refuted),
+        N/A (unverified), GAP (unconfirmed)) and each finding's id, verdict,
+        location and covered requirements. It does not echo back the evidence you
+        supplied. Pass detail=True for the full per-requirement entry list.
 
         Each finding also carries cwe_corpus: the CWE ids OWASP's mapping holds
         for the requirements it covers, or [] where the mapping is silent. Report

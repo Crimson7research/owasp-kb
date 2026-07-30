@@ -1139,3 +1139,31 @@ def test_the_server_version_matches_the_plugin(tools):
 
     plugin = json.loads(Path("plugins/owasp-kb/.claude-plugin/plugin.json").read_text())
     assert tools["kb_info"]()["server_version"] == plugin["version"]
+
+
+def test_roster_tool_accepts_a_refuted_gap(tools):
+    """The verdict has to survive the MCP boundary, not just build_roster."""
+    result = tools["owasp_roster"](
+        pack="asvs",
+        chapter_states={"V1": "APPLIES", "V6": "APPLIES"},
+        findings=[
+            {
+                "req_id": "V1.1.1",
+                "chapter": "V1",
+                "section": "V1.1",
+                "verdict": "INSUFFICIENT EVIDENCE (gap refuted)",
+                "evidence": "reported gap disproved",
+                "file": "src/net/handler.c",
+                "line": 212,
+                "trace": "teardown clears the staging buffer at handler.c:212",
+            }
+        ],
+    )
+    assert "error" not in result
+    assert result["counts"]["INSUFFICIENT EVIDENCE (gap refuted)"] == 1
+    assert "V1.1.1" in {e["req_id"] for e in result["needs_attention"]}
+
+
+def test_roster_tool_description_names_the_refuted_gap_verdict(tools):
+    """The docstring is the only description an agent sees before calling it."""
+    assert "INSUFFICIENT EVIDENCE (gap refuted)" in tools["owasp_roster"].__doc__

@@ -104,8 +104,23 @@ What earns `unclear` is being unable to point at anything — not being unable t
 Return it when you cannot locate the defect in the code at all, whatever your instinct says: that
 usually means the finding is weaker than it looked.
 
-If you refute it, say precisely which mitigation defeats the claim and where it is. A
-refuted finding is recorded, not discarded.
+If you refute it, the refutation is the deliverable, and it has a shape:
+
+```json
+{"verdict": "refuted",
+ "mitigations_present": "connection teardown clears the staging buffer, so the credential does not survive",
+ "mitigation_location": "src/net/connection_handler.c:212"}
+```
+
+`mitigations_present` is near-empty on a confirmation (`"none; no rate limit"`); on a refutation
+it is the substance — precisely which mitigation defeats the claim. `mitigation_location` is the
+`file:line` where that mitigation lives, and it is **required** on this branch.
+
+Both have a named consumer. Whoever assembles the assessment records the finding as
+`INSUFFICIENT EVIDENCE (gap refuted)` and writes your mitigation and its location into the
+finding's `trace`; `owasp_roster` rejects that verdict without one. A refuted finding is
+recorded, not discarded — refuting the reported defect is not the same as establishing the
+control is adequate, so it is never `MET`.
 
 The `REPORT COMPLETE` line goes after the JSON block, on its own line. Keep the JSON
 itself parseable — the sentinel is not part of it.

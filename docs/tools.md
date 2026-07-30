@@ -469,7 +469,7 @@ owasp_roster(pack: str = "asvs", chapter_states: dict | None = None,
 
 Assembles the verdicts an assessment produced into a complete, checked
 roster. Call this at the end of an assessment instead of tallying by hand:
-every requirement in scope lands in exactly one of six verdicts, and one you
+every requirement in scope lands in exactly one of seven verdicts, and one you
 never reported a finding for becomes `INSUFFICIENT EVIDENCE` rather than
 silently vanishing. Unlike the other nine tools, it does not read the
 knowledge base for content — it takes the verdicts the caller already
@@ -481,7 +481,7 @@ wraps `core/roster.build_roster`, not a method on `Kb`.
   an N/A verdict (`"N/A (verified)"` / `"N/A (unverified)"`). A chapter with
   no entry is an error — see below.
 - `findings` — a list of dicts, each with `req_id`, `chapter`, `section`,
-  `verdict` (one of the six in `VERDICTS`), `evidence`, and optionally
+  `verdict` (one of the seven in `VERDICTS`), `evidence`, and optionally
   `file`, `line`, `cwe`, `remediation`, `trace`. Findings that share a
   `(file, line, cwe, verdict)` key are merged into one entry that covers every
   requirement any of them named — dropping the second would silently cost a
@@ -493,12 +493,13 @@ wraps `core/roster.build_roster`, not a method on `Kb`.
   conclusion they never drew.
 - `level` — same cumulative ASVS level filter as `owasp_checklist`, applied to
   the scope the roster is checked against.
-- `require_verification` — default `True`. A `GAP` or an `N/A (verified)`
-  asserts a checked outcome; without a `trace` from that check's adversary
-  (`owasp-finding-verifier` for a `GAP`, `owasp-exemption-refuter` for an
-  `N/A (verified)`) the whole call is rejected. Record `GAP (unconfirmed)` or
-  `N/A (unverified)` instead when the check did not happen — those are the
-  honest way past this, not a workaround. Pass `False` only for a
+- `require_verification` — default `True`. A `GAP`, an `N/A (verified)` or an
+  `INSUFFICIENT EVIDENCE (gap refuted)` asserts a checked outcome; without a
+  `trace` from that check's adversary (`owasp-finding-verifier` for the first
+  and the last, `owasp-exemption-refuter` for an `N/A (verified)`) the whole
+  call is rejected. Record `GAP (unconfirmed)`, `N/A (unverified)` or plain
+  `INSUFFICIENT EVIDENCE` instead when the check did not happen — those are
+  the honest way past this, not a workaround. Pass `False` only for a
   deliberately quick, unverified pass; `verification_required: false` then
   appears in the response so a waived roster cannot look identical to a
   verified one.
@@ -534,7 +535,8 @@ caller supplied are never echoed back: on a full assessment, echoing them was
 measured at 72% of a 109,038-character response. `needs_attention` lists the
 full entry (`req_id`, `chapter`, `section`, `level`, `verdict`, `finding_id`)
 for every requirement landing on an `UNCERTAIN_VERDICTS` state
-(`INSUFFICIENT EVIDENCE`, `N/A (unverified)`, `GAP (unconfirmed)`) — the ones
+(`INSUFFICIENT EVIDENCE`, `INSUFFICIENT EVIDENCE (gap refuted)`,
+`N/A (unverified)`, `GAP (unconfirmed)`) — the ones
 a reader needs to look at regardless of `detail`. Pass `detail=True` for the
 full per-requirement `entries` list instead of just chapter totals.
 
@@ -555,9 +557,9 @@ messages, captured by calling `build_roster` directly:
   ```
   no applicability state for chapter(s) V2; every chapter must be APPLIES or an N/A state
   ```
-- A finding's `verdict` is not one of the six in `VERDICTS`:
+- A finding's `verdict` is not one of the seven in `VERDICTS`:
   ```
-  unknown verdict 'MAYBE'; expected one of MET, GAP, N/A (verified), N/A (unverified), INSUFFICIENT EVIDENCE, GAP (unconfirmed)
+  unknown verdict 'MAYBE'; expected one of MET, GAP, N/A (verified), N/A (unverified), INSUFFICIENT EVIDENCE, INSUFFICIENT EVIDENCE (gap refuted), GAP (unconfirmed)
   ```
 - A `GAP` (or `GAP (unconfirmed)`) with no `file`/`line` — a gap pointing
   nowhere is unactionable:
@@ -573,14 +575,22 @@ messages, captured by calling `build_roster` directly:
   ```
   1 requirement(s) cite an excluded prior assessment (V6.2.1 cites reports/prior-assessment.md). A prior report is someone else's conclusion, not evidence. Re-derive the finding from source, or drop it.
   ```
-- `require_verification=True` (the default) and a `GAP` or `N/A (verified)`
-  carries no `trace` — grouped by which adversary is missing:
+- `require_verification=True` (the default) and a `GAP`, an `N/A (verified)`,
+  or an `INSUFFICIENT EVIDENCE (gap refuted)` carries no `trace` — grouped by
+  which adversary is missing, listing only the fallbacks for the verdicts
+  actually present:
   ```
-  1 requirement(s) assert a checked outcome with no trace. Dispatch owasp-finding-verifier for V6.2.1, or record them as 'GAP (unconfirmed)' or 'N/A (unverified)' to mark them unverified.
+  1 requirement(s) assert a checked outcome with no trace. Dispatch owasp-finding-verifier for V6.2.1, or record them as 'GAP (unconfirmed)' to mark them unverified.
   ```
   and, for an unverified exemption:
   ```
-  1 requirement(s) assert a checked outcome with no trace. Dispatch owasp-exemption-refuter for V6.2.1, or record them as 'GAP (unconfirmed)' or 'N/A (unverified)' to mark them unverified.
+  1 requirement(s) assert a checked outcome with no trace. Dispatch owasp-exemption-refuter for V6.2.1, or record them as 'N/A (unverified)' to mark them unverified.
+  ```
+  and, for a refuted gap with no verifier — the adversary is the same as a
+  plain `GAP`'s, but the fallback is the plain verdict, since no adversary was
+  involved:
+  ```
+  1 requirement(s) assert a checked outcome with no trace. Dispatch owasp-finding-verifier for V6.2.1, or record them as 'INSUFFICIENT EVIDENCE' to mark them unverified.
   ```
 
 **Worked example:**

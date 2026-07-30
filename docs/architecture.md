@@ -274,7 +274,7 @@ one chapter's problem instead of seventeen.
 | `owasp-chapter-orchestrator` | sonnet | `ToolSearch, Task, Read, Grep, mcp__…__*` | one chapter, the level, the inventory | that chapter's verdicts |
 | `owasp-requirement-finder` | haiku | `ToolSearch, Read, Grep, Glob, mcp__…__*` | one requirement's text, the relevant inventory slice | `MET`, `GAP` with file and line, or `INSUFFICIENT EVIDENCE` |
 | `owasp-exemption-refuter` | sonnet | `Read, Grep, Glob` | the exemption *claim* only | `exemption_refuted` / `exemption_holds` / `unclear`, always with `searched` |
-| `owasp-finding-verifier` | sonnet | `ToolSearch, Read, Grep, Glob, mcp__…__*` | the claim and its location | `confirmed` / `refuted` / `unclear`, plus source→sink trace, CWE and remediation |
+| `owasp-finding-verifier` | sonnet | `ToolSearch, Read, Grep, Glob, mcp__…__*` | the claim and its location | `confirmed` / `refuted` / `unclear`, plus source→sink trace, CWE and remediation; a `refuted` verdict carries `mitigations_present` and `mitigation_location` instead |
 
 The `tools:` line is the enforcement mechanism, not documentation of intent —
 see ADR [0009](decisions/0009-agent-definitions-over-skill-prose.md). Four
@@ -355,7 +355,7 @@ Two guards exist where code cannot reach into a subagent:
 
 ### The verdict model
 
-`owasp_roster` places every requirement in exactly one of six verdicts
+`owasp_roster` places every requirement in exactly one of seven verdicts
 (`VERDICTS` in `core/roster.py`):
 
 | Verdict | Meaning | Adversary required |
@@ -366,12 +366,21 @@ Two guards exist where code cannot reach into a subagent:
 | `N/A (verified)` | exempt, and a refuter searched and returned `exemption_holds` | **`owasp-exemption-refuter`** trace |
 | `N/A (unverified)` | exempt, refutation inconclusive | — (lands in `needs_attention`) |
 | `INSUFFICIENT EVIDENCE` | could not be determined | — (lands in `needs_attention`) |
+| `INSUFFICIENT EVIDENCE (gap refuted)` | reported gap disproved by a verifier | **`owasp-finding-verifier`** trace |
 
 The rule generalises as `CLAIMS_NEEDING_AN_ADVERSARY`: **a verdict that asserts
-someone checked something must carry that check.** `GAP (unconfirmed)` and
-`N/A (unverified)` are the honest ways past it, and both surface in
-`needs_attention` rather than reading as settled. `require_verification=False`
+someone checked something must carry that check.** `GAP (unconfirmed)`,
+`N/A (unverified)` and plain `INSUFFICIENT EVIDENCE` are the honest ways past
+it, and all three surface in `needs_attention` rather than reading as settled.
+`require_verification=False`
 is the deliberate way past it, and the response says so.
+
+The map carries each verdict's fallback alongside its adversary, so the error
+names the honest verdict to record instead — `GAP (unconfirmed)` for a `GAP`,
+`N/A (unverified)` for a verified N/A, and plain `INSUFFICIENT EVIDENCE` for a
+refuted gap. That last one is the point of #64: a refuted gap is neither `MET`
+nor "nobody looked", and 32 of 253 requirements sat in the wrong verdict because
+there was no third state.
 
 Resolution is deterministic, in code rather than prose. One refutation outweighs
 any number of confirmations — finding the exempted construct is positive

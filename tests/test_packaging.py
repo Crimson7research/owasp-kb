@@ -398,6 +398,29 @@ def test_verifier_must_produce_a_trace():
     assert "source" in body.lower() and "sink" in body.lower()
 
 
+def test_the_verifier_gives_its_refutation_a_shape():
+    """A refuted gap now needs a trace at assembly, and 'say precisely which
+    mitigation defeats the claim' was prose with no field to put it in. Assert
+    the JSON keys, not the words: the prose below the block names both fields,
+    so a proximity check passes against an example a key was dropped from --
+    the instruction-with-no-consumer rot this exists to catch. See #64."""
+    _, body = _agent("owasp-finding-verifier")
+    start = body.index('"verdict": "refuted"')
+    block = body[start : body.index("```", start)]
+    assert '"mitigations_present":' in block
+    assert '"mitigation_location":' in block
+
+
+def test_the_verifier_names_the_verdict_its_refutation_becomes():
+    """The seam #25 burned: two internally consistent vocabularies with nothing
+    translating between them."""
+    from owasp_kb.core.roster import VERDICTS
+
+    _, body = _agent("owasp-finding-verifier")
+    assert "INSUFFICIENT EVIDENCE (gap refuted)" in body
+    assert "INSUFFICIENT EVIDENCE (gap refuted)" in VERDICTS
+
+
 def test_the_finder_attaches_the_guidance_edge():
     """0 of 72 unverified gaps in a real report carried any remediation citation,
     because the verifier is the role that produces one. guidance coverage is
@@ -442,11 +465,38 @@ def test_verify_skill_treats_an_exemption_as_a_refutable_claim():
     assert "refut" in body
 
 
-def test_verify_skill_documents_the_uncertain_verdicts():
-    """A report that cannot say 'I could not determine this' says PASS instead."""
-    body = (SKILLS_DIR / "owasp-asvs-verify" / "SKILL.md").read_text()
-    for verdict in ("N/A (unverified)", "INSUFFICIENT EVIDENCE", "GAP (unconfirmed)"):
-        assert verdict in body
+@pytest.mark.parametrize("skill", ["owasp-asvs-verify", "owasp-asvs-gap-report"])
+def test_the_skills_document_every_uncertain_verdict(skill):
+    """A report that cannot say 'I could not determine this' says MET instead.
+    Read from the code rather than a hardcoded tuple: the next verdict added to
+    UNCERTAIN_VERDICTS must fail this until the skills document it, instead of
+    passing while the docs drift. Match the table row rather than the bare
+    string -- 'INSUFFICIENT EVIDENCE' is a substring of 'INSUFFICIENT EVIDENCE
+    (gap refuted)', so a containment check cannot tell whether the plain verdict
+    is documented at all. See #64."""
+    from owasp_kb.core.roster import UNCERTAIN_VERDICTS
+
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    for verdict in sorted(UNCERTAIN_VERDICTS):
+        assert f"| `{verdict}` |" in body, f"{skill} has no verdict-table row for {verdict!r}"
+
+
+@pytest.mark.parametrize("skill", ["owasp-asvs-verify", "owasp-asvs-gap-report"])
+def test_the_skills_record_the_trace_a_refuted_gap_needs(skill):
+    """owasp_roster rejects the verdict without a trace, so a skill that names
+    the verdict but not the trace produces a run that fails at assembly. The
+    verdict appears several times -- the table row, the recording step, the
+    detail-section rule -- so at least one of them must carry the plumbing."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    windows = [
+        body[match.start() : match.start() + 900]
+        for match in re.finditer(re.escape("INSUFFICIENT EVIDENCE (gap refuted)"), body)
+    ]
+    assert windows, f"{skill} never names the verdict"
+    assert any("trace" in w and "mitigation_location" in w for w in windows), (
+        f"{skill} names the verdict but never says to write the verifier's "
+        "mitigation and location into the finding's trace"
+    )
 
 
 @pytest.mark.parametrize("skill", ["owasp-asvs-verify", "owasp-asvs-gap-report"])
@@ -479,13 +529,6 @@ def test_gap_report_requires_a_remediation_citation_per_gap():
     body = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text().lower()
     assert "remediation" in body
     assert "#anchor" in body
-
-
-def test_gap_report_carries_the_uncertain_verdicts_through():
-    """Collapsing them into MET or GAP would hide exactly what fan-out buys."""
-    body = (SKILLS_DIR / "owasp-asvs-gap-report" / "SKILL.md").read_text()
-    for verdict in ("N/A (unverified)", "INSUFFICIENT EVIDENCE", "GAP (unconfirmed)"):
-        assert verdict in body
 
 
 def test_orchestrator_must_not_background_its_finders():

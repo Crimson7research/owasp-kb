@@ -19,13 +19,15 @@ VERDICTS = (
     "N/A (verified)",
     "N/A (unverified)",
     "INSUFFICIENT EVIDENCE",
+    "INSUFFICIENT EVIDENCE (gap refuted)",
     "GAP (unconfirmed)",
 )
 
 # A GAP or GAP (unconfirmed) asserts a specific defect; without a file and line it
-# would reach the report pointing at nothing. N/A and INSUFFICIENT EVIDENCE have no
-# location by design -- a requirement that does not apply, or was never checked,
-# points at nothing on purpose.
+# would reach the report pointing at nothing. N/A and a plain INSUFFICIENT EVIDENCE
+# have no location by design -- a requirement that does not apply, or was never
+# checked, points at nothing on purpose. A refuted gap may carry one: the location
+# of the mitigation that defeated the claim.
 GAP_VERDICTS = frozenset({"GAP", "GAP (unconfirmed)"})
 
 
@@ -135,10 +137,12 @@ def resolve_finding(verdicts: list[str]) -> str:
 
     A refutation outweighs a confirmation: a false positive in a client
     deliverable is far more costly than a false negative, which a later pass
-    can recover.
+    can recover. A refutation resolves to `INSUFFICIENT EVIDENCE (gap
+    refuted)`, not a dropped line and not `MET`: it disproves the reported
+    defect, but it does not establish that the control is adequate (#64).
     """
     if "refuted" in verdicts:
-        return "DROPPED"
+        return "INSUFFICIENT EVIDENCE (gap refuted)"
     if "confirmed" in verdicts:
         return "GAP"
     if len(verdicts) < MAX_VERIFICATION_ROUNDS:
@@ -201,15 +205,29 @@ def load_session_findings(session: str) -> list[dict]:
     return list(resolved.values())
 
 
-UNCERTAIN_VERDICTS = frozenset({"INSUFFICIENT EVIDENCE", "N/A (unverified)", "GAP (unconfirmed)"})
+UNCERTAIN_VERDICTS = frozenset(
+    {
+        "INSUFFICIENT EVIDENCE",
+        "INSUFFICIENT EVIDENCE (gap refuted)",
+        "N/A (unverified)",
+        "GAP (unconfirmed)",
+    }
+)
 
-# A verdict that asserts someone checked it must carry that check. GAP without a
+# A verdict that asserts someone checked it must carry that check, and each names
+# the honest verdict to record instead when the check did not happen. GAP without a
 # verifier shipped 172 unverified findings (#15); N/A without a refuter is the
-# bulk-justified exemption that reached 67% in the single-agent baseline (#5).
+# bulk-justified exemption that reached 67% in the single-agent baseline (#5); a
+# refuted gap without a verifier is a label for an outcome nobody produced (#64),
+# and its fallback is the plain verdict, meaning no adversary was involved.
 CLAIMS_NEEDING_AN_ADVERSARY = MappingProxyType(
     {
-        "GAP": "owasp-finding-verifier",
-        "N/A (verified)": "owasp-exemption-refuter",
+        "GAP": ("owasp-finding-verifier", "GAP (unconfirmed)"),
+        "N/A (verified)": ("owasp-exemption-refuter", "N/A (unverified)"),
+        "INSUFFICIENT EVIDENCE (gap refuted)": (
+            "owasp-finding-verifier",
+            "INSUFFICIENT EVIDENCE",
+        ),
     }
 )
 
@@ -346,23 +364,26 @@ def build_roster(
     if require_verification:
         unverified: list[tuple[str, str]] = []
         for finding in merged:
-            adversary = CLAIMS_NEEDING_AN_ADVERSARY.get(finding.verdict)
-            if adversary is None or finding.trace:
+            if finding.verdict not in CLAIMS_NEEDING_AN_ADVERSARY or finding.trace:
                 continue
-            unverified.extend((cover.req_id, adversary) for cover in finding.covers)
+            unverified.extend((cover.req_id, finding.verdict) for cover in finding.covers)
         if unverified:
             by_role: dict[str, list[str]] = {}
-            for req_id, adversary in unverified:
+            fallbacks: set[str] = set()
+            for req_id, verdict in unverified:
+                adversary, fallback = CLAIMS_NEEDING_AN_ADVERSARY[verdict]
                 by_role.setdefault(adversary, []).append(req_id)
+                fallbacks.add(fallback)
             clauses = []
             for adversary, req_ids in sorted(by_role.items()):
                 shown = ", ".join(req_ids[:5])
                 more = f" and {len(req_ids) - 5} more" if len(req_ids) > 5 else ""
                 clauses.append(f"{adversary} for {shown}{more}")
+            ways_out = ", ".join(repr(fallback) for fallback in sorted(fallbacks))
             raise RosterError(
                 f"{len(unverified)} requirement(s) assert a checked outcome with no "
                 f"trace. Dispatch {'; '.join(clauses)}, or record them as "
-                "'GAP (unconfirmed)' or 'N/A (unverified)' to mark them unverified."
+                f"{ways_out} to mark them unverified."
             )
 
     entries = []
