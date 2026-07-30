@@ -89,31 +89,65 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    truth every later agent works from, and it stops seventeen agents each rediscovering
    the routing table.
 
-3. **Triage applicability yourself.** For each of the 17 ASVS chapters, decide from the
-   inventory whether it `APPLIES` or is `EXEMPT`, with a specific reason. Do this
-   centrally rather than dispatching it — it is one judgement over seventeen items, and
-   keeping it here is what lets you produce a complete roster.
+3. **Triage applicability yourself, then dispatch both groups at once.** For each of the 17
+   ASVS chapters, decide from the inventory whether it `APPLIES` or is `EXEMPT`, with a
+   specific reason. Do this centrally rather than dispatching it — it is one judgement over
+   seventeen items, and keeping it here is what lets you produce a complete roster.
 
-   **An exemption is a claim, not a skip.** Each one goes to a refuter in step 5.
+   **An exemption is a claim, not a skip**, and its refuter goes out here, in the same breath
+   as the orchestrators. A refuter needs your triage decision and the inventory and nothing
+   else — it never depended on an orchestrator, and holding it back until every applicable
+   chapter had finished is what left a refuted exemption returning its chapter to scope with
+   nothing left to run it in.
 
-4. **Dispatch a `owasp-chapter-orchestrator` per `APPLIES` chapter**, giving it the
-   chapter id, the target level and the inventory. It pulls its own requirements and
-   dispatches a finder per applicable requirement.
+   - `APPLIES` → one `owasp-chapter-orchestrator`, carrying the chapter id, the target level,
+     the inventory and the excluded-material list.
+   - `EXEMPT` → one `owasp-exemption-refuter`, carrying the same excluded-material list. An
+     `exemption_refuted` returns that chapter to scope: it becomes an applicable chapter with
+     its own orchestrator and runs exactly like the rest — and the reversal is itself a finding,
+     worth stating in the report rather than silently re-scoped. An `exemption_holds` finishes
+     that chapter's pillar outright: write its `120_exemptions` line and its
+     `2NN_requirement_roster` section then, because every requirement in it is already settled
+     as `N/A (verified)`.
 
-   **Check every returned report ends with `REPORT COMPLETE`.** Without it the agent
-   was cut off — it exhausted its turns, or it backgrounded its own children and
-   returned early. Both produce text that reads like an answer. Discard it and
-   re-dispatch with narrower guidance, or record `INSUFFICIENT EVIDENCE`. A status
-   line is not a result.
+   **This is the last decision taken across all seventeen chapters.** After it, no chapter
+   waits for another.
 
-5. **Verify, exemptions first.**
-   - One `owasp-exemption-refuter` per `EXEMPT` chapter. A refuted exemption returns the
-     chapter to scope: go back to step 4 for it. This is a finding in its own right.
-   - One `owasp-finding-verifier` per `GAP`. It returns the source→sink trace, the CWE and
-     the remediation citation.
-   - Escalate to a **second** verifier only where the first returned `unclear`.
+4. **Run each chapter to completion on its own clock.** A chapter is a pillar, not a row
+   marched through a stage: when V6's orchestrator returns, everything below happens for V6
+   while V14's finders are still running. Seventeen chapters taken through one stage at a time
+   is what wrote all seventeen roster sections in a single minute at the end of a two-hour run.
 
-6. **Accumulate findings on disk as they are confirmed**, one JSON object per line, in
+   For each chapter, as its orchestrator returns — and if several return in the same batch, take
+   them one at a time, writing each chapter's section as you read its result rather than after
+   reading all of them:
+
+   - **Check the report ends with `REPORT COMPLETE`.** Without it the agent was cut off — it
+     exhausted its turns, or it backgrounded its own children and returned early. Both produce
+     text that reads like an answer. Discard it and re-dispatch with narrower guidance, or
+     record `INSUFFICIENT EVIDENCE`. A status line is not a result.
+   - **Dispatch one `owasp-finding-verifier` per `GAP` in that chapter — you dispatch it, not
+     the orchestrator.** It returns the source→sink trace, the CWE and the remediation
+     citation. Independence here is structural rather than instructed: you hold only the
+     orchestrator's condensed JSON — `req_id`, `verdict`, `evidence`, `file`, `line` — so a
+     finder's argument cannot reach the verifier through you. The orchestrator does hold the
+     finder's full text, so handing it this dispatch would trade the guarantee for a promise.
+   - **Escalate to a second verifier only where the first returned `unclear`.** That
+     escalation belongs to this chapter, not to a later sweep.
+   - **Append that chapter's findings to disk as each verifier returns**, per the paragraphs
+     below.
+   - **Write that chapter's `2NN_requirement_roster` section once its verifiers have
+     returned — immediately, if the orchestrator reported no gaps.** Its verdicts are settled at that point
+     and not before: on one run 62 gaps were reported and 32 of them refuted, so a section
+     written when the orchestrator returned would have been wrong for more than half its gap
+     rows.
+
+   Each chapter releases its own small batch of verifiers as it becomes ready, rather than every
+   chapter releasing together. The cap is `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` — 20 per
+   session — either way; what this avoids is the burst that had seventeen dispatches refused in
+   one run.
+
+   **Accumulate findings on disk as they are confirmed**, one JSON object per line, in
    `~/.claude/owasp-kb/sessions/$CLAUDE_CODE_SESSION_ID/findings.jsonl`. Append each
    finding when its verifier returns rather than holding them all in context: a full L2
    submission is ~61,000 characters, of which `evidence` alone is 47%, and re-sending it
@@ -133,7 +167,7 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    the verdict that also means nobody looked: it carries a `finding_id`, so it never appears
    in `unassessed`, is not counted in `unverified`, and leaves `verification_complete` true.
 
-7. **Assemble with `owasp_roster`, passing `session=$CLAUDE_CODE_SESSION_ID`** so it reads
+5. **Assemble with `owasp_roster`, passing `session=$CLAUDE_CODE_SESSION_ID`** so it reads
    what you accumulated. Pass your `chapter_states` and any findings not already on disk —
    including each orchestrator's `not_applicable` entries — those are findings with an
    N/A verdict, not omissions. Dropping them re-files a determined N/A as
@@ -146,7 +180,7 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    rejected, and the roster will name it.
 
 
-8. **Do not write the report while `verification_complete` is false.** The roster returns
+6. **Do not write the report while `verification_complete` is false.** The roster returns
    two different facts and they are easy to conflate: `complete` means every requirement
    carries a verdict, and `verification_complete` means every asserting claim met its
    adversary. A roster can be `complete: true` with most of its gaps unchecked — one run
@@ -165,7 +199,10 @@ the work happens in subagents so that no verdict is graded by the agent that pro
 
    Loop: dispatch what those two name, append the results, call `owasp_roster` again, and
    repeat until `verification_complete` is true. It covers both stages, so a requirement
-   nobody looked at blocks the report exactly as an unchecked gap does.
+   nobody looked at blocks the report exactly as an unchecked gap does. If any of those
+   dispatches moves a verdict in a chapter whose `2NN_requirement_roster` section is already on
+   disk, rewrite that section — unlike `findings.jsonl`, a section is a file, so correcting it
+   is an overwrite rather than an append.
 
    **A dispatch that errors is not a verdict.** If subagents fail to spawn — a concurrency
    or session limit — that is a transient failure, not a finding. Dispatch fewer at once and
@@ -177,7 +214,7 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    the Results section**, with the count and the reason. A reader cannot otherwise tell an
    unverified gap from one that was tested.
 
-9. **Cite the exact ASVS version** from `kb_info`.
+7. **Cite the exact ASVS version** from `kb_info`.
 
 ## Output
 
@@ -188,7 +225,8 @@ than `owasp_checklist(level='2')`, which already proved undeliverable. For a cli
 cost of losing it at the last step is the whole assessment.
 
 Write each section to `~/.claude/owasp-kb/sessions/<session-id>/report/` as its material becomes
-available -- a chapter roster when its orchestrator returns, a finding when its verifier finishes:
+available -- a chapter roster when that chapter's verifiers return, a finding when its verifier
+finishes:
 
 ```
 100_title.md
@@ -216,8 +254,8 @@ serial.
 |---|---|
 | `100_title` | scope is agreed — before any agent is dispatched |
 | `110_trust_boundaries` | the inventory returns |
-| `120_exemptions` | the refuters return |
-| `2NN_requirement_roster_vNN` | **that chapter's** orchestrator returns — one per chapter, not one batch |
+| `120_exemptions` | **each** refuter returns — per exempt chapter, not one batch |
+| `2NN_requirement_roster_vNN` | **that chapter's** verifiers return — or, for a chapter that stays exempt, its refuter — one per chapter, not one batch |
 | `300_findings_intro`, `400_refuted_findings_intro` | the first finding of that kind exists |
 | `3NN_finding_N`, `4NN_refuted_finding_N` | **that finding's** verifier returns |
 | `101_summary` | last — it quotes the roster's final counts, so it cannot be written until `verification_complete` |

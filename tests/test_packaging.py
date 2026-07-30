@@ -1285,14 +1285,79 @@ def test_the_skills_say_when_each_section_can_be_written(skill):
     findings at the end -- 17 of 64 minutes spent writing after verification had
     finished. The prefix decides order, so none of that had to be serial.
 
-    Emergent good behaviour does not recur unless specified; that is what #47
-    established about the § marker."""
+    The roster row named the orchestrator, whose verdicts are not settled: 62
+    gaps were reported on one run and 32 refuted, so the row asked for a section
+    that would have been wrong for half its rows. An instruction whose
+    precondition never arrives gets batched to the end, correctly. See #63."""
     body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
     assert "Can be written as soon as" in body, "no dependency table"
-    assert "that chapter's** orchestrator returns" in body, (
-        "the per-chapter case is the one that was batched"
+    assert "that chapter's** verifiers return" in body, (
+        "the roster row must wait for settled verdicts, not the orchestrator"
+    )
+    assert "**each** refuter returns" in body, (
+        "the exemptions row batched every refuter into one moment"
     )
     assert "Only the summary genuinely has to come last" in body
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_dispatch_the_refuters_at_triage(skill):
+    """A refuter needs the triage decision and the inventory, nothing else. It sat
+    inside the verification stage only because both were called verification, so a
+    refuted exemption returned its chapter to scope after every other chapter had
+    already finished. See #63.
+
+    Two checks, because they catch different regressions: the positional one below
+    only pins the *first* mention of the refuter, which catches the bullet moving
+    out of triage but not a second dispatch added back inside the chapter block; the
+    bounded-slice check after it catches that half."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    triage = body.index("Triage applicability yourself")
+    pillar = body.index("Run each chapter to completion")
+    refuter = body.index("owasp-exemption-refuter")
+    assert triage < refuter < pillar, f"{skill} dispatches the refuters outside the triage step"
+
+    normalised = " ".join(body.split())
+    start = normalised.index("Run each chapter to completion")
+    block = normalised[start : normalised.index("5. **Assemble with", start)]
+    assert "owasp-exemption-refuter" not in block, (
+        f"{skill} dispatches a refuter inside the chapter block"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_main_agent_dispatches_the_verifier_not_the_orchestrator(skill):
+    """Independence is structural, not instructed: the main agent holds only the
+    orchestrator's condensed JSON, so a finder's argument cannot reach the verifier
+    through it. Pipelining changes when the verifier is dispatched, never by whom --
+    and the orchestrator, which does hold the finder's full text, is the one place
+    that dispatch must not move to. See #63."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    start = body.index("Run each chapter to completion")
+    block = body[start : body.index("5. **Assemble with", start)]
+    assert "you dispatch it, not the orchestrator" in block, (
+        f"{skill} does not say who dispatches the verifier"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_a_chapter_roster_section_waits_for_that_chapters_verifiers(skill):
+    """The whole reason the old row was unachievable: an orchestrator returns
+    pre-verification verdicts. See #63."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    start = body.index("Run each chapter to completion")
+    block = body[start : body.index("5. **Assemble with", start)]
+    assert "once its verifiers have returned" in block, (
+        f"{skill} does not tie the roster section to settled verdicts"
+    )
+
+
+def test_the_orchestrator_still_refuses_to_verify_its_own_findings():
+    """The other half of the same guarantee, in the other file. Moving the
+    verifier dispatch earlier must not move it into the orchestrator, which holds
+    every finder's full text. See #63."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    assert "You do not verify findings" in body
 
 
 @pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))

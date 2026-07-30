@@ -11,8 +11,8 @@ interruption there loses the write, and the material to redo it is spread across
 Sections are written to
 ``${CLAUDE_CONFIG_DIR:-~/.claude}/owasp-kb/sessions/<session>/report/`` as they
 become available, and merged here. The numeric prefix carries the order, so a
-chapter roster can land when its orchestrator returns rather than when its
-neighbours are ready.
+chapter roster can land when that chapter's verifiers return rather than when
+its neighbours are ready.
 
 This runs on the host rather than as an MCP tool: the server's state mount is
 read-only and the target repository is not mounted at all, so nothing inside the
