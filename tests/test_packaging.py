@@ -824,7 +824,7 @@ def test_the_repo_carries_a_cwe_license_text():
     """CWE's terms are not in the catalogue XML -- they are a separate document.
     Vendored rather than fetched at build time: a legal notice should not change
     silently between builds, and a --network none image must carry it."""
-    text = Path("LICENSE-CWE").read_text()
+    text = Path("licenses/LICENSE-CWE").read_text()
     assert "CWE" in text
     assert len(text) > 500, "a stub is not the terms"
 
@@ -1128,7 +1128,7 @@ def test_the_skills_say_an_obsolete_mapping_is_grounds_to_depart(skill):
     assert "`Obsolete` or is a Category rather than a weakness" in body
 
 
-NOTICE_FILE = Path("NOTICE")
+NOTICE_FILE = Path("licenses/NOTICE")
 LOCK_FILE = Path("sources.lock.yml")
 
 
