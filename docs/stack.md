@@ -411,6 +411,16 @@ and `get_pack` raises with the available pack names in the message. A human
 reading an empty results page knows it is empty. An agent reads `[]` as a
 finding and writes it into a report.
 
+A fifth instance settled a design question rather than a rendering one. An
+assessment's findings accumulate in a file that the roster reads; loading it
+fails closed, because a missing file read as an empty set produces a roster
+reporting every requirement as `INSUFFICIENT EVIDENCE` — a plausible-looking
+assessment result rather than a missing file. The general rule that fell out of
+it is worth carrying: **fail open when the degraded state is recognisable as
+degraded, and fail closed when it is indistinguishable from a legitimate
+result.** ADR [0012](decisions/0012-enforcement-mechanisms.md) applies it to
+three mechanisms that do not all land the same way.
+
 **Reject an uncitable result at construction, not at render time.** A
 `SearchHit` with neither `req_id` nor `doc_key` used to render as the literal
 string `None`, and an anchor without a `doc_key` as `None#password-storage`.
