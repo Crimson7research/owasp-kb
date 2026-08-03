@@ -48,10 +48,10 @@ check "$EXPECTED_MODE" "retrieval mode is $EXPECTED_MODE"
 # The licence texts, checked against the filesystem of the built image rather than
 # against the Dockerfile that was supposed to put them there.
 #
-# The Dockerfile's COPY into /opt/owasp-kb/licenses/ has only ever been verified
-# by grepping the Dockerfile text
-# (tests/test_packaging.py::test_the_dockerfile_ships_every_license_text). That
-# proves the instruction is written, not that the files arrive: a .dockerignore
+# The Dockerfile's COPY into /opt/owasp-kb/licenses/ has only ever been verified by
+# grepping the Dockerfile text
+# (tests/test_packaging.py::test_the_dockerfile_ships_every_license_text). That proves
+# the instruction is written, not that the files arrive: a .dockerignore
 # entry, a build context change or a later stage that does not inherit the layer
 # would all leave the COPY in place and the files absent. docs/licensing.md asks a
 # redistributor to carry each pack's licence text with the artifact, and CWE's
