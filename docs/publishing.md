@@ -84,7 +84,7 @@ not targets. Reread them for tone rather than for leaks.
 
 ## Judgement: obligations
 
-- **License texts ship in the image.** `LICENSE`, `LICENSE-DATA`, `NOTICE` and any per-pack terms
+- **License texts ship in the image.** `LICENSE`, `NOTICE` and one license text per pack
   belong at `/opt/owasp-kb/licenses/`. An OCI `licenses` label is metadata, not the notice a
   redistributor is asked to carry forward.
 - **Every pack's license is stated** in `docs/licensing.md`, with the trademark position for each

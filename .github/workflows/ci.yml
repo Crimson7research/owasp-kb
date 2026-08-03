@@ -1,7 +1,7 @@
 name: ci
 
 # Paths that no job can be affected by. `test` reads a surprising amount of the
-# tree -- NOTICE, README.md, docs/licensing.md, docs/stack.md, docs/kb-packs.md,
+# tree -- licenses/NOTICE, README.md, docs/licensing.md, docs/stack.md, docs/kb-packs.md,
 # the Dockerfile, the Makefile and every file under plugins/ are all asserted
 # against -- so this list is deliberately narrow and is pinned by
 # test_ci_ignores_only_paths_no_test_reads. A docs commit that touches

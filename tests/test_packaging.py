@@ -824,9 +824,110 @@ def test_the_repo_carries_a_cwe_license_text():
     """CWE's terms are not in the catalogue XML -- they are a separate document.
     Vendored rather than fetched at build time: a legal notice should not change
     silently between builds, and a --network none image must carry it."""
-    text = Path("LICENSE-CWE").read_text()
+    text = Path("licenses/LICENSE-CWE").read_text()
     assert "CWE" in text
-    assert len(text) > 500, "a stub is not the terms"
+    assert len(text) > MIN_LICENCE_BYTES, "a stub is not the terms"
+
+
+# Any real licence text is kilobytes; the shortest here is CWE's terms at ~2.6 KB.
+# The point is to reject a zero-byte or one-line placeholder that satisfies "the
+# file exists" while carrying no terms at all.
+MIN_LICENCE_BYTES = 500
+
+CC_BY_SA_TEXTS = (
+    Path("licenses/LICENSE-OWASP-ASVS"),
+    Path("licenses/LICENSE-OWASP-CHEATSHEET"),
+)
+
+
+def test_the_two_cc_by_sa_texts_are_identical():
+    """ASVS and the Cheat Sheet Series are both CC-BY-SA-4.0, so each pack's
+    licence file is a copy of one 20 KB text. Two copies of legal text is the
+    shape that drifts: one gets updated and the repository then makes two
+    different claims about the same licence, silently.
+
+    Bytes, not text -- a line-ending change is drift. Non-emptiness is asserted
+    first because two empty files are also identical, and that is the way this
+    assertion passes while proving nothing.
+
+    If this ever fails, reconcile the two files. Deleting the test is not the
+    fix; if the upstreams have genuinely relicensed apart, that is the news and
+    sources.lock.yml should say so before these files do."""
+    asvs, cheatsheets = (path.read_bytes() for path in CC_BY_SA_TEXTS)
+    assert len(asvs) > MIN_LICENCE_BYTES, f"{CC_BY_SA_TEXTS[0]} is a stub, not a licence"
+    assert asvs == cheatsheets, (
+        f"{CC_BY_SA_TEXTS[0]} and {CC_BY_SA_TEXTS[1]} have drifted apart; both "
+        "are CC-BY-SA-4.0 and must be the same text"
+    )
+
+
+LOCK_FILE = Path("sources.lock.yml")
+
+
+def _lock_packs() -> dict:
+    return yaml.safe_load(LOCK_FILE.read_text())["packs"]
+
+
+PACK_LICENCE_FILES = {
+    "asvs": Path("licenses/LICENSE-OWASP-ASVS"),
+    "cheatsheets": Path("licenses/LICENSE-OWASP-CHEATSHEET"),
+    "cwe": Path("licenses/LICENSE-CWE"),
+}
+
+# What a licence's own text says about itself, so a pack's file can be checked
+# against the SPDX id the lock declares for it rather than merely existing. The
+# markers are each absent from the other text, which is what makes a
+# transposition detectable.
+LICENCE_TEXT_MARKERS = {
+    "CC-BY-SA-4.0": "Attribution-ShareAlike 4.0 International",
+    "LicenseRef-CWE-TOU": "CWE Terms of Use",
+}
+
+
+def test_every_pack_in_the_lock_has_its_own_licence_text():
+    """sources.lock.yml declares a licence per pack. Until this branch the files
+    did not: one CC-BY-SA-4.0 text covered two packs, so a redistributor could
+    not resolve a shipped pack to the text governing it, and an upstream
+    relicensing one of the two had no file to change.
+
+    Both directions, and derived from the lock rather than from a list of three:
+    a fourth pack added without a licence text fails here, and so does a licence
+    text left behind for a pack that has been dropped.
+
+    The set-equality and size checks alone are structural: they pass on a
+    mapping with the right keys pointing at real, non-stub files even if a
+    pack's file is transposed with a different pack's. Mutating
+    PACK_LICENCE_FILES["cwe"] to point at the ASVS text -- real, well over the
+    stub threshold, just the wrong pack's terms -- passed both checks above
+    silently. So each mapped file's text is also checked against the SPDX id
+    the lock declares for its pack: the file has to identify itself as the
+    licence it claims to be, not just exist and be large enough. This cannot
+    tell asvs and cheatsheets apart from one another -- both are CC-BY-SA-4.0
+    and, per the identity test above, byte-identical, so a transposition
+    between those two specifically leaves no content difference to detect."""
+    packs = _lock_packs()
+    assert set(PACK_LICENCE_FILES) == set(packs), (
+        f"licence files cover {sorted(PACK_LICENCE_FILES)}, the lock has {sorted(packs)}"
+    )
+    for name, path in sorted(PACK_LICENCE_FILES.items()):
+        assert path.is_file(), f"pack {name!r}: {path} does not exist"
+        assert path.stat().st_size > MIN_LICENCE_BYTES, (
+            f"pack {name!r}: {path} is {path.stat().st_size} bytes, which is a "
+            "stub and not a licence"
+        )
+        licence_id = packs[name]["license"]
+        if licence_id not in LICENCE_TEXT_MARKERS:
+            raise AssertionError(
+                f"pack {name!r} declares licence {licence_id!r}, which has no "
+                "entry in LICENCE_TEXT_MARKERS; add one so its text can be "
+                "checked"
+            )
+        marker = LICENCE_TEXT_MARKERS[licence_id]
+        text = path.read_text()
+        assert marker in text, (
+            f"pack {name!r}: {path} does not contain {marker!r}, the marker "
+            f"for the {licence_id!r} the lock declares for this pack"
+        )
 
 
 def _dockerfile_targets(text: str) -> dict[str, str]:
@@ -850,14 +951,21 @@ def _dockerfile_targets(text: str) -> dict[str, str]:
     return blocks
 
 
-EXPECTED_LICENSE_NAMES = {"LICENSE", "LICENSE-DATA", "LICENSE-CWE", "NOTICE"}
+EXPECTED_LICENSE_NAMES = {
+    "LICENSE",
+    "LICENSE-OWASP-ASVS",
+    "LICENSE-OWASP-CHEATSHEET",
+    "LICENSE-CWE",
+    "NOTICE",
+}
 EXPECTED_LICENSES_LABEL = "MIT AND CC-BY-SA-4.0 AND LicenseRef-CWE-TOU"
 
 
 @pytest.mark.parametrize("target_name", ["lite", "full"])
 def test_the_dockerfile_ships_every_license_text(target_name):
     """The image shipped an OCI label and no notice. docs/licensing.md asks a
-    redistributor to keep LICENSE-DATA with the artifact; the image did not.
+    redistributor to keep each pack's licence text with the artifact; the image
+    did not.
     Checked per target, not as a whole-file substring search: the lite and
     full blocks are otherwise identical, so a whole-file search cannot tell
     whether one target's COPY or LABEL was missed entirely."""
@@ -881,10 +989,18 @@ def test_the_dockerfile_ships_every_license_text(target_name):
     tokens = copy_lines[0].split()
     assert tokens[0] == "COPY"
     assert tokens[-1] == "/opt/owasp-kb/licenses/"
-    copied_names = set(tokens[1:-1])
+    # Sources are repo-relative paths now that the texts live under licenses/,
+    # and COPY into a directory flattens them to basenames in the image.
+    sources = [Path(token) for token in tokens[1:-1]]
+    copied_names = {source.name for source in sources}
     assert copied_names == EXPECTED_LICENSE_NAMES, (
         f"{target_name}: COPY names {copied_names}, expected {EXPECTED_LICENSE_NAMES}"
     )
+    # A rename leaves the COPY pointing at a path that is gone. The names above
+    # still match, and only a docker build would notice -- which CI does not run
+    # on every change.
+    for source in sources:
+        assert source.is_file(), f"{target_name}: COPY names {source}, which is not in the tree"
 
     label_match = re.search(r'org\.opencontainers\.image\.licenses="([^"]*)"', body)
     assert label_match, f"{target_name}: no org.opencontainers.image.licenses label"
@@ -1087,8 +1203,7 @@ def test_the_skills_say_an_obsolete_mapping_is_grounds_to_depart(skill):
     assert "`Obsolete` or is a Category rather than a weakness" in body
 
 
-NOTICE_FILE = Path("NOTICE")
-LOCK_FILE = Path("sources.lock.yml")
+NOTICE_FILE = Path("licenses/NOTICE")
 
 
 def _notice_attribution_entries() -> list[str]:
@@ -1103,10 +1218,6 @@ def _notice_attribution_entries() -> list[str]:
     """
     blocks = NOTICE_FILE.read_text().split("\n\n")
     return [b for b in blocks if b.lstrip().startswith("- ")]
-
-
-def _lock_packs() -> dict:
-    return yaml.safe_load(LOCK_FILE.read_text())["packs"]
 
 
 def _upstream_marker(name: str, pack: dict) -> str:

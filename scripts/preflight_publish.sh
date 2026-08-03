@@ -31,7 +31,7 @@ SURFACES=(
     scripts/
     .claude/
     README.md
-    NOTICE
+    licenses/NOTICE
     docs/
 )
 

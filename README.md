@@ -5,8 +5,8 @@ plus MITRE's CWE catalogue, served to AI coding agents as an MCP server, with
 citations, over stdio, offline.
 
 This project is not affiliated with, endorsed by, or sponsored by the OWASP
-Foundation. See [NOTICE](NOTICE). **CWE is not an OWASP project** — it is
-MITRE's, and it is here because ASVS maps its requirements to CWE ids; see
+Foundation. See [NOTICE](licenses/NOTICE). **CWE is not an OWASP project** —
+it is MITRE's, and it is here because ASVS maps its requirements to CWE ids; see
 [docs/licensing.md](docs/licensing.md).
 
 ## Why this exists
@@ -184,8 +184,9 @@ trade-off, and why the project is Python — are recorded as ADRs in
 
 Code is MIT (see [LICENSE](LICENSE)). The ASVS and Cheat Sheet Series content,
 and the SQLite index built from it, are CC-BY-SA-4.0 (see
-[LICENSE-DATA](LICENSE-DATA)). The CWE catalogue is MITRE's, under the CWE Terms
-of Use, which must accompany redistribution (see [LICENSE-CWE](LICENSE-CWE)) —
-`CWE™` is a MITRE trademark and naming the catalogue is attribution, not
-endorsement. See [docs/licensing.md](docs/licensing.md) and [NOTICE](NOTICE) for
-what all three mean for anyone redistributing this project or its images.
+[licenses/](licenses/), one text per pack). The CWE catalogue is MITRE's, under
+the CWE Terms of Use, which must accompany redistribution (see
+[LICENSE-CWE](licenses/LICENSE-CWE)) — `CWE™` is a MITRE trademark and naming
+the catalogue is attribution, not endorsement. See
+[docs/licensing.md](docs/licensing.md) and [NOTICE](licenses/NOTICE) for what
+all three mean for anyone redistributing this project or its images.

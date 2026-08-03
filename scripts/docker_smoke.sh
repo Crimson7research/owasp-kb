@@ -48,13 +48,13 @@ check "$EXPECTED_MODE" "retrieval mode is $EXPECTED_MODE"
 # The licence texts, checked against the filesystem of the built image rather than
 # against the Dockerfile that was supposed to put them there.
 #
-# The Dockerfile's `COPY LICENSE LICENSE-DATA LICENSE-CWE NOTICE
-# /opt/owasp-kb/licenses/` has only ever been verified by grepping the Dockerfile
-# text (tests/test_packaging.py::test_the_dockerfile_ships_every_license_text).
-# That proves the instruction is written, not that the files arrive: a .dockerignore
+# The Dockerfile's COPY into /opt/owasp-kb/licenses/ has only ever been verified by
+# grepping the Dockerfile text
+# (tests/test_packaging.py::test_the_dockerfile_ships_every_license_text). That proves
+# the instruction is written, not that the files arrive: a .dockerignore
 # entry, a build context change or a later stage that does not inherit the layer
 # would all leave the COPY in place and the files absent. docs/licensing.md asks a
-# redistributor to carry LICENSE-DATA and LICENSE-CWE with the artifact, and CWE's
+# redistributor to carry each pack's licence text with the artifact, and CWE's
 # terms of use require it, so an image missing them is a licence problem and not a
 # cosmetic one.
 #
@@ -63,7 +63,8 @@ check "$EXPECTED_MODE" "retrieval mode is $EXPECTED_MODE"
 echo "  -- licence texts in the image --"
 LICENSES=(
   /opt/owasp-kb/licenses/LICENSE
-  /opt/owasp-kb/licenses/LICENSE-DATA
+  /opt/owasp-kb/licenses/LICENSE-OWASP-ASVS
+  /opt/owasp-kb/licenses/LICENSE-OWASP-CHEATSHEET
   /opt/owasp-kb/licenses/LICENSE-CWE
   /opt/owasp-kb/licenses/NOTICE
 )
