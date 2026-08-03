@@ -59,6 +59,25 @@ The mechanism has three parts:
    whole assessment must pass through, rather than asserted in a prompt that
    nothing checks.
 
+4. **A `PreToolUse` hook refuses the read itself.** Added after this ADR was
+   written, and after part 3 proved insufficient in the field. The citation check
+   catches a contaminated verdict at assembly; it cannot catch an agent that read
+   the report and then cited only source. `block_excluded_reads.py` denies a
+   `Read`, `Grep` or `Glob` that would reach a listed path, which is the only
+   point at which the text can still be stopped — filtering the output cannot
+   work, because by the time hits are stripped the agent has seen them.
+
+   The hook reads the same list, written to `sessions/<id>/excluded` (ADR
+   [0013](0013-session-state-on-disk.md)). It fails open, so an unarmed hook is
+   indistinguishable from one with nothing to block, and part 3 remains the real
+   gate. ADR [0012](0012-enforcement-mechanisms.md) covers why a hook rather than
+   an assembly-point check, and why this one fails open while other state fails
+   closed.
+
+   The three parts are different controls and all three are needed: the hook
+   stops the read, the prompt tells an agent why, and the roster rejects a
+   finding that cites one.
+
 **Rejected: declared read sets** — requiring each agent to report what it read,
 and checking that list. Rejected on cost, and more importantly because a
 self-reported read set from an agent that ignored the rule is worth very little:
@@ -87,14 +106,19 @@ so those stay in scope.
   indistinguishable from one that never opened it.
 - **The prompt wording is already known to be ambiguous, and was violated on the
   first run under these rules.** A finder grepped the excluded prior assessment
-  and quoted the hits. The prompts say *"Do not open them, grep them, or cite
+  and quoted the hits. The prompts said *"Do not open them, grep them, or cite
   them"*, and the agent appears to have read that as permitting a grep whose
-  output it then used — `grep` is not `open`. The proposed wording is broader:
-  *any tool call whose output could include text from these files is
-  forbidden.* Note what actually kept it out of the report: the orchestrator
-  noticed. That is encouraging and it is **not a control** — it is the same
+  output it then used — `grep` is not `open`. It recurred on the next run, where
+  two broad `docs/**` greps recursed into the file before the query was narrowed.
+
+  What kept it out of the report the first time was that the orchestrator
+  noticed. That was encouraging and it was **not a control** — it is the same
   disposition-based catching that made the original contamination problem
-  invisible in the first place.
+  invisible in the first place, which is why part 4 exists. The wording is now
+  broader in all five agents — *any tool call whose output could include text
+  from these files is forbidden, and a grep is not exempt because the hit was
+  not opened* — and the hook enforces it. Once armed, it fired in 36 of 145
+  subagents on the next run.
 - **The exclusion is only as good as the discovery step.** A prior assessment
   that the scope interview does not find is not excluded, and nothing downstream
   will notice. The interview asks the user directly for this reason.

@@ -52,6 +52,7 @@ index-full   Build the full index (hybrid) — depends on `model`
 test         Run unit tests
 test-quality Run the retrieval quality gate against built indexes
 lint         ruff check + ruff format --check
+plugin-digest Rerecord the plugin content digest after bumping the version
 serve        Run the MCP server against the full index, for manual stdio testing
 build-lite   Build the owasp-kb:lite image — depends on `index`
 build-full   Build the owasp-kb:full image — depends on `index-full`
@@ -135,6 +136,43 @@ Every build produces two tags per variant:
   index must appear in the tag**; a fourth pack means a fourth component.
   ADRs 0003 and 0004 quote the older two-pack form because that is what existed
   when they were written.
+
+## The plugin version is the delivery mechanism
+
+The image tag above names what is in the index. The plugin has a separate
+version in `plugins/owasp-kb/.claude-plugin/plugin.json`, and it is not
+decoration on a release: **the plugin cache is keyed on the version number**, so
+a content change shipped without a bump leaves the installed copy unreachable
+rather than merely stale.
+
+That failure is quiet in a specific and expensive way. `/plugin` reports
+"already at the latest version", `/mcp` reports a successful reconnect, and
+`/reload-plugins` reloads the old files — three green statuses, every one of
+them true about the wrong artefact. Recovery needs a manual uninstall and
+reinstall, and nothing indicates that it is necessary.
+
+It cost exactly that once: a hook fix was verified in the repository, in its
+tests and in CI, and was not the code running, because the cached copy of the
+previous version still had the defective comparison. The verification was sound
+and measured the wrong copy.
+
+So the bump is enforced rather than remembered:
+
+- `scripts/plugin_digest.py` hashes every shipped file **with its path** — a
+  renamed agent is as broken as a rewritten one, since the skills dispatch by
+  name — and records the digest against the version in
+  `plugins/owasp-kb/.claude-plugin/content.sha256`.
+- A test refuses when the two disagree, so forgetting the bump fails a test
+  rather than producing a plugin that cannot be updated.
+- `make plugin-digest` rerecords after a bump.
+
+Mutation-checked both ways: changing a plugin file without bumping is red, and
+bumping without rerecording is red.
+
+The digest ignores gitignored bytecode. Recording it over a stray `.pyc` left by
+importing a hook by path produced a digest CI could not reproduce, and the
+failure read as "plugins/ has changed since the digest was recorded" — true of
+the machine and false of the change.
 
 ## Mapping coverage
 

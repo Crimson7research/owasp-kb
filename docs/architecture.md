@@ -238,6 +238,25 @@ down a checklist. Two of the four skills (`owasp-asvs-verify`,
 enforced in `owasp_roster` (`core/roster.py`), a tool with no retrieval in it at
 all.
 
+The plugin is more than skills and agents, and the rest of it is where the
+enforcement that `owasp_roster` cannot reach lives:
+
+```
+plugins/owasp-kb/
+  skills/     4 skills; two of them drive an assessment
+  agents/     the 5 dispatched roles
+  hooks/      2 PreToolUse hooks — refuse a tool call before its output exists
+  bin/        owasp-kb-report — runs on the host, because the state mount is read-only
+  .mcp.json   the sh -c command that starts the server and pins the mount
+```
+
+An assessment's working state is not in context. It accumulates on the host
+under `${CLAUDE_CONFIG_DIR:-~/.claude}/owasp-kb/sessions/<id>/` — the exclusion
+list, the concerns list, `inventory.md`, the dispatch ledger, `findings.jsonl`
+and the report's numbered sections — mounted read-only into the container at
+`/state`. ADR [0013](decisions/0013-session-state-on-disk.md) has the contract
+and the measurements that forced it.
+
 ### Why a fan-out exists
 
 The single-agent version was measured against a real target (an ESP32 firmware
@@ -442,3 +461,41 @@ indistinguishable from one that never opened it, and on the first real run under
 these rules a finder grepped and quoted an excluded file — the orchestrator's
 own diligence kept it out of the report, which is exactly the disposition-based
 catching that the code checks exist to stop relying on.
+
+### Two gates the assembly point cannot be
+
+The roster gates anything that produces a verdict. Two failures are outside
+that, and each is a `PreToolUse` hook — the only mechanism that can refuse a
+tool call *before* its output exists. ADR
+[0012](decisions/0012-enforcement-mechanisms.md) records which mechanism suits
+which job, and which way each fails.
+
+| Hook | Refuses | Because |
+|---|---|---|
+| `block_excluded_reads.py` | a `Read`, `Grep` or `Glob` reaching an excluded prior assessment | the citation check above runs after the text has already arrived; filtering output cannot help, since stripped hits have been seen |
+| `gate_triage_on_inventory.py` | a chapter-orchestrator or exemption-refuter dispatch until every concern has a section with a body in `inventory.md` | an inventory produces facts, not verdicts, so nothing counts it — one run had four of five agents return and triaged all seventeen chapters over the hole |
+
+Both are armed by a file the skill writes into the session's state directory and
+both fail open, so a session that ran no assessment is unaffected. The reasoning
+differs for each and is not a pattern to copy: an exclusion hook failing closed
+would break unrelated sessions on a bug of its own while the roster still
+stands, whereas an inventory gate failing closed would stop the assessment
+outright.
+
+### Completeness is two questions, not one
+
+`owasp_roster` returns `verification_complete` alongside `complete`. They are
+different facts, and conflating them shipped a report with 35 of 51 gaps
+unverified. `complete` means every requirement carries a verdict — an arithmetic
+identity that says nothing about whether claims were checked.
+
+- `unverified`, counted per verdict, is what a caller dispatches adversaries for.
+- `unassessed` lists the ids nobody looked at — listed rather than counted,
+  because the ids are what a caller dispatches.
+
+`verification_complete` is false while either stage has work outstanding, so a
+requirement nobody assessed blocks the report exactly as an unchecked gap does.
+Both skills loop on it rather than treating the documented downgrade as a
+finish: `GAP (unconfirmed)` and `N/A (unverified)` are honest verdicts, but
+reaching them by giving up produced output identical to reaching them by
+checking.
