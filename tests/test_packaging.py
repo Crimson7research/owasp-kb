@@ -964,7 +964,8 @@ EXPECTED_LICENSES_LABEL = "MIT AND CC-BY-SA-4.0 AND LicenseRef-CWE-TOU"
 @pytest.mark.parametrize("target_name", ["lite", "full"])
 def test_the_dockerfile_ships_every_license_text(target_name):
     """The image shipped an OCI label and no notice. docs/licensing.md asks a
-    redistributor to keep LICENSE-DATA with the artifact; the image did not.
+    redistributor to keep each pack's licence text with the artifact; the image
+    did not.
     Checked per target, not as a whole-file substring search: the lite and
     full blocks are otherwise identical, so a whole-file search cannot tell
     whether one target's COPY or LABEL was missed entirely."""

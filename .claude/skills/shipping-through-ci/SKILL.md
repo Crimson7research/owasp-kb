@@ -40,7 +40,7 @@ git diff --name-only origin/master...HEAD | grep -vE '^(\.claude/skills/|docs/de
 ```
 
 If nothing survives the filter there is nothing to wait for; merge. The ignore list is narrow on
-purpose — `test` asserts against `NOTICE`, `README.md`, `docs/licensing.md`, `docs/stack.md`,
+purpose — `test` asserts against `licenses/NOTICE`, `README.md`, `docs/licensing.md`, `docs/stack.md`,
 `docs/kb-packs.md`, the Dockerfile, the Makefile and everything under `plugins/` — and
 `test_ci_ignores_only_paths_no_test_reads` fails if an ignored path is one the suite reads, so trust
 the list rather than reasoning about it each time.
