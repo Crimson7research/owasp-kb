@@ -787,6 +787,29 @@ def test_the_digest_covers_paths_and_not_only_contents():
         assert digest(root) != before
 
 
+def test_the_digest_ignores_local_python_bytecode():
+    """The digest must describe what ships, not what the working tree holds.
+
+    Bytecode under plugins/ is gitignored, machine-local and interpreter-version
+    dependent. This cost a red CI run: checking the inventory-gate hook against a
+    real inventory imported it by path, which left a `.pyc` beside it, the digest
+    was recorded over that file, and CI -- which has no such file -- computed a
+    different one. The failure surfaced as "plugins/ has changed since the digest
+    was recorded", which was true of the machine and false of the change."""
+    digest = _plugin_digest().digest
+
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw) / "plugin"
+        (root / "hooks").mkdir(parents=True)
+        (root / "hooks" / "gate.py").write_text("body")
+        before = digest(root)
+
+        cache = root / "hooks" / "__pycache__"
+        cache.mkdir()
+        (cache / "gate.cpython-313.pyc").write_bytes(b"\x00\x01compiled")
+        assert digest(root) == before, "a local .pyc changed the digest of what ships"
+
+
 def test_pyproject_derives_its_version_rather_than_repeating_it():
     """importlib.metadata reads install-time metadata, so an editable install
     reports a stale version after a bump until reinstalled. Deriving from the
@@ -1245,6 +1268,53 @@ def test_the_skills_arm_the_exclusion_hook(skill):
     )
 
 
+def test_the_plugin_registers_the_inventory_gate_against_a_dispatch():
+    """A hook the manifest does not register never runs, and the gate is the whole
+    point of the file: prose asking for a complete inventory is the instruction
+    class #58 replaced. Both dispatch tool names are matched -- `Task` in the
+    harness this plugin targets, `Agent` elsewhere -- because matching one leaves
+    the gate inert wherever the other is used."""
+    hooks = json.loads(PLUGIN.read_text())["hooks"]["PreToolUse"]
+    gate = [entry for entry in hooks if "gate_triage_on_inventory" in json.dumps(entry)]
+    assert len(gate) == 1, "the inventory gate is not registered exactly once"
+    matcher = gate[0]["matcher"]
+    assert "Task" in matcher and "Agent" in matcher, f"matcher {matcher!r} misses a dispatch tool"
+    assert Path("plugins/owasp-kb/hooks/gate_triage_on_inventory.py").exists()
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_arm_the_inventory_gate(skill):
+    """The concerns list arms the gate and inventory.md satisfies it. Nothing else
+    can see this stage -- owasp_roster counts verdicts and the inventory produces
+    facts -- and one run had four of five inventory agents return, then triaged all
+    seventeen chapters over the hole. See #60.
+
+    The ordering is load-bearing: a list written after the returns leaves the gate
+    inert for exactly the run it was meant to gate."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "sessions/$CLAUDE_CODE_SESSION_ID/concerns" in body, "nothing arms the gate"
+    assert "sessions/$CLAUDE_CODE_SESSION_ID/inventory.md" in body, "no artefact to satisfy it"
+    assert "before those agents go out" in body, "the list must precede the dispatches"
+    assert "no client-side surface exists in this target" in body, (
+        "the way past the gate for a concern that found nothing must be stated, or an "
+        "empty heading becomes the workaround"
+    )
+
+
+@pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
+def test_the_skills_keep_a_dispatch_ledger(skill):
+    """A run wrote this ledger unprompted, including the verifier queue -- the one
+    stage that starved in it. #47 established that an unprompted behaviour does not
+    recur, and #50 that an instruction naming an outcome without a rendered example
+    produces prose instead of the artefact, so the block appears verbatim. See #60."""
+    body = " ".join((SKILLS_DIR / skill / "SKILL.md").read_text().split())
+    assert "sessions/$CLAUDE_CODE_SESSION_ID/pending.txt" in body, "no ledger"
+    assert "INVENTORY returned:" in body, (
+        "the ledger must cover the inventory stage, which is the one owasp_roster cannot see"
+    )
+    assert "GAPS AWAITING VERIFIER" in body, "the queue that starved is the one worth tracking"
+
+
 @pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
 def test_the_skills_gate_the_report_on_verification_completing(skill):
     """A run shipped a report with 35 of 51 gaps unverified. Nothing was broken:
@@ -1308,13 +1378,17 @@ def test_the_skills_dispatch_the_refuters_at_triage(skill):
     already finished. See #63.
 
     Two checks, because they catch different regressions: the positional one below
-    only pins the *first* mention of the refuter, which catches the bullet moving
-    out of triage but not a second dispatch added back inside the chapter block; the
-    bounded-slice check after it catches that half."""
+    pins where the *dispatch bullet* sits, which catches it moving out of triage but
+    not a second dispatch added back inside the chapter block; the bounded-slice
+    check after it catches that half.
+
+    The bullet rather than the first mention of the role: the inventory gate names
+    both gated roles in step 2, so a first-mention check now pins the gate's
+    description of the refuter instead of the dispatch of one."""
     body = (SKILLS_DIR / skill / "SKILL.md").read_text()
     triage = body.index("Triage applicability yourself")
     pillar = body.index("Run each chapter to completion")
-    refuter = body.index("owasp-exemption-refuter")
+    refuter = body.index("`EXEMPT` → one `owasp-exemption-refuter`")
     assert triage < refuter < pillar, f"{skill} dispatches the refuters outside the triage step"
 
     normalised = " ".join(body.split())

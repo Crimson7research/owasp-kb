@@ -27,6 +27,21 @@ PLUGIN_DIR = Path("plugins/owasp-kb")
 RECORD = PLUGIN_DIR / ".claude-plugin" / "content.sha256"
 
 
+def _ships(path: Path) -> bool:
+    """Is this a file the plugin delivers, rather than a local build artefact?
+
+    Python bytecode is machine-local, gitignored and interpreter-version
+    dependent, so hashing it records a digest nobody else can reproduce. It cost
+    a red CI run: verifying the inventory-gate hook against a real inventory
+    imported it by path, which left a `.pyc` beside it, the digest was recorded
+    over that, and CI -- with no such file -- computed a different one. The
+    digest has to describe what ships, not what the working tree happens to hold.
+    """
+    if any(part == "__pycache__" for part in path.parts):
+        return False
+    return path.suffix not in {".pyc", ".pyo"}
+
+
 def digest(plugin_dir: Path = PLUGIN_DIR) -> str:
     """Hash every shipped file, path included.
 
@@ -35,7 +50,7 @@ def digest(plugin_dir: Path = PLUGIN_DIR) -> str:
     Sorting keeps the result independent of filesystem order.
     """
     h = hashlib.sha256()
-    for path in sorted(p for p in plugin_dir.rglob("*") if p.is_file()):
+    for path in sorted(p for p in plugin_dir.rglob("*") if p.is_file() and _ships(p)):
         if path == RECORD:
             continue
         h.update(path.relative_to(plugin_dir).as_posix().encode())

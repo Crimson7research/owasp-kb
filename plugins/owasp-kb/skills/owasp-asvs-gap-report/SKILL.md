@@ -89,6 +89,42 @@ the work happens in subagents so that no verdict is graded by the agent that pro
    truth every later agent works from, and it stops seventeen agents each rediscovering
    the routing table.
 
+   **Write the concern list, one per line, to
+   `~/.claude/owasp-kb/sessions/$CLAUDE_CODE_SESSION_ID/concerns` before those agents go out**,
+   then merge each return into
+   `~/.claude/owasp-kb/sessions/$CLAUDE_CODE_SESSION_ID/inventory.md` as it arrives — headed
+   `# Scope inventory — factual, no verdicts`, then what the target is, the trust boundaries,
+   then one section per concern with file and line references. One document rather than five
+   per-concern files: it is what triage actually reads, and five would need reassembling first.
+
+   A `PreToolUse` hook refuses an `owasp-chapter-orchestrator` or `owasp-exemption-refuter`
+   dispatch until every concern on that list has a section with something under it. The concern
+   list is what arms the gate, so writing it after the returns leaves it inert for the run it was
+   meant to gate. Nothing else can see this stage — `owasp_roster` counts verdicts and the
+   inventory produces facts — and one run had four of five inventory agents return, then triaged
+   all seventeen chapters over the hole. A concern that found nothing still gets a section saying
+   so: "no client-side surface exists in this target" is a survey result, and an empty heading is
+   not.
+
+   **Keep a dispatch ledger at
+   `~/.claude/owasp-kb/sessions/$CLAUDE_CODE_SESSION_ID/pending.txt`**, updated as agents go out
+   and return. It is for you rather than for the client, and it survives a compaction your
+   context does not:
+
+   ```
+   INVENTORY dispatched: endpoints middleware identity storage client-surface
+   INVENTORY returned:   endpoints middleware identity storage
+   PENDING: none - all 12 applicable chapters dispatched
+   DISPATCHED: V1 V2 V4 V6 V7 V8 V11 V12 V13 V14 V15 V16
+   RETURNED: V6 V14
+   EXEMPT verified: V3 V5 V9 V10 V17
+   GAPS AWAITING VERIFIER: V6.3.3; V14.1.1 V14.1.2 V14.2.2 V14.2.4 V14.3.1
+   ```
+
+   The last line names the queue that starves, and the ledger is only ever a record: the run that
+   wrote this one tracked that queue correctly and still lost 35 verifier dispatches to the
+   concurrency limit, which is why `verification_complete` is the gate and this is not.
+
 3. **Triage applicability yourself, then dispatch both groups at once.** For each of the 17
    ASVS chapters, decide from the inventory whether it `APPLIES` or is `EXEMPT`, with a
    specific reason. Do this centrally rather than dispatching it — it is one judgement over
