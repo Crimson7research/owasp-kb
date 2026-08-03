@@ -54,9 +54,29 @@ or, editing an MCP config file by hand, the equivalent JSON entry:
 }
 ```
 
-(this is exactly `plugins/owasp-kb/.mcp.json`). Swap `owasp-kb:full` for
-`owasp-kb:lite` for the smaller, lexical-only image. `--network none` is not
-optional — see the README's "Runs offline" section for why.
+Swap `owasp-kb:full` for `owasp-kb:lite` for the smaller, lexical-only image.
+`--network none` is not optional — see the README's "Runs offline" section for
+why.
+
+**This is not quite `plugins/owasp-kb/.mcp.json`.** The plugin's entry runs the
+same container through `sh -c`, and additionally creates and mounts the session
+state directory read-only:
+
+```
+sh -c 'mkdir -p "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb" && exec docker run -i --rm --network none \
+  -v "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb:/state:ro" ${OWASP_KB_IMAGE:-owasp-kb:full}'
+```
+
+`sh` rather than `docker` directly because the mount path needs shell
+expansion, and `sh` is resolvable where a wrapper on the plugin's `bin/` was
+not — the MCP subprocess does not inherit that `PATH`.
+
+Without the mount the server still answers every knowledge question, so the
+plain form above is the right one for a standalone client. What it cannot do is
+read an assessment's accumulated findings: `owasp_roster` reads
+`findings.jsonl` from `/state`, so with no mount an assessment must pass every
+verdict inline on each call. ADR
+[0013](decisions/0013-session-state-on-disk.md) explains what that costs.
 
 ## Codex
 
@@ -109,4 +129,5 @@ Same `OWASP_KB_IMAGE` override applies.
 | `kb_info` reports `lexical` on the `full` image | Model or vectors missing; check `COPY models/` |
 | Server starts then exits | Something wrote to stdout; logs must go to stderr |
 | Tools absent in Claude Code | Plugin enabled but not reloaded; `/reload-plugins` |
+| A plugin change is not taking effect | The cache is keyed on the version. If the version did not change, `/plugin` says "already at the latest version", `/mcp` reports a successful reconnect and `/reload-plugins` reloads the old files — all three true about the wrong copy. Bump the version, or uninstall and reinstall to recover. See [build.md](build.md#the-plugin-version-is-the-delivery-mechanism) |
 | `docker: permission denied` | User not in the `docker` group |

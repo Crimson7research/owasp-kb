@@ -96,7 +96,11 @@ arriving through a prompt can be truncated or paraphrased upstream).
   version-keyed, so edits to an agent definition or a skill body do not reach an
   installed plugin without one — 0.3.0 → 0.4.0 → 0.5.0 → 0.6.0 across this
   work, each for that reason. One session spent ~9.5 hours talking to a stale
-  server that reported a successful reconnect.
+  server that reported a successful reconnect. This is now enforced rather than
+  remembered: a content digest is recorded against the version and a test refuses
+  when the two disagree, so a forgotten bump fails a test instead of shipping a
+  plugin that cannot be updated. See
+  [build.md](../build.md#the-plugin-version-is-the-delivery-mechanism).
 - **The roles are Claude-Code-specific in a way the MCP server deliberately is
   not.** `agents/*.md` frontmatter (`tools:`, `model:`, `maxTurns:`) has no
   equivalent in the Codex/OpenCode install path, which copies skill directories

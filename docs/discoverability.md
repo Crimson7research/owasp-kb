@@ -99,6 +99,18 @@ before a prompt is even in play.
   solution (trigger-worded descriptions and skill bodies) that is identically
   effective everywhere the four layers above are honored by the client.
 
+  **The plugin has since gained two hooks, and this rejection still stands.**
+  They do not solve discoverability; they enforce assessment invariants that
+  no tool description could — refusing a read of an excluded prior assessment,
+  and refusing triage over an incomplete inventory. The cross-agent objection
+  does not apply to them, because the fan-out they guard is already
+  Claude-Code-only: it depends on `agents/*.md` frontmatter that has no
+  equivalent in the Codex or OpenCode install path. A Claude-Code-only
+  mechanism guarding a Claude-Code-only workflow costs the other clients
+  nothing, whereas a Claude-Code-only *discovery* mechanism would have left
+  two thirds of the target surface weaker. See ADR
+  [0012](decisions/0012-enforcement-mechanisms.md).
+
 ## The anti-goal
 
 The failure this entire design exists to prevent is **silent fallback to
