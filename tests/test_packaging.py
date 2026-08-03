@@ -1616,3 +1616,28 @@ def test_ci_ignores_only_paths_no_test_reads():
             f"ci.yml ignores {pattern!r} but the suite reads {hit} -- a change to "
             "those files would skip the tests that assert on them"
         )
+
+
+EXPECTED_RUNNER = "arc-runner-set"
+
+
+def test_every_job_runs_on_the_self_hosted_runner():
+    """The org runs its own runners and every other repository uses them. A job
+    left on a GitHub-hosted runner still passes CI -- it just is not running where
+    everything else runs, and nothing reports that -- so the only signal available
+    is this assertion.
+
+    Checked per job rather than as a whole-file substring search: the workflows
+    hold four jobs across three files, and a search cannot tell whether one of
+    them was missed."""
+    seen = []
+    for path in sorted(Path(".github/workflows").glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text())
+        for name, job in workflow["jobs"].items():
+            seen.append(f"{path.name}:{name}")
+            assert job["runs-on"] == EXPECTED_RUNNER, (
+                f"{path.name}:{name} runs on {job['runs-on']!r}"
+            )
+    # Without this the test passes on a glob that matched nothing, which is exactly
+    # how it behaves if the workflows are moved or renamed.
+    assert len(seen) >= 4, f"found only {seen}; expected at least the four known jobs"
