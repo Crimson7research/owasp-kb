@@ -19,7 +19,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 FROM base AS lite
 RUN pip install --no-cache-dir .
 COPY dist/owasp-kb-lite.sqlite /opt/owasp-kb/owasp-kb.sqlite
-COPY LICENSE LICENSE-DATA LICENSE-CWE NOTICE /opt/owasp-kb/licenses/
+COPY LICENSE licenses/LICENSE-OWASP-ASVS licenses/LICENSE-OWASP-CHEATSHEET LICENSE-CWE NOTICE /opt/owasp-kb/licenses/
 USER owasp
 LABEL org.opencontainers.image.title="owasp-kb (lite)" \
       org.opencontainers.image.description="OWASP ASVS and Cheat Sheets MCP server, BM25 retrieval" \
@@ -30,7 +30,7 @@ FROM base AS full
 RUN pip install --no-cache-dir '.[embed]'
 COPY dist/owasp-kb-full.sqlite /opt/owasp-kb/owasp-kb.sqlite
 COPY models/bge-small-en-v1.5 /opt/owasp-kb/models/bge-small-en-v1.5
-COPY LICENSE LICENSE-DATA LICENSE-CWE NOTICE /opt/owasp-kb/licenses/
+COPY LICENSE licenses/LICENSE-OWASP-ASVS licenses/LICENSE-OWASP-CHEATSHEET LICENSE-CWE NOTICE /opt/owasp-kb/licenses/
 ENV OWASP_KB_MODEL_DIR=/opt/owasp-kb/models/bge-small-en-v1.5
 USER owasp
 LABEL org.opencontainers.image.title="owasp-kb (full)" \

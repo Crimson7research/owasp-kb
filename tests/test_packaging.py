@@ -829,6 +829,33 @@ def test_the_repo_carries_a_cwe_license_text():
     assert len(text) > 500, "a stub is not the terms"
 
 
+CC_BY_SA_TEXTS = (
+    Path("licenses/LICENSE-OWASP-ASVS"),
+    Path("licenses/LICENSE-OWASP-CHEATSHEET"),
+)
+
+
+def test_the_two_cc_by_sa_texts_are_identical():
+    """ASVS and the Cheat Sheet Series are both CC-BY-SA-4.0, so each pack's
+    licence file is a copy of one 20 KB text. Two copies of legal text is the
+    shape that drifts: one gets updated and the repository then makes two
+    different claims about the same licence, silently.
+
+    Bytes, not text -- a line-ending change is drift. Non-emptiness is asserted
+    first because two empty files are also identical, and that is the way this
+    assertion passes while proving nothing.
+
+    If this ever fails, reconcile the two files. Deleting the test is not the
+    fix; if the upstreams have genuinely relicensed apart, that is the news and
+    sources.lock.yml should say so before these files do."""
+    asvs, cheatsheets = (path.read_bytes() for path in CC_BY_SA_TEXTS)
+    assert len(asvs) > 500, f"{CC_BY_SA_TEXTS[0]} is a stub, not a licence"
+    assert asvs == cheatsheets, (
+        f"{CC_BY_SA_TEXTS[0]} and {CC_BY_SA_TEXTS[1]} have drifted apart; both "
+        "are CC-BY-SA-4.0 and must be the same text"
+    )
+
+
 def _dockerfile_targets(text: str) -> dict[str, str]:
     """Split a Dockerfile into {target_name: body}. Both image variants must
     carry the licenses; a whole-file substring search cannot tell one from two,
@@ -850,7 +877,13 @@ def _dockerfile_targets(text: str) -> dict[str, str]:
     return blocks
 
 
-EXPECTED_LICENSE_NAMES = {"LICENSE", "LICENSE-DATA", "LICENSE-CWE", "NOTICE"}
+EXPECTED_LICENSE_NAMES = {
+    "LICENSE",
+    "LICENSE-OWASP-ASVS",
+    "LICENSE-OWASP-CHEATSHEET",
+    "LICENSE-CWE",
+    "NOTICE",
+}
 EXPECTED_LICENSES_LABEL = "MIT AND CC-BY-SA-4.0 AND LicenseRef-CWE-TOU"
 
 
@@ -881,10 +914,18 @@ def test_the_dockerfile_ships_every_license_text(target_name):
     tokens = copy_lines[0].split()
     assert tokens[0] == "COPY"
     assert tokens[-1] == "/opt/owasp-kb/licenses/"
-    copied_names = set(tokens[1:-1])
+    # Sources are repo-relative paths now that the texts live under licenses/,
+    # and COPY into a directory flattens them to basenames in the image.
+    sources = [Path(token) for token in tokens[1:-1]]
+    copied_names = {source.name for source in sources}
     assert copied_names == EXPECTED_LICENSE_NAMES, (
         f"{target_name}: COPY names {copied_names}, expected {EXPECTED_LICENSE_NAMES}"
     )
+    # A rename leaves the COPY pointing at a path that is gone. The names above
+    # still match, and only a docker build would notice -- which CI does not run
+    # on every change.
+    for source in sources:
+        assert source.is_file(), f"{target_name}: COPY names {source}, which is not in the tree"
 
     label_match = re.search(r'org\.opencontainers\.image\.licenses="([^"]*)"', body)
     assert label_match, f"{target_name}: no org.opencontainers.image.licenses label"
