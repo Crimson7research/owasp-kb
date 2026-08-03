@@ -85,10 +85,11 @@ without reading this document.
 Anyone redistributing an `owasp-kb` image, or the index file it bakes in,
 should at minimum:
 
-1. **Preserve attribution** to both upstream projects — name them, link to
-   their repositories, and state their license (CC-BY-SA-4.0) — this
-   repository's [NOTICE](../licenses/NOTICE) file is one way to satisfy this and
-   can be carried forward as-is.
+1. **Preserve attribution** to all three upstream projects — name them, link to
+   their repositories, and state each one's license, which is not the same for
+   all three (CC-BY-SA-4.0 for the two OWASP projects, MITRE's own terms for
+   CWE) — this repository's [NOTICE](../licenses/NOTICE) file is one way to
+   satisfy this and can be carried forward as-is.
 2. **Carry the CC-BY-SA-4.0 license forward** for the content and the index
    specifically (not necessarily for any of your own original code built
    around it) — a straightforward reading is to keep the license text of every
