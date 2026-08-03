@@ -21,9 +21,9 @@ EOF
     exit 2
 fi
 
-# Surfaces that a fresh repository carries forward. docs/superpowers/ and git
-# history are deliberately excluded: they are expected to hold assessment
-# material and are expected to be discarded rather than cleaned.
+# Surfaces that a fresh repository carries forward. Git history is deliberately
+# not checked; docs/superpowers/ needs no exclusion because it is gitignored and
+# so never enters a tracked surface at all.
 SURFACES=(
     plugins/
     src/
@@ -45,8 +45,8 @@ echo "== preflight: ${#RAW[@]} pattern(s) over ${#SURFACES[@]} surface(s) =="
 
 FOUND=0
 for pat in "${RAW[@]}"; do
-    # -I skips binaries; ':!docs/superpowers' excludes the discarded tree.
-    if hits=$(git grep -nIF -- "$pat" "${SURFACES[@]}" ':!docs/superpowers' 2>/dev/null); then
+    # -I skips binaries.
+    if hits=$(git grep -nIF -- "$pat" "${SURFACES[@]}" 2>/dev/null); then
         FOUND=1
         echo "  HIT: $pat"
         printf '       %s\n' "$hits"

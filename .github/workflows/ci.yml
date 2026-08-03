@@ -15,7 +15,6 @@ on:
     paths-ignore: &ignored
       - '.claude/skills/**'
       - 'docs/decisions/**'
-      - 'docs/superpowers/**'
   push:
     branches: [master]
     paths-ignore: *ignored

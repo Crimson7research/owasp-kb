@@ -36,7 +36,7 @@ the loop above, which will sit for its full forty minutes and then report a time
 nothing. Check before watching:
 
 ```bash
-git diff --name-only origin/master...HEAD | grep -vE '^(\.claude/skills/|docs/(decisions|superpowers)/)' || echo "CI will not fire"
+git diff --name-only origin/master...HEAD | grep -vE '^(\.claude/skills/|docs/decisions/)' || echo "CI will not fire"
 ```
 
 If nothing survives the filter there is nothing to wait for; merge. The ignore list is narrow on

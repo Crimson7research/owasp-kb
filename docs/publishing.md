@@ -8,21 +8,30 @@ Run `scripts/preflight_publish.sh` for the mechanical part. The judgement parts 
 
 ## The distinction that matters
 
-**A history rewrite does not clean product.** Specs, plans, commit messages and the issue tracker
-all disappear if you start a fresh repository. These do not:
+**A history rewrite does not clean product.** Commit messages and the issue tracker are separate
+problems with separate fixes. These surfaces survive any rewrite:
 
 | Surface | Why it survives |
 |---|---|
 | `plugins/**` | ships in the plugin *and* is baked into the Docker image |
 | `.claude/skills/**` | project skills, cloned with the repository |
 | `src/**`, `docker/**`, `scripts/**` | the product |
-| `README.md`, `docs/**` outside `superpowers/` | published documentation |
+| `README.md`, `docs/**` | published documentation |
 | `dist/*.sqlite`, published images | built artefacts, carrying whatever went into them |
 
 An example in an agent prompt is the easiest thing to get wrong, because it reads as
 documentation while shipping as product. Four such examples in this repository once named a
 private codebase's symbols; they illustrated their rules just as well once rewritten to describe
 the *shape* instead of naming real code.
+
+Plans and specs under `docs/superpowers/` are **gitignored** and never enter a tracked surface.
+They are working artefacts of implementing one feature, abandoned once it lands, and they
+accumulate assessment detail faster than anything else written here — so the cheapest control is
+for them never to be committed at all.
+
+**The issue tracker is the surface no script reaches.** `git grep` cannot see it and a rewrite
+cannot touch it, yet it is where prose about a run naturally goes. Treat an issue body as a
+published surface at the moment you write it. See the `anonymising-a-test-target` skill.
 
 ## Mechanical: the scrub
 
@@ -36,12 +45,28 @@ scripts/preflight_publish.sh
 ```
 
 The script greps every surviving surface and exits non-zero on a hit. It deliberately does **not**
-check `docs/superpowers/` or git history — those are expected to contain assessment material and
-are expected to be discarded.
+check git history, and needs no exclusion for `docs/superpowers/` because that tree is gitignored.
 
 Add identifiers as you assess new targets, not at publication time. The list is only as good as
 the memory of whoever writes it, which is the weakness of this control and the reason the script
 covers surfaces exhaustively rather than relying on recall of *where* something was written.
+
+**Recall is not good enough to build the list, either.** Enumerate the targets from what is
+written rather than from memory — a sweep over every revision found an entire second engagement
+that recall had missed:
+
+```bash
+mapfile -t revs < <(git rev-list --all)
+git grep -ahIoE '(the|a|an|second|first) [A-Za-z0-9_-]{2,20} (assessment|report|run|target)' \
+  "${revs[@]}" -- | tr 'A-Z' 'a-z' | sort | uniq -c | sort -rn | head -30
+```
+
+Concrete descriptors stand out against the generic ones. Then **classify each match before
+scrubbing it**: a blanket `/home/[a-z]+` pattern over this repository matches a devcontainer's
+`ENV PATH=/home/dev/...`, an already-anonymous `/home/you` placeholder, and a `/home/solutions`
+path inside an upstream CWE reference URL. Exactly one of the four was a leak. Over-scrubbing
+corrupts fixtures and breaks builds, and it changed `plugins/` content here, which the digest
+guard then correctly rejected.
 
 ## Judgement: what to keep
 

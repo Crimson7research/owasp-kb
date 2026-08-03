@@ -12,3 +12,9 @@ models/
 *.sqlite-journal
 refresh-summary.txt
 .publish-scrub
+
+# Plans and specs are working artefacts of implementing one feature, abandoned
+# once it lands. They also accumulate assessment detail faster than any other
+# writing here, so keeping them untracked stops that class of leak at source
+# rather than scrubbing for it later.
+docs/superpowers/
