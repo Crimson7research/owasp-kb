@@ -1305,7 +1305,7 @@ def test_the_skills_write_the_report_in_sections(skill):
     one 120,000-character write at the end, larger than the checklist call that
     already proved undeliverable."""
     body = (SKILLS_DIR / skill / "SKILL.md").read_text()
-    assert "owasp-kb-report merge" in body, "no merge step, so sections would never be assembled"
+    assert "owasp-kb report merge" in body, "no merge step, so sections would never be assembled"
     assert "--expect-findings" in body, (
         "without the count the merge cannot detect a finding with no detail section"
     )
