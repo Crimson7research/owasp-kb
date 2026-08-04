@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     steps:
       - uses: actions/checkout@v4
 
@@ -56,7 +56,7 @@ jobs:
         run: pytest -q
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     needs: test
     steps:
       - uses: actions/checkout@v4
