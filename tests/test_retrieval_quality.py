@@ -194,3 +194,32 @@ def test_report_lite_versus_full_rank(full, lite, capsys):
         print(f"    mean rank: lite {lite_mean:.1f}  full {full_mean:.1f}")
         if full_mean >= lite_mean:
             print("    NOTE: full does not improve mean rank - reconsider the embedder.")
+
+
+def test_every_flagged_vulnerability_is_served_by_the_corpus(full):
+    """The regression test for the original defect: SSRF was absent from every
+    trigger list while the corpus carried a dedicated cheat sheet and ASVS V1.3.6,
+    and nothing compared the two. A name the hook flags and the corpus cannot answer
+    sends an agent to a tool that returns nothing, which is worse than not sending
+    it at all.
+
+    Against the built index rather than the container over MCP stdio. Prototyping it
+    the stdio way produced six false negatives -- LDAP injection, path traversal,
+    deserialization, open redirect, server-side template injection and privilege
+    escalation all reporting zero hits -- because thirteen requests were written and
+    stdin was then closed, so the reader hit EOF and cancelled the work in flight.
+    That is the race scripts/docker_smoke.sh documents and solved with a hold-open
+    loop. Checked individually afterwards, every one of the six is well covered.
+    """
+    import sys
+
+    path = str(Path("plugins/owasp-kb/bin").resolve())
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    from owasp_kb_cli.security_terms import VULNERABILITY_NAMES
+
+    empty = [name for name in VULNERABILITY_NAMES if not full.search(name, limit=3)]
+    assert not empty, (
+        f"the hook flags {empty} and the corpus returns nothing for them; either "
+        "drop the name or establish that the content is there"
+    )
