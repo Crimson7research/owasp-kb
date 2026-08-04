@@ -1,0 +1,20 @@
+# The Dockerfile's base image is pinned by digest so builds are reproducible, which
+# means it no longer picks up security updates on its own. This is what bumps it.
+# Actions are pinned by major tag and drift the same way.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: deps
