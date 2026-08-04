@@ -9,22 +9,48 @@ SSH access to the repository does not authorise the registry. You need both.
 docker login ghcr.io          # GitHub PAT, read:packages scope
 ```
 
-SSH has two requirements Claude Code cannot prompt you for, because it suppresses
-the interactive prompts for both the host fingerprint and the key passphrase. A
-missing either surfaces as an unexplained clone failure rather than a question:
+**Your SSH key must work non-interactively.** Claude Code suppresses the prompts for
+both the host fingerprint and the key passphrase, so anything that would have asked
+a question instead surfaces as an unexplained clone failure:
 
 - `github.com` in your `known_hosts` — `ssh-keyscan github.com >> ~/.ssh/known_hosts`
-- your key loaded in `ssh-agent` — `ssh-add ~/.ssh/id_ed25519`
+- a key `ssh` can use without asking. A passphraseless key at a default path is
+  enough; a passphrase-protected key must be loaded in `ssh-agent`
+  (`ssh-add ~/.ssh/id_ed25519`)
 
-`owasp-kb doctor` checks all three.
+`owasp-kb doctor` checks both, by running `ssh -T git@github.com` under
+`BatchMode` — the same non-interactive position the background refresh is in, so a
+pass there predicts a working auto-update rather than merely approximating it.
 
-Recommended, because a failed background marketplace pull otherwise deletes and
-re-clones a private repository on every session, repeating a 120-second timeout
-each time:
+## Why SSH and not HTTPS
+
+Not a preference. The background marketplace refresh **disables git credential
+helpers** for its `git pull`, so a private marketplace over HTTPS cannot
+authenticate in the background at all, even with a helper configured. SSH remotes
+are unaffected.
+
+An HTTPS remote therefore never auto-updates: the pull fails, Claude Code falls
+back to a full re-clone, and by default it deletes the existing clone *before*
+re-cloning against a 120-second git timeout. Set this so a failed pull keeps the
+working copy instead:
 
 ```
 export CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1
 ```
+
+Worth putting in a shell profile for a team, not just a terminal.
+
+## How new versions reach you
+
+Neither manifest declares a `version`, so Claude Code resolves the plugin version
+to the commit it fetched. Auto-update skips a plugin whose resolved version matches
+what is installed — so because ours is the commit, **every merge to master is a new
+version** and nothing has to be bumped for it to reach you. That is the reason the
+`version` field was removed rather than automated; see ADR
+[0014](decisions/0014-image-digest-pin.md).
+
+A new image is a separate matter: it arrives when a release re-pins the digest,
+which lands on master as its own commit and is delivered the same way.
 
 ## Claude Code
 
@@ -37,12 +63,10 @@ export CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1
 `plugins/owasp-kb`. Installing registers the plugin's `.mcp.json`, its two
 PreToolUse hooks, five agents and four skills.
 
-**Neither manifest declares a `version`**, so Claude Code resolves the plugin
-version to the commit it fetched. Every commit on the default branch is therefore
-a distinct version and `/plugin marketplace update` delivers it — there is no
-number to bump and no stale-cache state to recover from. Note the CLI needs the
-qualified form: `claude plugin update owasp-kb@owasp-kb`, since bare `owasp-kb`
-reports `Plugin not found`.
+To pull a change immediately rather than waiting for the background refresh, use
+`/plugin marketplace update` then `/plugin update`. From the CLI the plugin needs
+its qualified form — `claude plugin update owasp-kb@owasp-kb` — since bare
+`owasp-kb` reports `Plugin not found`.
 
 The server runs `ghcr.io/crimson7research/owasp-kb` **pinned by digest**. The
 first start pulls it, roughly 700 MB for the `full` variant; later starts use the
@@ -222,6 +246,6 @@ symptom under.
 | `is still in WAL mode and cannot be served safely` | `server` | Index not finalized; rebuild via `make build-full`, which depends on `index-full` |
 | An exclusion or inventory gate never fires | `hooks` | A hook file the manifest names is absent. Doctor cannot see harness registration and says so |
 | An assessment cannot write findings | `state` | The state directory is root-owned, usually from a bind mount the daemon created |
-| Marketplace clone fails with no prompt | `ssh` | `github.com` absent from `known_hosts`, or no key in `ssh-agent`; Claude Code suppresses both prompts |
+| Marketplace clone fails with no prompt | `ssh` | SSH does not authenticate to `github.com`. Doctor runs `ssh -T` and only then distinguishes the causes — an unknown host, an empty `ssh-agent`, or a key GitHub does not accept. Claude Code suppresses both the fingerprint and passphrase prompts, so none of these announce themselves |
 | Repeated 120-second timeouts each session | `marketplace` | A failed pull re-clones; set `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1` |
 | A plugin change is not taking effect | `plugin` | No longer expected: the version resolves from the commit, so every commit is a distinct cache key. If it happens, a `version` field has been reintroduced into a manifest — doctor reports that as a `plugin` failure |
