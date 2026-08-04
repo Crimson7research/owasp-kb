@@ -14,12 +14,16 @@ something that cannot run.
 from __future__ import annotations
 
 import importlib
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 BIN = Path("plugins/owasp-kb/bin")
+HOOK = Path("plugins/owasp-kb/hooks/flag_security_topic.py")
 
 
 def _module(name: str):
@@ -424,3 +428,97 @@ def test_a_cve_id_counts_as_naming_a_vulnerability():
     it accurately."""
     terms = _module("security_terms")
     assert terms.matched_term("patch CVE-2024-3094 today") == "CVE-2024-3094"
+
+
+def _run_hook(payload: dict, config_dir: Path, raw: str | None = None):
+    return subprocess.run(
+        [sys.executable, str(HOOK)],
+        input=json.dumps(payload) if raw is None else raw,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "CLAUDE_CONFIG_DIR": str(config_dir)},
+    )
+
+
+def test_the_hook_injects_context_when_a_vulnerability_is_named(tmp_path):
+    result = _run_hook({"session_id": "s1", "prompt": "investigate the SSRF report"}, tmp_path)
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout)["hookSpecificOutput"]
+    assert out["hookEventName"] == "UserPromptSubmit"
+    assert "SSRF" in out["additionalContext"]
+    assert "owasp_search" in out["additionalContext"]
+
+
+def test_the_hook_stays_silent_on_an_ordinary_prompt(tmp_path):
+    """The false-positive rule, and the reason anyone will read the output."""
+    result = _run_hook({"session_id": "s1", "prompt": "rename the session token helper"}, tmp_path)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_the_hook_fires_once_per_session(tmp_path):
+    """Repeating changes nothing: after one nudge the agent has either acted or
+    decided not to, and a hook that repeats becomes wallpaper."""
+    first = _run_hook({"session_id": "s1", "prompt": "an XXE issue"}, tmp_path)
+    second = _run_hook({"session_id": "s1", "prompt": "another XXE issue"}, tmp_path)
+    assert first.stdout.strip() != ""
+    assert second.stdout.strip() == ""
+
+
+def test_a_different_session_is_flagged_independently(tmp_path):
+    """Guard on the test above: suppression keyed too broadly would silence every
+    later session, which is indistinguishable from the hook being broken."""
+    _run_hook({"session_id": "s1", "prompt": "an XXE issue"}, tmp_path)
+    other = _run_hook({"session_id": "s2", "prompt": "an XXE issue"}, tmp_path)
+    assert other.stdout.strip() != ""
+
+
+@pytest.mark.parametrize("raw", ["", "not json at all", "[]", '{"prompt": null}'])
+def test_the_hook_fails_open_on_unusable_input(tmp_path, raw):
+    """It guards a reminder. A hook failing closed breaks unrelated sessions on a
+    bug of its own -- ADR 0012 -- and the degraded state here is exactly the
+    behaviour before it existed."""
+    result = _run_hook({}, tmp_path, raw=raw)
+    assert result.returncode == 0, f"non-zero exit on {raw!r}: {result.stderr}"
+    assert result.stdout.strip() == "", f"emitted output on {raw!r}"
+
+
+def test_the_hook_refuses_a_session_id_that_could_escape_the_state_tree(tmp_path):
+    """The id reaches the hook from a payload and is used to build a path that gets
+    written to. state.session_dir validates, so this must fail open rather than
+    writing outside the tree."""
+    result = _run_hook({"session_id": "../escape", "prompt": "an SSRF bug"}, tmp_path)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert not (tmp_path / "escape").exists()
+
+
+def test_the_hook_makes_the_cost_argument_rather_than_asserting_value(tmp_path):
+    """The agent that skipped the corpus said it would add "process overhead
+    without new insight". The payload has to answer that claim -- an unverifiable
+    prediction and asymmetric costs -- not restate that the corpus is good."""
+    result = _run_hook({"session_id": "s1", "prompt": "an IDOR bug"}, tmp_path)
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "from the inside" in context, "does not name the unverifiable prediction"
+    assert "not symmetric" in context, "does not make the cost argument"
+    assert "from memory" in context, "does not require the omission to be stated"
+    assert "before deciding the approach" in context, (
+        "does not require the call to precede the decision; a session that searches "
+        "to confirm a chosen approach keeps its blind spot"
+    )
+
+
+def test_the_hook_fails_open_on_an_unusable_state_directory(tmp_path):
+    """The fail-open claim has to hold for more than ValueError, and every other
+    input in this file raises either ValueError or nothing: json.JSONDecodeError
+    subclasses ValueError, and validate_session_id raises it too. So narrowing the
+    handler to `except ValueError` passed the whole suite.
+
+    A CLAUDE_CONFIG_DIR that is a regular file makes mkdir raise NotADirectoryError
+    -- an OSError -- which is the class of failure the breadth exists for: an
+    unwritable state tree, or an import that does not resolve."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("this is a file where a directory is needed\n")
+    result = _run_hook({"session_id": "s1", "prompt": "an SSRF bug"}, blocker)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ""
