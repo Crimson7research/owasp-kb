@@ -1631,8 +1631,7 @@ def test_the_doctor_check_names_are_the_ones_the_cli_registers():
     registry = text[text.index("CHECKS: list[") : text.index("def run(")]
     registered = set(re.findall(r'\("(\w+)", check_', registry))
     assert registered == DOCTOR_CHECK_NAMES, (
-        f"doctor registers {sorted(registered)}, this file lists "
-        f"{sorted(DOCTOR_CHECK_NAMES)}"
+        f"doctor registers {sorted(registered)}, this file lists {sorted(DOCTOR_CHECK_NAMES)}"
     )
 
 

@@ -98,9 +98,14 @@ not targets. Reread them for tone rather than for leaks.
   OWASP corpora. Non-OWASP packs make the name, `docs/stack.md`, `README.md` and ADR 0005
   progressively less accurate. Fix the descriptions or the name, but do not publish the
   contradiction.
-- **Versions agree.** `src/owasp_kb/__init__.py` is the single literal; `pyproject.toml` derives
-  from it and `plugin.json` and `marketplace.json` are asserted equal. `scripts/docker_smoke.sh`
-  fails the build if a shipped image reports a version its plugin does not.
+- **The shipped image is pinned, and the pin is checked.** `src/owasp_kb/__init__.py` is the single
+  version literal and `pyproject.toml` derives from it. The plugin manifests declare no version at
+  all — Claude Code resolves it to the commit — so there is no version agreement left to assert.
+  What is asserted instead is stronger: `plugins/owasp-kb/.mcp.json` must default to a
+  digest-pinned GHCR reference (`test_the_default_image_is_pinned_by_digest`), and
+  `scripts/verify_pin.sh` fails CI if that digest does not resolve or if the image it names does
+  not carry the packs `sources.lock.yml` declares. Two images can report the same version and hold
+  different indexes; only the digest tells them apart. See ADR 0014.
 - **The test suite passes and the image smoke-tests clean** against `--network none`.
 
 ## Judgement: secrets
