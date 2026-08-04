@@ -1603,3 +1603,53 @@ def test_every_job_runs_on_the_same_deliberately_chosen_runner():
     # Without this the test passes on a glob that matched nothing, which is exactly
     # how it behaves if the workflows are moved or renamed.
     assert len(seen) >= 4, f"found only {seen}; expected at least the four known jobs"
+
+
+# The names in owasp_kb_cli.doctor.CHECKS. Duplicated here rather than imported:
+# the CLI ships inside plugins/ and is not on the import path under bare pytest,
+# which is what CI runs -- the same reason the other repository tooling in this
+# file is loaded by path. A rename therefore has to be made in both places, which
+# is the point: the docs are what a dev reads when a check fails.
+DOCTOR_CHECK_NAMES = {
+    "docker",
+    "plugin",
+    "pin",
+    "image",
+    "server",
+    "hooks",
+    "state",
+    "ssh",
+    "marketplace",
+}
+
+
+def test_the_doctor_check_names_are_the_ones_the_cli_registers():
+    """Guard on the test below, which reads the docs against DOCTOR_CHECK_NAMES. If
+    that set drifts from the CLI, the docs check passes while describing checks
+    that do not exist -- documentation asserted against documentation."""
+    text = Path("plugins/owasp-kb/bin/owasp_kb_cli/doctor.py").read_text()
+    registry = text[text.index("CHECKS: list[") : text.index("def run(")]
+    registered = set(re.findall(r'\("(\w+)", check_', registry))
+    assert registered == DOCTOR_CHECK_NAMES, (
+        f"doctor registers {sorted(registered)}, this file lists "
+        f"{sorted(DOCTOR_CHECK_NAMES)}"
+    )
+
+
+def test_the_troubleshooting_table_names_a_doctor_check_for_every_symptom():
+    """The troubleshooting table is the reason doctor exists, so a check going
+    missing from the docs must fail here rather than leaving a dev with output they
+    cannot look up.
+
+    Names in backticks, not prose: a table saying "run owasp-kb doctor" and nothing
+    else is exactly what the table said before doctor existed."""
+    text = Path("docs/install.md").read_text()
+    table = "\n".join(line for line in text.splitlines() if line.startswith("|"))
+    assert table, "docs/install.md has no table at all"
+    assert "owasp-kb doctor" in table, "the troubleshooting table never mentions doctor"
+    missing = {name for name in DOCTOR_CHECK_NAMES if f"`{name}`" not in table}
+    assert not missing, (
+        f"docs/install.md's troubleshooting table has no row naming doctor checks "
+        f"{sorted(missing)}; a check whose output has no documented symptom is a "
+        "check nobody will know how to act on"
+    )

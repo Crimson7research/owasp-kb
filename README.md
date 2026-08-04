@@ -101,42 +101,48 @@ that is what was measured when they were written.
 
 ## Install
 
-The repository is currently **private**. The primary install path is a local
-build (`make build`), not pulling from GHCR — the release workflow publishes
-there, but you need access to this repo either way to build or pull.
+The repository and its images are both **private**, and they are separate grants:
+SSH access to the repository does not authorise the registry. You need both.
 
 ```
-git clone <this repo>
-cd owasp-kb
-make build        # builds both dist/owasp-kb-lite.sqlite and dist/owasp-kb-full.sqlite,
-                   # then both owasp-kb:lite and owasp-kb:full images
+docker login ghcr.io          # a GitHub PAT with the read:packages scope
 ```
 
-**Claude Code**, from the cloned repo:
+**Claude Code:**
 
 ```
-/plugin marketplace add /path/to/owasp-kb
+/plugin marketplace add git@github.com:Crimson7research/owasp-kb.git
 /plugin install owasp-kb
 ```
 
-**Any MCP-capable agent**, pointed at the built image directly:
+That registers the MCP server and installs four skills, five agents and two
+hooks. The server runs `ghcr.io/crimson7research/owasp-kb` pinned by digest, so
+the first start pulls the image (~700 MB for `full`) and later starts use the
+local copy.
+
+Check the whole chain — plugin, pin, registry access, server, hooks, state
+directory, SSH — with:
 
 ```
-claude mcp add owasp-kb -- docker run -i --rm --network none owasp-kb:full
+owasp-kb doctor
 ```
 
-(swap `owasp-kb:full` for `owasp-kb:lite` for the smaller, lexical-only image.)
-
-**Codex or OpenCode**, via the install scripts — these copy the four skills
-into place and print the exact MCP config snippet for that agent:
+**Any MCP-capable agent.** The image reference is the digest in
+`plugins/owasp-kb/.mcp.json`; `install/codex.sh` and `install/opencode.sh` read
+it from there and print the config snippet for Codex and OpenCode respectively,
+so neither needs editing per release.
 
 ```
 ./install/codex.sh
 ./install/opencode.sh
 ```
 
-Full commands for every path, plus a troubleshooting table, are in
-[docs/install.md](docs/install.md).
+**Building from source** is the contributor path, not the install path — see
+[docs/build.md](docs/build.md). `make build` produces `owasp-kb:lite` and
+`owasp-kb:full` locally; point the plugin at one with `OWASP_KB_IMAGE`.
+
+Full commands for every path, what an assessment leaves on your machine, and a
+troubleshooting table are in [docs/install.md](docs/install.md).
 
 ## Runs offline
 
