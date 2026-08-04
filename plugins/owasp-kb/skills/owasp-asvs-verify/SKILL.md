@@ -302,7 +302,7 @@ are still running, and a run interrupted late then has most of its report alread
 Then merge, giving the finding count `owasp_roster` reported:
 
 ```
-owasp-kb-report merge --session <session-id> \
+owasp-kb report merge --session <session-id> \
     --out docs/security/asvs-5.0.0-l2-<target>.md --expect-findings 38
 ```
 
