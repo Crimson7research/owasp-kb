@@ -1574,18 +1574,24 @@ def test_ci_ignores_only_paths_no_test_reads():
         )
 
 
-EXPECTED_RUNNER = "arc-runner-set"
+EXPECTED_RUNNER = "ubuntu-latest"
 
 
-def test_every_job_runs_on_the_self_hosted_runner():
-    """The org runs its own runners and every other repository uses them. A job
-    left on a GitHub-hosted runner still passes CI -- it just is not running where
-    everything else runs, and nothing reports that -- so the only signal available
-    is this assertion.
+def test_every_job_runs_on_the_same_deliberately_chosen_runner():
+    """Where CI runs is a choice, and a job that drifts off it still passes -- it
+    just runs somewhere nobody decided on, and nothing reports that. This assertion
+    is the only available signal, whichever runner is chosen.
 
-    Checked per job rather than as a whole-file substring search: the workflows
-    hold four jobs across three files, and a search cannot tell whether one of
-    them was missed."""
+    It was `arc-runner-set` for one day. The org's self-hosted pool turned out to be
+    exhausted by other repositories: with six concurrent full builds queued, the
+    ~25-minute `build` job stopped starting at all and the queue had to be cancelled
+    by hand. Four jobs came back to `ubuntu-latest`. Issue #12 has the reasoning for
+    the move and this reversal; the pool being shared, not the mechanism, is what
+    made it fail.
+
+    Checked per job rather than as a whole-file substring search: the workflows hold
+    four jobs across three files, and a search cannot tell whether one of them was
+    missed."""
     seen = []
     for path in sorted(Path(".github/workflows").glob("*.yml")):
         workflow = yaml.safe_load(path.read_text())

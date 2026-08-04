@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   refresh:
-    runs-on: arc-runner-set
+    runs-on: ubuntu-latest
     env:
       # Optional: only raises the GitHub API rate limit for refresh_lock.py.
       # Fetching content needs no token.
