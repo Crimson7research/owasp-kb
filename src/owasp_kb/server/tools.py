@@ -71,6 +71,19 @@ TOOL_TRIGGER_TOPICS = (
     "SQL injection",
     "command injection",
     "LDAP injection",
+    # Added after a triage session skipped the corpus on an SSRF defect. Every one
+    # of these was absent from every discovery surface while the corpus covered
+    # them -- SSRF has its own cheat sheet and ASVS V1.3.6. The hook's firing
+    # vocabulary is checked against this tuple by
+    # test_every_flagged_vulnerability_is_advertised_by_the_tools.
+    "SSRF",
+    "XXE",
+    "IDOR",
+    "path traversal",
+    "directory traversal",
+    "open redirect",
+    "server-side template injection",
+    "privilege escalation",
     "XSS",
     "output encoding",
     "deserialization",

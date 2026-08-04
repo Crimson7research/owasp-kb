@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -1698,4 +1699,34 @@ def test_the_troubleshooting_table_names_a_doctor_check_for_every_symptom():
         f"docs/install.md's troubleshooting table has no row naming doctor checks "
         f"{sorted(missing)}; a check whose output has no documented symptom is a "
         "check nobody will know how to act on"
+    )
+
+
+def _flagged_vulnerability_names() -> tuple[str, ...]:
+    """The hook's firing vocabulary, imported from the plugin's own package.
+
+    Not duplicated here: a second list is a second thing to forget, and the whole
+    defect this guards against was two surfaces disagreeing about which
+    vulnerability classes exist.
+    """
+    path = str(Path("plugins/owasp-kb/bin").resolve())
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    from owasp_kb_cli.security_terms import VULNERABILITY_NAMES
+
+    return VULNERABILITY_NAMES
+
+
+def test_every_flagged_vulnerability_is_advertised_by_the_tools():
+    """The hook tells an agent to call owasp_search for a class the tool's own
+    description does not mention. SSRF was absent from every discovery surface
+    while the corpus carried a dedicated cheat sheet and ASVS V1.3.6, and nothing
+    compared the two."""
+    from owasp_kb.server.tools import TOOL_TRIGGER_TOPICS
+
+    advertised = " ".join(TOOL_TRIGGER_TOPICS).lower()
+    missing = [n for n in _flagged_vulnerability_names() if n.lower() not in advertised]
+    assert not missing, (
+        f"the hook flags {missing} and no tool description mentions them, so an "
+        "agent sent to owasp_search meets a tool that does not claim the topic"
     )
