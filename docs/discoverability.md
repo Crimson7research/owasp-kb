@@ -128,3 +128,42 @@ uncited answer indistinguishable from a properly grounded one.
 `tests/test_packaging.py::test_skill_body_handles_an_unreachable_server`
 enforces every one of the four skill bodies contains the word "unreachable",
 so this cannot regress silently either.
+
+### The anti-goal, observed
+
+It happened, and not through unreachability. A session triaging an SSRF defect
+produced a repair plan without calling any tool here. The server was reachable and
+the skill was installed and listed. Asked afterwards how it chose, the agent's
+account was that the corpus "would add process overhead without new insight here".
+
+Two likelier explanations were checked first and both were wrong, which is worth
+recording because each implied a different fix. The command driving the session
+maps work types to process skills and has no security branch — but the skill was
+considered *outside* that table, so the enumeration did not exclude it. And
+`owasp-secure-coding` said "when writing or reviewing application code" while the
+session was planning — but that was not the reason given.
+
+The actual cause was a **cost/benefit judgement made before looking**, and it was
+checkably wrong: the plan covered domains, paths and ports and never mentioned
+protocols, the first dimension ASVS V1.3.6 enumerates, and proposed
+resolve-then-connect validation the SSRF cheat sheet documents as bypassable.
+
+Two things follow, and the second matters more.
+
+**A trigger list is only as good as its coverage of the corpus.** `SSRF` was absent
+from both skill descriptions and from `TOOL_TRIGGER_TOPICS`, as were XXE, IDOR,
+path traversal, open redirect, server-side template injection and privilege
+escalation — while the corpus covered every one. Nothing compared the two, so the
+gap was invisible. `test_every_flagged_vulnerability_is_served_by_the_corpus` now
+compares the firing vocabulary against the built index, and
+`test_every_flagged_vulnerability_is_advertised_by_the_tools` compares it against
+the tool descriptions.
+
+**But a trigger list cannot make an agent call anything.** It only makes the tool
+findable, and findability was never the problem in this case. That is why the
+routing mechanism added here is a `UserPromptSubmit` hook rather than a longer
+description: a hook fires without being chosen, and the skill was chosen against.
+Its payload argues about cost rather than value, because the objection was about
+cost — checking is one call now; not checking risks a fix that ships, is believed
+done, and is reopened later. See ADR 0012 for which failure each mechanism can
+stop, and ADR 0014's sibling reasoning about proxies versus the thing itself.
