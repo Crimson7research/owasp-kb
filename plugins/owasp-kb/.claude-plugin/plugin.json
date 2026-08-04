@@ -1,6 +1,5 @@
 {
   "name": "owasp-kb",
-  "version": "0.15.0",
   "description": "Authoritative OWASP security guidance (ASVS 5.0.0 + Cheat Sheet Series) and MITRE's CWE catalogue (4.20, not an OWASP project) via a local MCP server, with skills for secure coding, ASVS verification, gap reporting and threat modelling",
   "author": {
     "name": "Yimura"

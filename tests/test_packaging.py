@@ -56,7 +56,6 @@ def test_plugin_manifest_is_valid():
     data = json.loads(PLUGIN.read_text())
     assert data["name"] == "owasp-kb"
     assert data["description"]
-    assert data["version"]
     assert data["license"] == "MIT"
 
 
@@ -66,6 +65,38 @@ def test_plugin_declares_its_mcp_config():
     data = json.loads(PLUGIN.read_text())
     assert data["mcpServers"] == "./.mcp.json"
     assert MCP_CONFIG.exists()
+
+
+def test_no_plugin_version_field_is_declared():
+    """The plugin cache is keyed on the resolved version, and Claude Code resolves
+    that to the commit SHA when `version` is absent -- "Bump the field on every
+    release, or omit it to use the commit SHA." Omitting it makes every commit a
+    distinct version by construction; observed directly, a marker commit moved an
+    install from cache key 37b3cef5e478 to 5fbc08c9a745.
+
+    That is what let scripts/plugin_digest.py and
+    plugins/owasp-kb/.claude-plugin/content.sha256 be deleted rather than merely
+    relocated: they existed only to catch a plugin content change shipped without
+    a bump, which cannot happen when the version *is* the content's commit.
+
+    Re-adding the field silently reinstates that hazard, and it is quiet in an
+    expensive way -- `/plugin` reports "already at the latest version", `/mcp`
+    reports a successful reconnect and `/reload-plugins` reloads the old files,
+    three green statuses every one of them true about the wrong copy. Recovery
+    needs a manual uninstall and reinstall, and nothing says so. It cost exactly
+    that once.
+    """
+    plugin = json.loads(PLUGIN.read_text())
+    assert "version" not in plugin, (
+        "plugin.json declares a version again, so the cache stops tracking "
+        "commits. Either drop the field, or restore scripts/plugin_digest.py and "
+        "the guard it enforced -- do not leave the field with no guard"
+    )
+    entry = json.loads(MARKETPLACE.read_text())["plugins"][0]
+    assert "version" not in entry, (
+        "the marketplace entry pins a version for the plugin, which overrides "
+        "commit-SHA resolution the same way plugin.json's field does"
+    )
 
 
 def _server_command() -> str:
@@ -710,18 +741,6 @@ def test_risk_scoring_flags_metrics_the_code_cannot_settle(skill):
     assert "CVSS" in body
     assert "cannot settle" in body
     assert "temporal or environmental" in body
-
-
-def test_one_version_governs_the_package_the_plugin_and_the_marketplace():
-    """Three version numbers disagreed -- pyproject 0.1.0, marketplace 0.3.0,
-    plugin 0.8.0 -- and nothing compared them. A reader could not tell which
-    described the thing they were running. See #13."""
-    from owasp_kb import __version__
-
-    plugin = json.loads(PLUGIN.read_text())["version"]
-    marketplace = json.loads(MARKETPLACE.read_text())["plugins"][0]["version"]
-    assert plugin == __version__, f"plugin.json {plugin} != owasp_kb {__version__}"
-    assert marketplace == __version__, f"marketplace {marketplace} != owasp_kb {__version__}"
 
 
 def _plugin_digest():
