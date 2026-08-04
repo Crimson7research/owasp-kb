@@ -375,3 +375,52 @@ def test_the_ssh_check_blames_known_hosts_before_the_agent(monkeypatch):
     result = doctor.check_ssh_prerequisites()
     assert result.ok is False
     assert "known_hosts" in result.detail
+
+
+def test_the_vocabulary_holds_only_unambiguous_vulnerability_names():
+    """Ambiguous nouns are excluded on purpose. `token`, `session`, `cookie` and
+    `logging` appear constantly in ordinary development conversation -- a hook
+    firing on most prompts becomes wallpaper, which is how a false-positive check
+    taught people to ignore `owasp-kb doctor`'s output. Precision is chosen over
+    recall here, and the reworded skill descriptions are what cover
+    vaguely-worded security work."""
+    terms = _module("security_terms")
+    names = {n.lower() for n in terms.VULNERABILITY_NAMES}
+    assert "ssrf" in names, "SSRF is the class this whole change exists for"
+    for ambiguous in ("token", "session", "cookie", "auth", "crypto", "logging"):
+        assert ambiguous not in names, (
+            f"{ambiguous!r} is in the firing vocabulary; it appears in ordinary "
+            "development conversation and would make the hook fire on most prompts"
+        )
+
+
+def test_every_vocabulary_term_compiles_into_the_matcher():
+    """The list is only a control if the pattern built from it actually matches. A
+    term with a regex metacharacter that was never escaped would silently never
+    fire."""
+    terms = _module("security_terms")
+    for name in terms.VULNERABILITY_NAMES:
+        assert terms.matched_term(f"please look at this {name} problem") is not None, (
+            f"{name!r} is in the vocabulary and does not match its own name"
+        )
+
+
+def test_the_matcher_ignores_a_prompt_with_no_vulnerability_name():
+    terms = _module("security_terms")
+    assert terms.matched_term("refactor the session token cookie cache") is None
+
+
+def test_the_matcher_is_word_bounded():
+    """Without \\b, `XSS` matches inside an unrelated identifier and the hook fires
+    on prompts that have nothing to do with security."""
+    terms = _module("security_terms")
+    assert terms.matched_term("the maXSSive refactor") is None
+    assert terms.matched_term("fix the XSS bug") == "XSS"
+
+
+def test_a_cve_id_counts_as_naming_a_vulnerability():
+    """A CVE id names a specific vulnerability without naming its class, and
+    carries the same problem: you cannot tell from the inside whether you recall
+    it accurately."""
+    terms = _module("security_terms")
+    assert terms.matched_term("patch CVE-2024-3094 today") == "CVE-2024-3094"
