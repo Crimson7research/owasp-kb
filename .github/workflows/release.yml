@@ -76,7 +76,7 @@ jobs:
           CS: ${{ steps.versions.outputs.cs }}
           CWE: ${{ steps.versions.outputs.cwe }}
         run: |
-          # GHCR requires a lowercase image path; repository_owner is "Yimura".
+          # GHCR requires a lowercase image path; repository_owner is "Crimson7research".
           IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
           # Every pack in the index gets named in the immutable tag -- see the
           # PINNED_TAG comment in the Makefile for why CWE had to join it.
