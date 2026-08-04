@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-TOOL = Path("plugins/owasp-kb/bin/owasp-kb-report")
+TOOL = Path("plugins/owasp-kb/bin/owasp-kb")
 
 
 def _sections(config_dir: Path, session: str, names: list[str]) -> Path:
@@ -27,7 +27,17 @@ def _sections(config_dir: Path, session: str, names: list[str]) -> Path:
 
 def _merge(config_dir: Path, session: str, out: Path, *extra: str):
     return subprocess.run(
-        [sys.executable, str(TOOL), "merge", "--session", session, "--out", str(out), *extra],
+        [
+            sys.executable,
+            str(TOOL),
+            "report",
+            "merge",
+            "--session",
+            session,
+            "--out",
+            str(out),
+            *extra,
+        ],
         capture_output=True,
         text=True,
         env={**os.environ, "CLAUDE_CONFIG_DIR": str(config_dir)},
