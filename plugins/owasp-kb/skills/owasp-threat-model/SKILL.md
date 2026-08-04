@@ -1,6 +1,6 @@
 ---
 name: owasp-threat-model
-description: >
+description: Use when reviewing architecture or system design before implementation, threat modelling, evaluating a proposed design for security, assessing a new service or integration, triaging a reported vulnerability, or answering what could go wrong with a design - including SSRF, XSS, XXE, IDOR, CSRF, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, SQL injection, command injection, LDAP injection and deserialization. Pulls ASVS documentation-class requirements and cheat sheets relevant to each component.
   Use when reviewing architecture or system design before implementation,
   threat modelling, evaluating a proposed design for security, assessing a new
   service or integration, or answering what could go wrong with a design. Pulls

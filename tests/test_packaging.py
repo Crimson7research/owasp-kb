@@ -1730,3 +1730,39 @@ def test_every_flagged_vulnerability_is_advertised_by_the_tools():
         f"the hook flags {missing} and no tool description mentions them, so an "
         "agent sent to owasp_search meets a tool that does not claim the topic"
     )
+
+
+def test_the_secure_coding_skill_claims_the_triage_moment():
+    """It said "when writing or reviewing application code". The session that
+    skipped it had written no code -- it was triaging an issue and planning a fix --
+    so the description excluded the moment the skill was most needed."""
+    when = _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower()
+    for moment in ("triag", "planning", "diagnos"):
+        assert moment in when, (
+            f"the description does not claim to apply when {moment}...; an agent "
+            "choosing an approach reads it as not yet applicable"
+        )
+
+
+@pytest.mark.parametrize("skill", ["owasp-secure-coding", "owasp-threat-model"])
+def test_the_skill_descriptions_name_every_flagged_vulnerability(skill):
+    """The hook and the skill must not drift: a class the hook flags and the skill
+    does not name sends an agent to a skill that does not claim the topic."""
+    described = _frontmatter(SKILLS_DIR / skill / "SKILL.md")["description"].lower()
+    missing = [n for n in _flagged_vulnerability_names() if n.lower() not in described]
+    assert not missing, f"{skill} does not name {missing}"
+
+
+def test_the_secure_coding_body_says_what_recall_cannot_give():
+    """"No new insight" was the actual reason the skill was declined, so the body
+    leads with the two things the corpus provides that recall cannot -- a citable
+    id, and an enumeration of what a fix must cover."""
+    # Whitespace-normalised, as several tests in this file already are: both
+    # phrases wrap across a line break, and where a hard wrap falls is not what
+    # this test is about.
+    body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().split())
+    assert "cannot check that from the inside" in body
+    assert "before choosing the approach" in body, (
+        "a search run to confirm a chosen approach does not surface what the "
+        "decision already excluded, which is how the observed gap survived"
+    )

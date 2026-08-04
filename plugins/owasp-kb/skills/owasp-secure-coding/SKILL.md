@@ -1,6 +1,6 @@
 ---
 name: owasp-secure-coding
-description: >
+description: Use when writing, reviewing, triaging, diagnosing or planning a fix to application code touching authentication, passwords, MFA, sessions, cookies, tokens, JWT, OAuth, OIDC, authorization, access control, input validation, SQL injection, command injection, LDAP injection, SSRF, XSS, XXE, IDOR, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, output encoding, deserialization, file upload, file download, cryptography, TLS, key management, secrets, logging, error handling, CSRF, CORS, security headers, GraphQL, WebSocket, WebRTC, or API endpoints. Applies while the approach is still being chosen, not only once code exists. Retrieves the applicable OWASP Cheat Sheet guidance and ASVS requirements before the code is written.
   Use when writing or reviewing application code touching authentication,
   passwords, MFA, sessions, cookies, tokens, JWT, OAuth, OIDC, authorization,
   access control, input validation, SQL injection, command injection, XSS,
@@ -14,6 +14,25 @@ description: >
 # Secure coding with OWASP guidance
 
 Retrieve authoritative guidance before writing or approving security-relevant code.
+
+## Why call the tools rather than answer from recall
+
+You may already know the vulnerability class. That is not the question. The question
+is whether you can enumerate every dimension a correct fix has to cover, and you
+cannot check that from the inside.
+
+A worked case. A triage session diagnosed an SSRF defect and proposed an allowlist
+-- correct in shape, since ASVS V1.3.6 asks for exactly that. It covered domains,
+paths and ports and never mentioned protocols, which is the first dimension the
+requirement names. It also proposed resolve-then-connect validation, which the SSRF
+cheat sheet documents as bypassable via DNS pinning. Neither gap was visible from
+inside the reasoning that produced the plan, and the session's own explanation for
+skipping this skill was that it would add "process overhead without new insight".
+
+The corpus gives you two things recall cannot: a **citable id** a reviewer can
+check, and an **enumeration** of what the fix must address. Call the tools before
+choosing the approach, not to confirm one you have already chosen -- a search run to
+validate a decision does not surface what that decision already excluded.
 
 ## Process
 
