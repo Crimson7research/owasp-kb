@@ -119,7 +119,7 @@ jobs:
       # reference the plugin actually ships -- a different question, and the one
       # the three deleted version-lockstep proxies were standing in for.
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
