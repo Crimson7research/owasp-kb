@@ -52,7 +52,6 @@ index-full   Build the full index (hybrid) — depends on `model`
 test         Run unit tests
 test-quality Run the retrieval quality gate against built indexes
 lint         ruff check + ruff format --check
-plugin-digest Rerecord the plugin content digest after bumping the version
 serve        Run the MCP server against the full index, for manual stdio testing
 build-lite   Build the owasp-kb:lite image — depends on `index`
 build-full   Build the owasp-kb:full image — depends on `index-full`
@@ -107,7 +106,13 @@ mandatory before the file is packaged into an image.
   `sources.lock.yml`, builds both indexes, runs the full retrieval quality
   gate, builds both images under both tag forms (see below), smoke-tests each,
   and only pushes to GHCR if every smoke test passes — a broken image is never
-  published, regardless of what tag triggered the release.
+  published, regardless of what tag triggered the release. It then captures the
+  `full` image's registry digest, runs `scripts/pin_image.py --write`, and opens a
+  pull request carrying the new `plugins/owasp-kb/.mcp.json`. **Merging that PR is
+  the delivery step**, because the marketplace is read from the default branch, so
+  master is the surface devs install from. The digest is only knowable after the
+  push, which is why the reference the plugin ships is written by the workflow
+  rather than by hand.
 
 ## Image tag scheme
 
@@ -137,42 +142,53 @@ Every build produces two tags per variant:
   ADRs 0003 and 0004 quote the older two-pack form because that is what existed
   when they were written.
 
-## The plugin version is the delivery mechanism
+**Neither tag is what the plugin ships.** Both exist for humans and for citation
+reproducibility. What `plugins/owasp-kb/.mcp.json` names is the `full` image's
+**digest**, because a tag can be reassigned and, worse, is shadowed by any local
+image of the same name — `--pull=missing` is docker's default and `docker tag` is
+unprivileged. A digest cannot be shadowed: a local cache hit on it *is* the
+published bytes. `scripts/verify_pin.sh` checks in CI that the shipped digest
+resolves and that the image it names carries the packs the lock declares.
 
-The image tag above names what is in the index. The plugin has a separate
-version in `plugins/owasp-kb/.claude-plugin/plugin.json`, and it is not
-decoration on a release: **the plugin cache is keyed on the version number**, so
-a content change shipped without a bump leaves the installed copy unreachable
-rather than merely stale.
+The base image is pinned by digest for the same reason one layer down.
+`python:3.13-slim` moves, so two builds of identical source produced different
+images — a hole in the reproducibility the immutable tag above promises.
+`.github/dependabot.yml` bumps it, since a digest pin stops security updates
+arriving on their own.
 
-That failure is quiet in a specific and expensive way. `/plugin` reports
-"already at the latest version", `/mcp` reports a successful reconnect, and
-`/reload-plugins` reloads the old files — three green statuses, every one of
-them true about the wrong artefact. Recovery needs a manual uninstall and
-reinstall, and nothing indicates that it is necessary.
+## The commit is the plugin version
 
-It cost exactly that once: a hook fix was verified in the repository, in its
-tests and in CI, and was not the code running, because the cached copy of the
-previous version still had the defective comparison. The verification was sound
-and measured the wrong copy.
+Neither `plugin.json` nor `marketplace.json` declares a `version`. Claude Code
+resolves an absent version to the commit the plugin was fetched at, so every commit
+on the default branch is a distinct version and the plugin cache tracks commits
+rather than a hand-maintained number. Observed directly: a marker commit moved an
+installed copy from cache key `37b3cef5e478` to `5fbc08c9a745` and delivered the
+change.
 
-So the bump is enforced rather than remembered:
+That is why `scripts/plugin_digest.py` and `content.sha256` are gone rather than
+merely moved. They existed to catch a plugin content change shipped without a
+version bump, which left the installed copy unreachable rather than stale:
+`/plugin` reported "already at the latest version", `/mcp` reported a successful
+reconnect, and `/reload-plugins` reloaded the old files — three green statuses,
+every one of them true about the wrong artefact, recoverable only by uninstalling
+and reinstalling, with nothing indicating that was necessary.
 
-- `scripts/plugin_digest.py` hashes every shipped file **with its path** — a
-  renamed agent is as broken as a rewritten one, since the skills dispatch by
-  name — and records the digest against the version in
-  `plugins/owasp-kb/.claude-plugin/content.sha256`.
-- A test refuses when the two disagree, so forgetting the bump fails a test
-  rather than producing a plugin that cannot be updated.
-- `make plugin-digest` rerecords after a bump.
+It cost exactly that once: a hook fix was verified in the repository, in its tests
+and in CI, and was not the code running, because the cached copy of the previous
+version still held the defective comparison. The verification was sound and
+measured the wrong copy. It cannot happen when the version *is* the content's
+commit.
 
-Mutation-checked both ways: changing a plugin file without bumping is red, and
-bumping without rerecording is red.
+`test_no_plugin_version_field_is_declared` is what keeps it that way. Re-adding
+the field reinstates the hazard silently, so the test names the tooling that would
+have to come back with it. It was watched failing against the field before the
+field was removed.
 
-The digest ignores gitignored bytecode. Recording it over a stray `.pyc` left by
-importing a hook by path produced a digest CI could not reproduce, and the
-failure read as "plugins/ has changed since the digest was recorded" — true of
-the machine and false of the change.
+The version in `src/owasp_kb/__init__.py` is unrelated: it versions the Python
+package and the image built from it, is reported by `kb_info` as `server_version`,
+and is bumped by hand before a release tag is cut. `pyproject.toml` derives from
+it. The two numbers drift on purpose — an image is released when its content
+changes, and the plugin ships on every commit.
 
 ## Mapping coverage
 
