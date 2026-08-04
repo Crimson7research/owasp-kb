@@ -120,6 +120,38 @@ def test_the_server_command_runs_the_container_without_network():
     assert "--network none" in _server_command()
 
 
+PINNED_IMAGE = re.compile(
+    r"\$\{OWASP_KB_IMAGE:-(ghcr\.io/[a-z0-9][a-z0-9._-]*/owasp-kb@sha256:[0-9a-f]{64})\}"
+)
+
+
+def test_the_default_image_is_pinned_by_digest():
+    """`owasp-kb:full` resolved to docker.io/library/owasp-kb and found nothing, so
+    the plugin only worked for someone who had run `make build`.
+
+    A fully-qualified tag would reach the registry and still lose to any local
+    image of that name -- `--pull=missing` is docker's default and `docker tag` is
+    unprivileged. `--pull=always` would fix the shadowing by putting a registry
+    round-trip and GHCR auth on the critical path of every server start, in a tool
+    whose stated value is working inside a network that is deliberately locked
+    down. A digest cannot be shadowed and is pulled once.
+
+    The override is deliberately not asserted away: it is how a dev points at a
+    local build and how the lite variant is selected. Only the *default* must be a
+    digest.
+
+    This asserts the shape. scripts/verify_pin.sh asserts the substance -- that the
+    digest resolves and that the image it names carries the packs the lock declares.
+    See ADR 0014.
+    """
+    args = _server_command()
+    assert PINNED_IMAGE.search(args), (
+        "the default image is not a digest-pinned ghcr.io reference. Run "
+        "scripts/pin_image.py --image <ref> --write with a digest from a published "
+        f"release; found: {args}"
+    )
+
+
 def test_the_state_mount_is_read_only():
     """The image gains read access to one directory and no write access at all.
     A read-only mount also sidesteps a uid mismatch: the container runs as 10001
