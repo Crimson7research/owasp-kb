@@ -237,12 +237,29 @@ def check_docker() -> Result:
 
 
 def check_ssh_prerequisites() -> Result:
-    """The marketplace is cloned over SSH, and Claude Code suppresses the
-    interactive prompts for both the host fingerprint and the key passphrase. A
-    missing known_hosts entry or an unloaded key therefore surfaces as an
-    unexplained clone failure rather than as a question.
+    """The marketplace is cloned over SSH, and Claude Code suppresses the interactive
+    prompts for both the host fingerprint and the key passphrase, so a missing
+    known_hosts entry or an unusable key surfaces as an unexplained clone failure
+    rather than as a question.
+
+    This asks whether SSH *authenticates*, rather than whether a particular
+    precondition for it holds. It previously asserted `ssh-add -l` succeeds and
+    reported a failure on a machine whose marketplace clone had just worked: a
+    passphraseless key at a default path authenticates with no agent running at all.
+    An empty agent is a cause to look at once authentication has already failed, not
+    a requirement in itself.
+
+    github.com exits 1 on a successful `-T`, so the exit code cannot be the signal
+    and the greeting is matched instead. BatchMode keeps it from blocking on a
+    prompt, and nothing here writes to known_hosts -- an unknown host is something
+    to report, not to silently accept on the user's behalf.
     """
     host = "github.com"
+    probe = _run("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-T", f"git@{host}")
+    output = f"{probe.stdout}{probe.stderr}"
+    if "successfully authenticated" in output.lower():
+        return Result(True, f"SSH to {host} authenticates")
+
     if _run("ssh-keygen", "-F", host).returncode != 0:
         return Result(
             False,
@@ -252,10 +269,16 @@ def check_ssh_prerequisites() -> Result:
     if _run("ssh-add", "-l").returncode != 0:
         return Result(
             False,
-            "no keys loaded in ssh-agent, and the passphrase prompt is suppressed",
+            f"SSH to {host} did not authenticate, and no keys are loaded in ssh-agent",
             remedy="ssh-add ~/.ssh/id_ed25519",
         )
-    return Result(True, f"{host} is known and ssh-agent holds a key")
+    return Result(
+        False,
+        f"SSH to {host} did not authenticate: {output.strip().splitlines()[-1][:160]}"
+        if output.strip()
+        else f"SSH to {host} did not authenticate",
+        remedy=f"ssh -T git@{host} to see why; check the key is registered with GitHub",
+    )
 
 
 def check_marketplace_failure_mode() -> Result:

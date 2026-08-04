@@ -222,6 +222,6 @@ symptom under.
 | `is still in WAL mode and cannot be served safely` | `server` | Index not finalized; rebuild via `make build-full`, which depends on `index-full` |
 | An exclusion or inventory gate never fires | `hooks` | A hook file the manifest names is absent. Doctor cannot see harness registration and says so |
 | An assessment cannot write findings | `state` | The state directory is root-owned, usually from a bind mount the daemon created |
-| Marketplace clone fails with no prompt | `ssh` | `github.com` absent from `known_hosts`, or no key in `ssh-agent`; Claude Code suppresses both prompts |
+| Marketplace clone fails with no prompt | `ssh` | SSH does not authenticate to `github.com`. Doctor runs `ssh -T` and only then distinguishes the causes — an unknown host, an empty `ssh-agent`, or a key GitHub does not accept. Claude Code suppresses both the fingerprint and passphrase prompts, so none of these announce themselves |
 | Repeated 120-second timeouts each session | `marketplace` | A failed pull re-clones; set `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1` |
 | A plugin change is not taking effect | `plugin` | No longer expected: the version resolves from the commit, so every commit is a distinct cache key. If it happens, a `version` field has been reintroduced into a manifest — doctor reports that as a `plugin` failure |

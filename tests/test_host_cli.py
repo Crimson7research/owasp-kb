@@ -299,3 +299,79 @@ def test_older_than_selects_by_mtime(monkeypatch, tmp_path):
     long_ago = _time.time() - 60 * 60 * 24 * 90
     _os.utime(old, (long_ago, long_ago))
     assert [s.session for s in sessions.older_than(30)] == ["old"]
+
+
+class _FakeProc:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+AUTH_OK = "Hi someone! You've successfully authenticated, but GitHub does not provide shell access."
+NO_AGENT = "Could not open a connection to your authentication agent."
+
+
+def test_the_ssh_check_passes_when_authentication_works_with_no_agent(monkeypatch):
+    """This check asserted that `ssh-add -l` succeeds, and reported a failure on a
+    machine where the marketplace clone had just worked -- a passphraseless key at a
+    default path authenticates with no agent running at all. Observed directly:
+    `ssh-add -l` exited 2 with "Could not open a connection to your authentication
+    agent" while `ssh -T git@github.com` answered "successfully authenticated".
+
+    A check that reports a problem which is not one is worse than no check: it
+    teaches people to ignore the output. So it tests authentication, which is the
+    thing that matters, and treats the agent as a diagnosis for a failure rather
+    than a requirement.
+    """
+    doctor = _module("doctor")
+
+    def fake(*cmd):
+        if cmd[0] == "ssh":
+            return _FakeProc(1, "", AUTH_OK)
+        if cmd[0] == "ssh-add":
+            return _FakeProc(2, "", NO_AGENT)
+        return _FakeProc(0)
+
+    monkeypatch.setattr(doctor, "_run", fake)
+    result = doctor.check_ssh_prerequisites()
+    assert result.ok is True, result.detail
+
+
+def test_the_ssh_check_blames_the_agent_only_when_authentication_failed(monkeypatch):
+    """The diagnosis still has to happen -- an unloaded key is a real cause, and
+    Claude Code suppresses the passphrase prompt so it surfaces as an unexplained
+    clone failure. It just must not fire when nothing is wrong."""
+    doctor = _module("doctor")
+
+    def fake(*cmd):
+        if cmd[0] == "ssh":
+            return _FakeProc(255, "", "git@github.com: Permission denied (publickey).")
+        if cmd[0] == "ssh-keygen":
+            return _FakeProc(0, "github.com ssh-ed25519 AAAA...")
+        if cmd[0] == "ssh-add":
+            return _FakeProc(2, "", NO_AGENT)
+        return _FakeProc(0)
+
+    monkeypatch.setattr(doctor, "_run", fake)
+    result = doctor.check_ssh_prerequisites()
+    assert result.ok is False
+    assert "ssh-agent" in result.detail
+
+
+def test_the_ssh_check_blames_known_hosts_before_the_agent(monkeypatch):
+    """An unknown host fails earlier than a missing key and has a different fix, so
+    reporting the agent for it would send a dev down the wrong path."""
+    doctor = _module("doctor")
+
+    def fake(*cmd):
+        if cmd[0] == "ssh":
+            return _FakeProc(255, "", "Host key verification failed.")
+        if cmd[0] == "ssh-keygen":
+            return _FakeProc(1, "", "")
+        return _FakeProc(0)
+
+    monkeypatch.setattr(doctor, "_run", fake)
+    result = doctor.check_ssh_prerequisites()
+    assert result.ok is False
+    assert "known_hosts" in result.detail
