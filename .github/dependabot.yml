@@ -10,6 +10,22 @@ updates:
       day: monday
     commit-message:
       prefix: deps
+    # Security patches to 3.13 only. A dependency does not support 3.14 yet, and
+    # the interpreter minor is a deliberate choice rather than something to track
+    # upstream -- pyproject's requires-python is >=3.13 and CI pins 3.13.
+    #
+    # Both major and minor are ignored, and the minor is the one that matters:
+    # Python's major is 3, so 3.13 -> 3.14 is a *minor* update in semver terms and
+    # a major-only ignore would not have stopped it. That is what #16 proposed.
+    #
+    # Digest updates of the pinned tag are unaffected, which is the whole reason
+    # this ecosystem is watched at all -- the FROM is digest-pinned, so it no
+    # longer picks up rebuilds of 3.13-slim on its own.
+    ignore:
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
 
   - package-ecosystem: github-actions
     directory: /
