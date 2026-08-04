@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Merge numbered report sections into one file.
 
 An assessment is produced in stages -- inventory, refutation, finding,
@@ -31,18 +30,12 @@ give no indication it had done so.
 
 from __future__ import annotations
 
-import argparse
-import os
 import re
-import sys
 from pathlib import Path
 
+from owasp_kb_cli.state import report_dir
+
 SECTION = re.compile(r"^(\d+)_(.+)\.md$")
-
-
-def session_report_dir(session: str) -> Path:
-    base = os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
-    return Path(base) / "owasp-kb" / "sessions" / session / "report"
 
 
 def collect(directory: Path) -> list[tuple[int, Path]]:
@@ -71,7 +64,7 @@ def collect(directory: Path) -> list[tuple[int, Path]]:
 
 
 def merge(session: str, out: Path, expect_findings: int | None) -> int:
-    directory = session_report_dir(session)
+    directory = report_dir(session)
     if not directory.is_dir():
         raise SystemExit(f"error: no report sections at {directory}")
 
@@ -100,27 +93,3 @@ def merge(session: str, out: Path, expect_findings: int | None) -> int:
     out.write_text(body + "\n")
     print(f"merged {len(sections)} sections into {out}")
     return 0
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="owasp-kb-report", description=__doc__)
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    m = sub.add_parser("merge", help="assemble numbered sections into one report")
-    m.add_argument("--session", required=True, help="session id whose sections to merge")
-    m.add_argument("--out", required=True, type=Path, help="path to write the report to")
-    m.add_argument(
-        "--expect-findings",
-        type=int,
-        default=None,
-        help="number of findings owasp_roster reported; refuses on a mismatch",
-    )
-
-    args = parser.parse_args(argv)
-    if args.command == "merge":
-        return merge(args.session, args.out, args.expect_findings)
-    return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
