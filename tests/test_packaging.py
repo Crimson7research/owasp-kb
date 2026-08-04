@@ -1381,6 +1381,21 @@ def test_the_plugin_registers_the_inventory_gate_against_a_dispatch():
     assert Path("plugins/owasp-kb/hooks/gate_triage_on_inventory.py").exists()
 
 
+def test_the_plugin_registers_the_security_flag_hook():
+    """A hook the manifest does not register never runs, and this is the only
+    mechanism here that fires without being chosen -- which is the point, since the
+    skill was seen and chosen against."""
+    hooks = json.loads(PLUGIN.read_text())["hooks"]
+    entries = hooks.get("UserPromptSubmit") or []
+    flagged = [e for e in entries if "flag_security_topic" in json.dumps(e)]
+    assert len(flagged) == 1, "the security flag hook is not registered exactly once"
+    assert "matcher" not in flagged[0], (
+        "UserPromptSubmit carries no matcher -- there is no tool name to match, and "
+        "an ignored key reads as a filter that is being applied"
+    )
+    assert Path("plugins/owasp-kb/hooks/flag_security_topic.py").exists()
+
+
 @pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
 def test_the_skills_arm_the_inventory_gate(skill):
     """The concerns list arms the gate and inventory.md satisfies it. Nothing else
