@@ -30,8 +30,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# packages: read so the build job can pull the digest the plugin ships and check it
+# against sources.lock.yml. The package is private; contents alone cannot read it.
 permissions:
   contents: read
+  packages: read
 
 jobs:
   test:
@@ -111,3 +114,18 @@ jobs:
           chmod +x scripts/docker_smoke.sh
           ./scripts/docker_smoke.sh owasp-kb:lite lexical
           ./scripts/docker_smoke.sh owasp-kb:full hybrid
+
+      # The smoke test above checks images built from this commit. This checks the
+      # reference the plugin actually ships -- a different question, and the one
+      # the three deleted version-lockstep proxies were standing in for.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the shipped image reference
+        run: |
+          chmod +x scripts/verify_pin.sh
+          ./scripts/verify_pin.sh
