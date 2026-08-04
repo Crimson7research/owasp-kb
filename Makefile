@@ -37,9 +37,6 @@ lint: ## Lint and format-check
 	$(EXEC) python -m ruff check .
 	$(EXEC) python -m ruff format --check .
 
-plugin-digest: ## Record the plugin content digest after bumping the version
-	$(EXEC) python scripts/plugin_digest.py --write
-
 serve: ## Run the MCP server against the full index (for manual stdio testing)
 	$(EXEC) python -m owasp_kb.server.app --index $(DIST)/owasp-kb-full.sqlite
 

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
-import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -56,7 +54,6 @@ def test_plugin_manifest_is_valid():
     data = json.loads(PLUGIN.read_text())
     assert data["name"] == "owasp-kb"
     assert data["description"]
-    assert data["version"]
     assert data["license"] == "MIT"
 
 
@@ -66,6 +63,38 @@ def test_plugin_declares_its_mcp_config():
     data = json.loads(PLUGIN.read_text())
     assert data["mcpServers"] == "./.mcp.json"
     assert MCP_CONFIG.exists()
+
+
+def test_no_plugin_version_field_is_declared():
+    """The plugin cache is keyed on the resolved version, and Claude Code resolves
+    that to the commit SHA when `version` is absent -- "Bump the field on every
+    release, or omit it to use the commit SHA." Omitting it makes every commit a
+    distinct version by construction; observed directly, a marker commit moved an
+    install from cache key 37b3cef5e478 to 5fbc08c9a745.
+
+    That is what let scripts/plugin_digest.py and
+    plugins/owasp-kb/.claude-plugin/content.sha256 be deleted rather than merely
+    relocated: they existed only to catch a plugin content change shipped without
+    a bump, which cannot happen when the version *is* the content's commit.
+
+    Re-adding the field silently reinstates that hazard, and it is quiet in an
+    expensive way -- `/plugin` reports "already at the latest version", `/mcp`
+    reports a successful reconnect and `/reload-plugins` reloads the old files,
+    three green statuses every one of them true about the wrong copy. Recovery
+    needs a manual uninstall and reinstall, and nothing says so. It cost exactly
+    that once.
+    """
+    plugin = json.loads(PLUGIN.read_text())
+    assert "version" not in plugin, (
+        "plugin.json declares a version again, so the cache stops tracking "
+        "commits. Either drop the field, or restore scripts/plugin_digest.py and "
+        "the guard it enforced -- do not leave the field with no guard"
+    )
+    entry = json.loads(MARKETPLACE.read_text())["plugins"][0]
+    assert "version" not in entry, (
+        "the marketplace entry pins a version for the plugin, which overrides "
+        "commit-SHA resolution the same way plugin.json's field does"
+    )
 
 
 def _server_command() -> str:
@@ -104,6 +133,31 @@ def test_the_server_command_creates_the_state_directory_itself():
     """A bind mount whose source is missing is created by the docker daemon and
     owned by root, which the agent then cannot write to."""
     assert "mkdir -p" in _server_command()
+
+
+INSTALL_SCRIPTS = (Path("install/codex.sh"), Path("install/opencode.sh"))
+
+
+@pytest.mark.parametrize("script", INSTALL_SCRIPTS, ids=lambda p: p.name)
+def test_the_install_scripts_carry_no_image_literal(script):
+    """These print MCP config snippets for non-Claude agents, so they name the
+    image too. Pasting the digest into each would give pin_image.py three literals
+    to keep in step, and nothing would notice one going stale -- two internally
+    consistent vocabularies with nothing translating between them, which is the
+    failure #25 established and this repository keeps rebuilding.
+
+    They read the default out of .mcp.json instead, which they can do because they
+    run from the cloned repo and python3 is already a hard dependency of the hooks.
+    """
+    text = script.read_text()
+    assert "sha256:" not in text, (
+        f"{script} hardcodes a digest; it must read the default from .mcp.json so "
+        "there is one literal for a release to update"
+    )
+    assert "owasp-kb:full" not in text, (
+        f"{script} hardcodes a tag, which resolves to Docker Hub and finds nothing"
+    )
+    assert ".mcp.json" in text, f"{script} does not read the image from .mcp.json"
 
 
 def test_all_four_skills_exist():
@@ -710,104 +764,6 @@ def test_risk_scoring_flags_metrics_the_code_cannot_settle(skill):
     assert "CVSS" in body
     assert "cannot settle" in body
     assert "temporal or environmental" in body
-
-
-def test_one_version_governs_the_package_the_plugin_and_the_marketplace():
-    """Three version numbers disagreed -- pyproject 0.1.0, marketplace 0.3.0,
-    plugin 0.8.0 -- and nothing compared them. A reader could not tell which
-    described the thing they were running. See #13."""
-    from owasp_kb import __version__
-
-    plugin = json.loads(PLUGIN.read_text())["version"]
-    marketplace = json.loads(MARKETPLACE.read_text())["plugins"][0]["version"]
-    assert plugin == __version__, f"plugin.json {plugin} != owasp_kb {__version__}"
-    assert marketplace == __version__, f"marketplace {marketplace} != owasp_kb {__version__}"
-
-
-def _plugin_digest():
-    """Load scripts/plugin_digest.py by path.
-
-    It is repository tooling rather than shipped code, so it is not importable as
-    a module: `python -m pytest` happens to put the working directory on the
-    import path and bare `pytest`, which CI runs, does not. Importing it as
-    `scripts.plugin_digest` passed locally and failed in CI for exactly that
-    reason -- the same shape as the defect these tests exist to catch, a check
-    that was correct about a copy nobody runs.
-    """
-    spec = importlib.util.spec_from_file_location("plugin_digest", Path("scripts/plugin_digest.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_the_recorded_digest_matches_what_the_plugin_currently_ships():
-    """The version is the delivery mechanism, not decoration on a release.
-
-    The plugin cache is keyed on it, so shipping a content change without a bump
-    leaves the installed copy unreachable rather than merely stale: `/plugin`
-    reports "already at the latest version", `/mcp` reports a successful
-    reconnect, and `/reload-plugins` reloads the old files. Three green statuses,
-    every one of them true about the wrong artefact -- the same class of failure
-    as `gh pr checks` showing a pre-rebase result. Recovery needs a manual
-    uninstall and reinstall, and nothing says so.
-
-    It cost exactly that once: the hook fix in #61 was verified in the repository,
-    in the tests and in CI, and was not running. So forgetting the bump is a
-    failing test now. Run `python scripts/plugin_digest.py --write` after bumping
-    `owasp_kb.__version__`.
-    """
-    from owasp_kb import __version__
-
-    module = _plugin_digest()
-    have = module.recorded()
-    assert have is not None, "no digest recorded; run scripts/plugin_digest.py --write"
-    version, value = have
-    assert version == __version__, (
-        f"digest was recorded against {version} but the package is {__version__}; "
-        "bump one or rerun --write"
-    )
-    assert value == module.digest(), (
-        "plugins/ has changed since the digest was recorded. Bump "
-        "owasp_kb.__version__ and rerun scripts/plugin_digest.py --write -- "
-        "without a new version the cache cannot deliver this change"
-    )
-
-
-def test_the_digest_covers_paths_and_not_only_contents():
-    """A renamed agent is as broken as a rewritten one -- the skills dispatch by
-    name. Hashing contents alone would let a rename ship silently."""
-    digest = _plugin_digest().digest
-
-    with tempfile.TemporaryDirectory() as raw:
-        root = Path(raw) / "plugin"
-        (root / "agents").mkdir(parents=True)
-        (root / "agents" / "finder.md").write_text("body")
-        before = digest(root)
-        (root / "agents" / "finder.md").rename(root / "agents" / "verifier.md")
-        assert digest(root) != before
-
-
-def test_the_digest_ignores_local_python_bytecode():
-    """The digest must describe what ships, not what the working tree holds.
-
-    Bytecode under plugins/ is gitignored, machine-local and interpreter-version
-    dependent. This cost a red CI run: checking the inventory-gate hook against a
-    real inventory imported it by path, which left a `.pyc` beside it, the digest
-    was recorded over that file, and CI -- which has no such file -- computed a
-    different one. The failure surfaced as "plugins/ has changed since the digest
-    was recorded", which was true of the machine and false of the change."""
-    digest = _plugin_digest().digest
-
-    with tempfile.TemporaryDirectory() as raw:
-        root = Path(raw) / "plugin"
-        (root / "hooks").mkdir(parents=True)
-        (root / "hooks" / "gate.py").write_text("body")
-        before = digest(root)
-
-        cache = root / "hooks" / "__pycache__"
-        cache.mkdir()
-        (cache / "gate.cpython-313.pyc").write_bytes(b"\x00\x01compiled")
-        assert digest(root) == before, "a local .pyc changed the digest of what ships"
 
 
 def test_pyproject_derives_its_version_rather_than_repeating_it():

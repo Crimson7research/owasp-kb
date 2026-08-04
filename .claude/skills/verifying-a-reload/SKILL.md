@@ -121,11 +121,19 @@ needed — so verify against the cache directory rather than any of those messag
 grep -c "<text you added>" ~/.claude/plugins/cache/owasp-kb/owasp-kb/<version>/hooks/*.py
 ```
 
-`scripts/plugin_digest.py` and its test now make this a failing test rather than a discovery: the
-digest of everything under `plugins/` is recorded against `__version__`, so changing plugin content
-without a bump fails the suite. Run `make plugin-digest` after bumping. That guard exists because
-this cost a full verification cycle — the fix was correct in the repo, in its tests and in CI, and
-was not the code running.
+**This failure mode is now structurally impossible, and the history is worth keeping anyway.** The
+manifests declare no `version`, so Claude Code resolves the plugin version to the commit it fetched
+— a marker commit moves an install from cache key `37b3cef5e478` to `5fbc08c9a745`. Every commit is
+a distinct cache key, so content can no longer change under a version that does not.
+
+It used to be guarded instead of prevented: `scripts/plugin_digest.py` recorded a digest of
+everything under `plugins/` against `__version__`, and a test refused when the two disagreed. Both
+are deleted; `test_no_plugin_version_field_is_declared` keeps the field from coming back, because
+re-adding it reinstates the hazard silently. See ADR 0014.
+
+The cache-directory check above is still the right instinct for everything else on this page. The
+guard existed because this cost a full verification cycle — the fix was correct in the repo, in its
+tests and in CI, and was not the code running.
 
 ## The same failure on other surfaces
 

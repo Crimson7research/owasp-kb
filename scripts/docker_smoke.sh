@@ -166,16 +166,19 @@ for path in "${LICENSES[@]}"; do
     fi
 done
 
-# Lockstep: the image and the plugin shipped beside it carry one version. A
-# reconnect reports success whether or not the image is current, so drift is
-# invisible at runtime unless the two are pinned together at build time. This
-# turns a stale image into a build failure instead.
-PLUGIN_VERSION=$(python3 -c \
-  'import json,sys; print(json.load(open("plugins/owasp-kb/.claude-plugin/plugin.json"))["version"])')
-# kb_info's body arrives as escaped JSON inside content[0].text, so the quotes
-# are backslashed. Match loosely but bound it to before the next comma, or a
-# pack version elsewhere in the payload could satisfy it.
-check_kb_info "server_version[^,]*$PLUGIN_VERSION" \
-  "server reports version $PLUGIN_VERSION, matching the plugin"
+# A check_kb_info comparing server_version to plugin.json's version stood here, as
+# a lockstep assertion that the image and the plugin shipped beside it were one
+# release. The plugin declares no version now -- it resolves from the commit -- so
+# there is nothing left to compare against.
+#
+# The comparison was a proxy for "this image is the one published for this plugin",
+# expressible only because a moving tag could not state it. The plugin pins the
+# image by digest instead, which states it directly, and scripts/verify_pin.sh
+# checks that the shipped digest resolves and carries the packs the lock declares.
+# Two images can report the same version and hold different indexes; only a digest
+# tells them apart. See ADR 0014.
+#
+# The kb_info response is still isolated above rather than searched for across the
+# whole exchange, which is what caught a dropped kb_info reaching this point.
 
 echo "  PASS"

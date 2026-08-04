@@ -12,9 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+# contents and pull-requests are write because the release opens the pin pull
+# request: an image digest is only knowable after the push, so the reference the
+# plugin ships is written by this workflow rather than by hand.
 permissions:
-  contents: read
+  contents: write
   packages: write
+  pull-requests: write
 
 jobs:
   publish:
@@ -76,7 +80,7 @@ jobs:
           CS: ${{ steps.versions.outputs.cs }}
           CWE: ${{ steps.versions.outputs.cwe }}
         run: |
-          # GHCR requires a lowercase image path; repository_owner is "Yimura".
+          # GHCR requires a lowercase image path; repository_owner is "Crimson7research".
           IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
           # Every pack in the index gets named in the immutable tag -- see the
           # PINNED_TAG comment in the Makefile for why CWE had to join it.
@@ -91,3 +95,40 @@ jobs:
           ./scripts/docker_smoke.sh "$IMAGE_LC:lite" lexical
           ./scripts/docker_smoke.sh "$IMAGE_LC:full" hybrid
           docker push --all-tags "$IMAGE_LC"
+
+      - name: Capture the published digest
+        id: digest
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/owasp-kb
+        run: |
+          IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          # RepoDigests carries one entry per repository the image is tagged into,
+          # so select this one rather than trusting index 0 to be it.
+          DIGEST=$(docker image inspect "$IMAGE_LC:full" \
+            --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            | grep "^${IMAGE_LC}@sha256:" | head -1)
+          if [ -z "$DIGEST" ]; then
+            echo "no registry digest for $IMAGE_LC:full -- did the push run?" >&2
+            docker image inspect "$IMAGE_LC:full" --format '{{.RepoDigests}}' >&2
+            exit 1
+          fi
+          echo "full=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "captured $DIGEST"
+
+      - name: Pin the plugin to the published image
+        run: python scripts/pin_image.py --image "${{ steps.digest.outputs.full }}" --write
+
+      - name: Open the pin pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: release/pin-${{ github.ref_name }}
+          base: master
+          title: "Pin the plugin to the ${{ github.ref_name }} image"
+          commit-message: "Pin the plugin to the ${{ github.ref_name }} image"
+          add-paths: plugins/owasp-kb/.mcp.json
+          body: |
+            The images for ${{ github.ref_name }} are published and smoke-tested. This
+            points the plugin at the `full` variant by digest.
+
+            Merging this is the delivery step: the marketplace is read from the
+            default branch, so master is the surface devs install from.

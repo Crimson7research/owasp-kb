@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -1131,14 +1132,26 @@ def test_kb_info_reports_the_server_version(tools):
     assert tools["kb_info"]()["server_version"] == __version__
 
 
-def test_the_server_version_matches_the_plugin(tools):
-    """Lockstep: the plugin and the server it ships beside carry one number, so a
-    mismatch at runtime means a stale image rather than an ambiguity."""
-    import json
-    from pathlib import Path
+def test_kb_info_reports_a_usable_server_version(tools):
+    """This asserted equality with `plugin.json`'s version until the plugin stopped
+    declaring one: the version resolves from the commit now, so there is no plugin
+    number to be in lockstep with. That comparison was a proxy for "this image is
+    the one shipped beside this plugin", and the plugin pins the image by digest
+    instead, which states it directly -- see ADR 0014.
 
-    plugin = json.loads(Path("plugins/owasp-kb/.claude-plugin/plugin.json").read_text())
-    assert tools["kb_info"]()["server_version"] == plugin["version"]
+    Asserting `== owasp_kb.__version__` instead would be tautological, and was
+    caught being so: kb_info reads that same module attribute, so mutating the
+    literal to 9.9.9 moved both sides and the test stayed green.
+
+    What is left is small and can fail. `server_version` is how a caller tells
+    which build answered a citation, so it has to be present and shaped like a
+    version -- an empty string or a dropped key would take a citation's provenance
+    with it and nothing else looks.
+    """
+    version = tools["kb_info"]()["server_version"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version), (
+        f"server_version is {version!r}, which cannot identify a build"
+    )
 
 
 def test_roster_tool_accepts_a_refuted_gap(tools):

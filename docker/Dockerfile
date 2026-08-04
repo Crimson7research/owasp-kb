@@ -1,7 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # ---------- shared base ----------
-FROM python:3.13-slim AS base
+# Pinned by digest rather than by tag. `python:3.13-slim` moves, so two builds of
+# identical source produced different images -- the same hole one layer down that
+# the plugin's own image digest exists to close, and it undercuts the immutable
+# content tag's reproducibility claim. The cost is that this no longer picks up
+# security updates on its own, which is what .github/dependabot.yml is for.
+FROM python:3.13-slim@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91 AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \

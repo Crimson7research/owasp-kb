@@ -5,7 +5,19 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKILLS_SRC="$REPO_ROOT/plugins/owasp-kb/skills"
 SKILLS_DEST="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skill"
-IMAGE="${OWASP_KB_IMAGE:-owasp-kb:full}"
+
+# The plugin's .mcp.json is the single source of truth for which image ships.
+# Repeating the reference here would give a release three literals to keep in step
+# and nothing to catch one going stale.
+DEFAULT_IMAGE="$(python3 -c '
+import re, sys
+text = open(sys.argv[1]).read()
+match = re.search(r"\$\{OWASP_KB_IMAGE:-([^}]+)\}", text)
+if not match:
+    sys.exit("no ${OWASP_KB_IMAGE:-...} default in " + sys.argv[1])
+print(match.group(1))
+' "$REPO_ROOT/plugins/owasp-kb/.mcp.json")"
+IMAGE="${OWASP_KB_IMAGE:-$DEFAULT_IMAGE}"
 
 [ -d "$SKILLS_SRC" ] || { echo "no skills at $SKILLS_SRC" >&2; exit 1; }
 
