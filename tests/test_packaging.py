@@ -135,6 +135,31 @@ def test_the_server_command_creates_the_state_directory_itself():
     assert "mkdir -p" in _server_command()
 
 
+INSTALL_SCRIPTS = (Path("install/codex.sh"), Path("install/opencode.sh"))
+
+
+@pytest.mark.parametrize("script", INSTALL_SCRIPTS, ids=lambda p: p.name)
+def test_the_install_scripts_carry_no_image_literal(script):
+    """These print MCP config snippets for non-Claude agents, so they name the
+    image too. Pasting the digest into each would give pin_image.py three literals
+    to keep in step, and nothing would notice one going stale -- two internally
+    consistent vocabularies with nothing translating between them, which is the
+    failure #25 established and this repository keeps rebuilding.
+
+    They read the default out of .mcp.json instead, which they can do because they
+    run from the cloned repo and python3 is already a hard dependency of the hooks.
+    """
+    text = script.read_text()
+    assert "sha256:" not in text, (
+        f"{script} hardcodes a digest; it must read the default from .mcp.json so "
+        "there is one literal for a release to update"
+    )
+    assert "owasp-kb:full" not in text, (
+        f"{script} hardcodes a tag, which resolves to Docker Hub and finds nothing"
+    )
+    assert ".mcp.json" in text, f"{script} does not read the image from .mcp.json"
+
+
 def test_all_four_skills_exist():
     found = {p.name for p in SKILLS_DIR.iterdir() if p.is_dir()}
     assert found == EXPECTED_SKILLS
