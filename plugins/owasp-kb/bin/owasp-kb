@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Host-side tooling for the owasp-kb plugin.
+
+This runs on the host rather than as an MCP tool: the server's state mount is
+read-only and the target repository is not mounted at all, so nothing inside the
+container can write a report or clear a session.
+
+    owasp-kb report merge --session <id> --out <path> [--expect-findings N]
+    owasp-kb doctor [--pull]
+    owasp-kb sessions list
+    owasp-kb sessions purge <id>... [--yes]
+    owasp-kb sessions purge --older-than <days> [--yes]
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+# The plugin directory is copied wholesale on install, so the package beside this
+# script is always present -- but bin/ is not on the import path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from owasp_kb_cli import doctor, report, sessions  # noqa: E402
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Raw, or argparse reflows the usage block in the docstring into one paragraph
+    # and the examples stop being copyable -- which is the whole reason they are
+    # there for a CLI meant to keep support load down.
+    parser = argparse.ArgumentParser(
+        prog="owasp-kb",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    r = sub.add_parser("report", help="assemble an assessment report")
+    r_sub = r.add_subparsers(dest="report_command", required=True)
+    m = r_sub.add_parser("merge", help="assemble numbered sections into one report")
+    m.add_argument("--session", required=True, help="session id whose sections to merge")
+    m.add_argument("--out", required=True, type=Path, help="path to write the report to")
+    m.add_argument(
+        "--expect-findings",
+        type=int,
+        default=None,
+        help="number of findings owasp_roster reported; refuses on a mismatch",
+    )
+
+    d = sub.add_parser("doctor", help="check the install chain")
+    d.add_argument("--pull", action="store_true", help="pull the pinned image and exit")
+
+    s = sub.add_parser("sessions", help="inspect or clear assessment state on this machine")
+    s_sub = s.add_subparsers(dest="sessions_command", required=True)
+    s_sub.add_parser("list", help="what each session holds, and how much of it")
+    p = s_sub.add_parser("purge", help="delete a session's accumulated state")
+    p.add_argument("ids", nargs="*", help="session ids to delete")
+    p.add_argument("--older-than", type=int, metavar="DAYS", help="every session older than DAYS")
+    p.add_argument("--yes", action="store_true", help="confirm the deletion")
+
+    args = parser.parse_args(argv)
+
+    if args.command == "report":
+        return report.merge(args.session, args.out, args.expect_findings)
+
+    if args.command == "doctor":
+        return doctor.pull() if args.pull else doctor.run()
+
+    if args.command == "sessions":
+        if args.sessions_command == "list":
+            sessions.render(sessions.list_sessions())
+            return 0
+        if args.older_than is not None:
+            if args.ids:
+                print("error: pass ids or --older-than, not both")
+                return 1
+            selected = [s.session for s in sessions.older_than(args.older_than)]
+            if not selected:
+                print(f"no sessions older than {args.older_than} days")
+                return 0
+            return sessions.purge(selected, confirmed=args.yes)
+        if not args.ids:
+            print("error: name a session id, or pass --older-than DAYS")
+            return 1
+        return sessions.purge(args.ids, confirmed=args.yes)
+
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
