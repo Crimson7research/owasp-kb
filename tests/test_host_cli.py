@@ -176,3 +176,126 @@ def test_the_plugin_check_fails_when_a_version_field_reappears(monkeypatch, tmp_
     result = doctor.check_plugin_identity()
     assert result.ok is False
     assert "1.0.0" in result.detail
+
+
+def _seed_session(root: Path, session: str, findings: int = 2, sections: int = 3) -> Path:
+    directory = root / "owasp-kb" / "sessions" / session
+    (directory / "report").mkdir(parents=True)
+    lines = "\n".join(f'{{"req_id": "V1.1.{n}", "verdict": "MET"}}' for n in range(findings))
+    (directory / "findings.jsonl").write_text(lines + "\n")
+    (directory / "inventory.md").write_text("# inventory\n")
+    for n in range(sections):
+        (directory / "report" / f"{100 + n}_section.md").write_text("body\n")
+    return directory
+
+
+def test_summarise_counts_what_a_session_holds(monkeypatch, tmp_path):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    _seed_session(tmp_path, "abc123", findings=4, sections=2)
+    summary = sessions.summarise(tmp_path / "owasp-kb" / "sessions" / "abc123")
+    assert summary.findings == 4
+    assert summary.sections == 2
+    assert summary.has_inventory is True
+    assert summary.bytes > 0
+
+
+def test_the_summary_carries_no_field_that_could_identify_a_target(monkeypatch, tmp_path):
+    """Target identity was deliberately removed from recorded state. A listing tool
+    that recovered it would undo that.
+
+    Pinned as an exact field set rather than a search for suspicious strings: a
+    substring check passes on anything it did not think to look for, and the
+    failure mode here is a *new field* -- a repo name, a path, a first finding's
+    excerpt -- added because it seemed helpful. Adding one has to fail here and be
+    argued for rather than slipping through.
+    """
+    import dataclasses
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    _seed_session(tmp_path, "abc123")
+    summary = sessions.summarise(tmp_path / "owasp-kb" / "sessions" / "abc123")
+    assert {f.name for f in dataclasses.fields(summary)} == {
+        "session",
+        "mtime",
+        "findings",
+        "sections",
+        "has_inventory",
+        "bytes",
+        "path",
+    }
+
+
+def test_list_sessions_returns_every_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    _seed_session(tmp_path, "aaa")
+    _seed_session(tmp_path, "bbb")
+    assert {s.session for s in sessions.list_sessions()} == {"aaa", "bbb"}
+
+
+def test_list_sessions_is_empty_rather_than_failing_when_nothing_exists(monkeypatch, tmp_path):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    assert sessions.list_sessions() == []
+
+
+def test_purge_requires_confirmation(monkeypatch, tmp_path):
+    """It deletes an engagement's accumulated findings. A flag typo must not."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    directory = _seed_session(tmp_path, "aaa")
+    assert sessions.purge(["aaa"], confirmed=False) == 1
+    assert directory.is_dir(), "purge deleted without confirmation"
+
+
+def test_purge_deletes_only_the_named_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    doomed = _seed_session(tmp_path, "aaa")
+    kept = _seed_session(tmp_path, "bbb")
+    assert sessions.purge(["aaa"], confirmed=True) == 0
+    assert not doomed.exists()
+    assert kept.is_dir()
+
+
+@pytest.mark.parametrize("bad", ["../../etc", "a/b", ".."])
+def test_purge_refuses_a_traversal_id(monkeypatch, tmp_path, bad):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    outside = tmp_path / "owasp-kb" / "sentinel"
+    outside.mkdir(parents=True)
+    assert sessions.purge([bad], confirmed=True) == 1
+    assert outside.is_dir()
+
+
+def test_purge_refuses_a_session_that_does_not_exist(monkeypatch, tmp_path):
+    """Otherwise a typo reports success and the operator believes the material is
+    gone when it is still there."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    assert sessions.purge(["nope"], confirmed=True) == 1
+
+
+def test_purge_deletes_nothing_when_one_of_several_ids_is_bad(monkeypatch, tmp_path):
+    """All-or-nothing. A partial purge across a batch leaves the operator with no
+    idea which sessions survived."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    real = _seed_session(tmp_path, "aaa")
+    assert sessions.purge(["aaa", "nope"], confirmed=True) == 1
+    assert real.is_dir()
+
+
+def test_older_than_selects_by_mtime(monkeypatch, tmp_path):
+    import os as _os
+    import time as _time
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    sessions = _module("sessions")
+    old = _seed_session(tmp_path, "old")
+    _seed_session(tmp_path, "new")
+    long_ago = _time.time() - 60 * 60 * 24 * 90
+    _os.utime(old, (long_ago, long_ago))
+    assert [s.session for s in sessions.older_than(30)] == ["old"]
