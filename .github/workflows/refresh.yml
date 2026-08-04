@@ -58,7 +58,7 @@ jobs:
 
       - name: Open a pull request
         if: steps.bump.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: chore/refresh-sources
           title: "chore: refresh pinned OWASP sources"

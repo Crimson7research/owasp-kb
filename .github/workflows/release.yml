@@ -119,7 +119,7 @@ jobs:
         run: python scripts/pin_image.py --image "${{ steps.digest.outputs.full }}" --write
 
       - name: Open the pin pull request
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: release/pin-${{ github.ref_name }}
           base: master
