@@ -402,3 +402,118 @@ def test_a_grep_narrowed_to_files_it_cannot_reach_is_allowed(config_dir, glob):
 @pytest.mark.parametrize("glob", ["*.md", "docs/**"], ids=["extension", "tree"])
 def test_a_grep_narrowed_to_files_it_can_reach_is_denied(config_dir, glob):
     assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+# -- brace lists ---------------------------------------------------------------
+#
+# Every expectation below was run against rg 15.2.0 on a tree holding the excluded report,
+# and records whether that ripgrep still returned it.
+
+
+@pytest.mark.parametrize("glob", ["*.{ts,tsx}", "**/*.{js,jsx}"], ids=["flat", "recursive"])
+def test_a_brace_list_that_cannot_reach_it_is_allowed(config_dir, glob):
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize("glob", ["*.{md,txt}", "docs/**/*.{md,rst}"], ids=["flat", "recursive"])
+def test_a_brace_list_that_can_reach_it_is_denied(config_dir, glob):
+    """`full_match` has no brace support, so an unexpanded `*.{md,txt}` matches nothing at
+    all and the call is allowed. That is a leak rather than a rough edge."""
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize("glob", ["!*.{md,txt}", "!docs/**/*.{md,rst}"], ids=["flat", "recursive"])
+def test_a_negated_brace_list_that_covers_the_path_is_allowed(config_dir, glob):
+    """A negation is the mirror: it covers the path when any alternative matches it, and
+    an unexpanded brace list matched nothing -- which here means the hook refused a
+    negation that genuinely excludes the report."""
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize("glob", ["!*.{ts,tsx}", "!src/**/*.{py,pyi}"], ids=["flat", "recursive"])
+def test_a_negated_brace_list_that_does_not_cover_the_path_is_denied(config_dir, glob):
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+def test_a_pathological_brace_pattern_is_denied(config_dir):
+    """Expansion is a product of the groups. The hook has a 5s timeout and fails open, so
+    a pattern past the bound is refused rather than expanded."""
+    assert _denied(_run(_call("Glob", pattern="{a,b}{c,d}{e,f}{g,h}{i,j}.md"), config_dir))
+
+
+def test_a_pathological_negated_brace_pattern_is_denied(config_dir):
+    """The mirror: past the bound, `_covers` cannot prove coverage, which is also a deny."""
+    glob = "!{a,b}{c,d}{e,f}{g,h}{i,j}.md"
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize(
+    "glob",
+    ["!{./docs,zz}/**", "!{docs/,zz}", "!{/docs,zz}/**", "!{a/b,*.md}", "!{md,txt}"],
+    ids=["dot-in-brace", "trailing-slash-in-brace", "leading-slash-in-brace", "mixed", "bare"],
+)
+def test_a_negated_brace_alternative_ripgrep_cannot_honour_is_denied(config_dir, glob):
+    """A brace hides a `.` or an empty segment from a guard that runs before expansion:
+    `{./docs,zz}` splits into `{.` and `docs,zz}`, neither a bare `.`, and expansion then
+    hands `./docs/**` to a `full_match` that drops the `.` and reports a match -- while rg
+    hands the report straight over. So the guard runs per alternative, after expansion.
+
+    `{a/b,*.md}` is the anchoring mirror: rg decides anchoring once for the whole glob, so
+    the separator in `a/b` anchors `*.md` too and the report three levels down survives.
+    """
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize(
+    "glob",
+    [
+        "!{.,docs}/security/*",
+        "!docs/{,security}/*",
+        "!docs/{..,security}/*",
+        "!{docs,zz}/security/",
+    ],
+    ids=["dot-alternative", "empty-alternative", "walk-back-alternative", "trailing-slash"],
+)
+def test_a_negated_brace_with_one_honourable_alternative_is_allowed(config_dir, glob):
+    """Skipping an alternative rg cannot honour must not poison the ones it can: each of
+    these carries a junk alternative alongside a real exclusion, and rg excludes the report
+    under all four."""
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+def test_a_brace_alternative_naming_an_absolute_tree_is_denied(config_dir):
+    """A brace at position zero makes an alternative absolute while the pattern is not, so
+    the absolute-vs-relative form mismatch has to be resolved per alternative."""
+    pattern = "{/home/you/src/target/docs,zz}/**/*.md"
+    assert _denied(_run(_call("Glob", pattern=pattern), config_dir))
+
+
+def test_a_brace_alternative_that_walks_back_up_is_still_denied(config_dir):
+    """`normpath` cannot see into a brace, so each alternative is normalised after
+    expansion too -- otherwise the file walks out through the unnormalised one."""
+    assert _denied(_run(_call("Glob", pattern="{docs/../docs,zz}/**/*.md"), config_dir))
+
+
+def test_a_brace_list_against_a_deep_path_is_denied_rather_than_matched(tmp_path):
+    """Every alternative is tried against every suffix of the excluded path, so expansion
+    multiplies a cost that was linear in that path's depth -- 625 alternatives against a
+    2000-segment entry took 8s against a 5s timeout that fails open, which is the leak
+    rather than a slow denial. Past the budget the call is refused."""
+    deep = "/".join(f"d{i}" for i in range(2000)) + "/rep.md"
+    pattern = "{a,b,c,d,e}{a,b,c,d,e}{a,b,c,d,e}{a,b,c,d,e}"
+    assert _denied(_run(_call("Glob", pattern=pattern), _listing(tmp_path, deep)))
+
+
+def test_a_brace_free_pattern_against_a_very_deep_path_is_denied_rather_than_matched(tmp_path):
+    """Building those suffixes is quadratic in the entry's depth, so the product ceiling
+    does not bound it on its own -- one alternative leaves the depth free. An 8000-segment
+    entry exhausted 2GB and raised, and `main` catches that into an allow: the deep path is
+    then the way past the hook rather than a slow denial."""
+    deep = "/".join(f"directory-number-{i}" for i in range(8000)) + "/rep.md"
+    assert _denied(_run(_call("Glob", pattern="src/**/*.py"), _listing(tmp_path, deep)))
+
+
+def test_an_unbalanced_brace_is_matched_literally(config_dir):
+    """`{` is a legal filename character and rg rejects an unclosed group outright, so the
+    pattern is left alone rather than guessed at."""
+    assert not _denied(_run(_call("Glob", pattern="src/**/*.{ts"), config_dir))

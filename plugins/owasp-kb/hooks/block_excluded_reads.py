@@ -135,6 +135,77 @@ def _selects_across_forms(pattern: str, segments: list[str]) -> bool:
     )
 
 
+# Bounds on brace expansion. It is a product of the groups, and this hook has a 5s timeout
+# and fails open -- so a pattern past the bound is refused rather than expanded.
+BRACE_GROUPS = 4
+BRACE_ALTERNATIVES = 16
+
+# Ceilings on what one ``_selects`` call may cost. It tries every alternative against every
+# suffix of the excluded path, so expanding a brace list multiplies a cost that used to be
+# linear in that path's depth -- at the bound above, by 625. Past either ceiling the pattern
+# is refused rather than matched, the same trade ``_expand_braces`` makes and for the same
+# reason: the 5s timeout fails open, so the slow path is the leak.
+#
+# The depth ceiling is the separate one because building those suffixes is quadratic in the
+# depth, not linear: a 4000-segment entry cost 0.9s and an 8000-segment one exhausted 2GB
+# and raised, which ``main`` catches into an allow. That predates brace expansion -- it is
+# the same shape ``_under`` documents -- but the product ceiling alone does not bound it,
+# since a single alternative leaves the depth free. ``_covers`` needs neither, matching each
+# alternative once against one path rather than per suffix.
+MATCH_BUDGET = 50_000
+MAX_DEPTH = 1_000
+
+
+def _split_alternatives(body: str) -> list[str]:
+    """Split ``a,b{c,d}`` on its top-level commas, leaving a nested group intact."""
+    parts: list[str] = []
+    depth = 0
+    current = ""
+    for char in body:
+        if char == "," and depth == 0:
+            parts.append(current)
+            current = ""
+            continue
+        depth += (char == "{") - (char == "}")
+        current += char
+    parts.append(current)
+    return parts
+
+
+def _expand_braces(pattern: str) -> list[str] | None:
+    """``*.{ts,tsx}`` -> ``["*.ts", "*.tsx"]``. ``None`` for a pattern past the bound.
+
+    ``full_match`` has no brace support, so an unexpanded ``docs/**/*.{md,txt}`` matches
+    nothing -- which in ``_selects`` is an allow, and a brace list is what an agent writes
+    to search two extensions at once.
+
+    An unbalanced ``{`` is returned untouched: it is a legal character in a filename, and
+    guessing at it would be worse than matching it literally. Ripgrep rejects such a glob
+    outright, so the search returns nothing either way.
+
+    The caller decides what a ``None`` means, because the two callers fail in opposite
+    directions -- see ``_selects`` and ``_covers``.
+    """
+    if pattern.count("{") > BRACE_GROUPS or pattern.count(",") > BRACE_ALTERNATIVES:
+        return None
+    start = pattern.find("{")
+    if start == -1:
+        return [pattern]
+    depth = 0
+    for i in range(start, len(pattern)):
+        depth += (pattern[i] == "{") - (pattern[i] == "}")
+        if depth == 0:
+            head, body, tail = pattern[:start], pattern[start + 1 : i], pattern[i + 1 :]
+            expanded: list[str] = []
+            for alternative in _split_alternatives(body):
+                nested = _expand_braces(f"{head}{alternative}{tail}")
+                if nested is None:
+                    return None
+                expanded.extend(nested)
+            return expanded
+    return [pattern]
+
+
 def _covers(pattern: str, excluded: str) -> bool:
     """Does ``!pattern`` certainly put ``excluded`` out of the search?
 
@@ -172,35 +243,62 @@ def _covers(pattern: str, excluded: str) -> bool:
     remove. ``!/*.md`` does not exclude the report and must stay refused.
 
     A trailing ``/`` means "this directory" in gitignore syntax, so it is rewritten as a
-    recursive descent (``docs/`` becomes ``docs/**``) before the segment guard runs, rather
-    than left to trip that guard's empty-segment case: ``!docs/`` and ``!docs/security/``
-    do exclude the report and must be allowed, matching a real ripgrep, while ``!firmware/``
-    and a wildcard segment immediately before the slash still do not.
+    recursive descent (``docs/`` becomes ``docs/**``) rather than left to trip the segment
+    guard's empty-segment case: ``!docs/`` and ``!docs/security/`` do exclude the report and
+    must be allowed, matching a real ripgrep, while ``!firmware/`` and a wildcard segment
+    immediately before the slash still do not.
+
+    A brace list is expanded, and covers the path when *any* alternative matches it -- that
+    is what the glob means, since matching any alternative excludes the file. ``None`` from
+    ``_expand_braces``, for a pattern past its bound, is a refusal: coverage is what has to
+    be proven here, so failing to expand proves nothing. That is the mirror of ``_selects``,
+    where a ``None`` is a match, and both land on a denial.
+
+    Whether the pattern is anchored, and the leading and trailing ``/``, are decided on the
+    unexpanded pattern, because ripgrep decides them once for the whole glob rather than per
+    alternative: under ``!{a/b,*.md}`` a real ripgrep still returns a report three levels
+    down, the separator in the *other* alternative having anchored ``*.md`` too.
+
+    The segment guard, in contrast, must run per alternative and after expansion. A brace
+    hides the offending segment from a guard that runs first -- ``{./docs,zz}`` splits into
+    ``{.`` and ``docs,zz}``, neither of which is a bare ``.`` -- and expansion then hands
+    ``./docs/**`` to a ``full_match`` that silently drops the ``.`` and reports a match,
+    while a real ripgrep returns the report. An alternative carrying such a segment covers
+    nothing, so it is skipped; the others still decide.
     """
     anchored = "/" in pattern
     pattern = pattern.removeprefix("/")
-    if pattern.endswith("/") and pattern:
+    if pattern.endswith("/"):
         pattern = pattern.removesuffix("/") + "/**"
-    if any(segment in ("", ".", "..") for segment in pattern.split("/")):
-        # ripgrep matches a glob against the walked path verbatim: `.`, `..` and empty
-        # segments are literal components there, so a glob carrying one excludes nothing.
-        # Normalising it away was an over-approximation, and in this branch an
-        # over-approximation is an allow -- `!./docs/**` read as covering the report
-        # while ripgrep handed the report over.
+    alternatives = _expand_braces(pattern)
+    if alternatives is None:
         return False
     path = PurePosixPath(excluded)
-    if not anchored:
-        return PurePosixPath(path.name).full_match(pattern)
-    return path.full_match(pattern)
+    candidate = path if anchored else PurePosixPath(path.name)
+    return any(
+        # ripgrep matches a glob against the walked path verbatim: `.`, `..` and empty
+        # segments are literal components there, so an alternative carrying one excludes
+        # nothing. Normalising them away was an over-approximation, and in this branch an
+        # over-approximation is an allow -- `!./docs/**` read as covering the report
+        # while ripgrep handed the report over.
+        all(segment not in ("", ".", "..") for segment in alternative.split("/"))
+        and candidate.full_match(alternative)
+        for alternative in alternatives
+    )
 
 
 def _selects(pattern: str, excluded: str) -> bool:
     """Can this file-selection pattern expand to ``excluded``?
 
-    ``pattern`` is normalised with ``posixpath.normpath`` before anything else.
-    ``full_match`` does not collapse ``..`` or redundant slashes on its own, so
-    ``docs/../docs/**/*.md`` would otherwise fail to line up with the equivalent
-    ``docs/**/*.md`` and the file would walk out through the one segment nothing checked.
+    Every alternative is normalised with ``posixpath.normpath``. ``full_match`` does not
+    collapse ``..`` or redundant slashes on its own, so ``docs/../docs/**/*.md`` would
+    otherwise fail to line up with the equivalent ``docs/**/*.md`` and the file would walk
+    out through the one segment nothing checked.
+
+    Normalising happens *after* brace expansion, never before it: ``normpath`` reads a
+    ``..`` as navigation wherever it sits, so ``{docs/../docs,zz}/**/*.md`` had its ``{docs``
+    collapsed away and came back as ``docs,zz}/**/*.md`` -- a brace with no opening, which
+    then expanded to nothing, matched nothing, and was allowed.
 
     The search root is not knowable here. ``Glob`` roots at ``path`` when given and at the
     agent's cwd otherwise, and the exclusion list is written during scoping relative to the
@@ -228,16 +326,48 @@ def _selects(pattern: str, excluded: str) -> bool:
     remains, which is form-independent and keeps the precision an unrelated absolute tree
     needs: ``/elsewhere/firmware/**/*.cs`` still misses a relative ``.md`` report because
     its remainder, ``**/*.cs``, cannot match a ``.md`` file.
+
+    A brace list is expanded, and the pattern reaches the path if *any* alternative does.
+    ``full_match`` has no brace support, so an unexpanded ``docs/**/*.{md,txt}`` matched
+    nothing at all and was allowed -- a leak, in the syntax an agent reaches for to search
+    two extensions at once. ``None`` from ``_expand_braces``, for a pattern past its bound,
+    is treated as a match: over-approximating is the safe direction here, and this hook has
+    a 5s timeout that fails open, so refusing to expand costs a denial rather than a leak.
+    ``MATCH_BUDGET`` and ``MAX_DEPTH`` are the same trade one step later, since every
+    alternative is tried against every suffix and it is that work, not the expansion, which
+    the timeout actually feels.
+
+    Each alternative is normalised and routed on its own leading ``/`` rather than the whole
+    pattern's, since a brace at position zero can make them differ. Both are only ever
+    additional ways to reach a match, which keeps every step of this predicate pointed at
+    over-approximation.
     """
-    pattern = posixpath.normpath(pattern)
     segments = excluded.strip("/").split("/")
+    alternatives = _expand_braces(pattern)
+    if (
+        alternatives is None
+        or len(segments) > MAX_DEPTH
+        or len(alternatives) * len(segments) > MATCH_BUDGET
+    ):
+        return True
 
-    if pattern.startswith("/") and not excluded.startswith("/"):
-        return _selects_across_forms(pattern, segments)
+    joined = ["/".join(segments[i:]) for i in range(len(segments))]
+    relative = [PurePosixPath(suffix) for suffix in joined]
+    absolute = [PurePosixPath(f"/{suffix}") for suffix in joined]
 
-    root = "/" if pattern.startswith("/") else ""
-    candidates = [PurePosixPath(root + "/".join(segments[i:])) for i in range(len(segments))]
-    return any(candidate.full_match(pattern) for candidate in candidates)
+    for alternative in alternatives:
+        alternative = posixpath.normpath(alternative)
+        if not alternative.startswith("/"):
+            candidates = relative
+        elif excluded.startswith("/"):
+            candidates = absolute
+        elif _selects_across_forms(alternative, segments):
+            return True
+        else:
+            continue
+        if any(candidate.full_match(alternative) for candidate in candidates):
+            return True
+    return False
 
 
 def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
