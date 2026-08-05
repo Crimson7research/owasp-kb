@@ -1754,9 +1754,9 @@ def test_the_skill_descriptions_name_every_flagged_vulnerability(skill):
 
 
 def test_the_secure_coding_body_says_what_recall_cannot_give():
-    """"No new insight" was the actual reason the skill was declined, so the body
-    leads with the two things the corpus provides that recall cannot -- a citable
-    id, and an enumeration of what a fix must cover."""
+    """The skill was declined for adding "no new insight", so the body leads with
+    the two things the corpus provides that recall cannot -- a citable id, and an
+    enumeration of what a fix must cover."""
     # Whitespace-normalised, as several tests in this file already are: both
     # phrases wrap across a line break, and where a hard wrap falls is not what
     # this test is about.
