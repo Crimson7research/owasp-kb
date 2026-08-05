@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -1381,6 +1382,21 @@ def test_the_plugin_registers_the_inventory_gate_against_a_dispatch():
     assert Path("plugins/owasp-kb/hooks/gate_triage_on_inventory.py").exists()
 
 
+def test_the_plugin_registers_the_security_flag_hook():
+    """A hook the manifest does not register never runs, and this is the only
+    mechanism here that fires without being chosen -- which is the point, since the
+    skill was seen and chosen against."""
+    hooks = json.loads(PLUGIN.read_text())["hooks"]
+    entries = hooks.get("UserPromptSubmit") or []
+    flagged = [e for e in entries if "flag_security_topic" in json.dumps(e)]
+    assert len(flagged) == 1, "the security flag hook is not registered exactly once"
+    assert "matcher" not in flagged[0], (
+        "UserPromptSubmit carries no matcher -- there is no tool name to match, and "
+        "an ignored key reads as a filter that is being applied"
+    )
+    assert Path("plugins/owasp-kb/hooks/flag_security_topic.py").exists()
+
+
 @pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
 def test_the_skills_arm_the_inventory_gate(skill):
     """The concerns list arms the gate and inventory.md satisfies it. Nothing else
@@ -1683,4 +1699,70 @@ def test_the_troubleshooting_table_names_a_doctor_check_for_every_symptom():
         f"docs/install.md's troubleshooting table has no row naming doctor checks "
         f"{sorted(missing)}; a check whose output has no documented symptom is a "
         "check nobody will know how to act on"
+    )
+
+
+def _flagged_vulnerability_names() -> tuple[str, ...]:
+    """The hook's firing vocabulary, imported from the plugin's own package.
+
+    Not duplicated here: a second list is a second thing to forget, and the whole
+    defect this guards against was two surfaces disagreeing about which
+    vulnerability classes exist.
+    """
+    path = str(Path("plugins/owasp-kb/bin").resolve())
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    from owasp_kb_cli.security_terms import VULNERABILITY_NAMES
+
+    return VULNERABILITY_NAMES
+
+
+def test_every_flagged_vulnerability_is_advertised_by_the_tools():
+    """The hook tells an agent to call owasp_search for a class the tool's own
+    description does not mention. SSRF was absent from every discovery surface
+    while the corpus carried a dedicated cheat sheet and ASVS V1.3.6, and nothing
+    compared the two."""
+    from owasp_kb.server.tools import TOOL_TRIGGER_TOPICS
+
+    advertised = " ".join(TOOL_TRIGGER_TOPICS).lower()
+    missing = [n for n in _flagged_vulnerability_names() if n.lower() not in advertised]
+    assert not missing, (
+        f"the hook flags {missing} and no tool description mentions them, so an "
+        "agent sent to owasp_search meets a tool that does not claim the topic"
+    )
+
+
+def test_the_secure_coding_skill_claims_the_triage_moment():
+    """It said "when writing or reviewing application code". The session that
+    skipped it had written no code -- it was triaging an issue and planning a fix --
+    so the description excluded the moment the skill was most needed."""
+    when = _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower()
+    for moment in ("triag", "planning", "diagnos"):
+        assert moment in when, (
+            f"the description does not claim to apply when {moment}...; an agent "
+            "choosing an approach reads it as not yet applicable"
+        )
+
+
+@pytest.mark.parametrize("skill", ["owasp-secure-coding", "owasp-threat-model"])
+def test_the_skill_descriptions_name_every_flagged_vulnerability(skill):
+    """The hook and the skill must not drift: a class the hook flags and the skill
+    does not name sends an agent to a skill that does not claim the topic."""
+    described = _frontmatter(SKILLS_DIR / skill / "SKILL.md")["description"].lower()
+    missing = [n for n in _flagged_vulnerability_names() if n.lower() not in described]
+    assert not missing, f"{skill} does not name {missing}"
+
+
+def test_the_secure_coding_body_says_what_recall_cannot_give():
+    """The skill was declined for adding "no new insight", so the body leads with
+    the two things the corpus provides that recall cannot -- a citable id, and an
+    enumeration of what a fix must cover."""
+    # Whitespace-normalised, as several tests in this file already are: both
+    # phrases wrap across a line break, and where a hard wrap falls is not what
+    # this test is about.
+    body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().split())
+    assert "cannot check that from the inside" in body
+    assert "before choosing the approach" in body, (
+        "a search run to confirm a chosen approach does not surface what the "
+        "decision already excluded, which is how the observed gap survived"
     )
