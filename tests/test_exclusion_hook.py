@@ -252,14 +252,18 @@ def test_a_negation_naming_an_unrelated_absolute_tree_is_denied(config_dir):
 
 @pytest.mark.parametrize(
     "glob",
-    ["!*.md", "!docs/**", "!*/security/*.md"],
-    ids=["basename", "anchored", "anchored-with-leading-wildcard"],
+    ["!*.md", "!asvs-5.0.0-l2-firmware.md", "!docs/**", "!*/security/*.md"],
+    ids=["extension", "basename", "anchored", "anchored-with-leading-wildcard"],
 )
 def test_a_negation_that_does_exclude_the_path_is_allowed(config_dir, glob):
     """A glob without `/` matches a basename at any depth; one with `/` is anchored and
     here does cover the recorded path -- `*/security/*.md` included: its three segments
     (`*`, `security`, `*.md`) line up with `docs/security/<file>.md` exactly, which a real
-    ripgrep confirms by finding no match under this negation."""
+    ripgrep confirms by finding no match under this negation.
+
+    The bare filename is the single most likely negation an agent writes when told to
+    exclude a named report, and ripgrep confirms it excludes it.
+    """
     assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
 
 
@@ -378,3 +382,23 @@ def test_a_pattern_matches_below_a_prefix_the_list_entry_carries(tmp_path):
 
 def test_a_pattern_that_walks_back_up_is_still_denied(config_dir):
     assert _denied(_run(_call("Glob", pattern="docs/../docs/**/*.md"), config_dir))
+
+
+# -- Grep's own filter field ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "glob",
+    ["*.py", "**/*.py", "src/**/*.ts"],
+    ids=["extension", "recursive-extension", "other-tree"],
+)
+def test_a_grep_narrowed_to_files_it_cannot_reach_is_allowed(config_dir, glob):
+    """The same defect on `Grep`'s own filter field. The replaced check allowed a glob only
+    when it contained no wildcard at all, so `--glob '*.py'` was refused although a `.py`
+    filter cannot reach a `.md` report -- 11 of the 87 denials in one run."""
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize("glob", ["*.md", "docs/**"], ids=["extension", "tree"])
+def test_a_grep_narrowed_to_files_it_can_reach_is_denied(config_dir, glob):
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
