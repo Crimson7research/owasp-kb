@@ -150,8 +150,31 @@ def _covers(pattern: str, excluded: str) -> bool:
     implements: a glob containing ``/`` is anchored to the search root and must match the
     whole recorded path; a glob without one matches a basename at any depth. Anything it
     cannot prove is a refusal.
+
+    Deliberately does *not* normalise, unlike ``_selects``. ``posixpath.normpath`` treats
+    ``.``, ``..`` and an empty segment as navigation and resolves them away; ``PurePath``'s
+    own pattern parsing silently does the same for ``.`` and an empty segment (though not
+    for ``..``, which it keeps as a literal segment that then happens to fail to match
+    anything real -- an implementation detail this refusal does not rely on). Ripgrep's
+    globset matches a glob against the walked path verbatim, where all three are literal
+    path components that match nothing there either. Normalising first read ``!./docs/**``
+    as covering the report while a real ripgrep handed the report straight over. Refusing
+    to prove coverage whenever such a segment appears is the safe direction here, the same
+    way over-approximating is the safe direction in ``_selects``.
+
+    A leading ``/`` anchors the pattern to the search root rather than naming an absolute
+    filesystem path, so it is stripped -- at most once -- before matching: ``!/docs/**``
+    does exclude a relative ``excluded`` and must be allowed, while ``!/elsewhere/docs/**``
+    still does not and is refused.
     """
-    pattern = posixpath.normpath(pattern)
+    pattern = pattern.removeprefix("/")
+    if any(segment in ("", ".", "..") for segment in pattern.split("/")):
+        # ripgrep matches a glob against the walked path verbatim: `.`, `..` and empty
+        # segments are literal components there, so a glob carrying one excludes nothing.
+        # Normalising it away was an over-approximation, and in this branch an
+        # over-approximation is an allow -- `!./docs/**` read as covering the report
+        # while ripgrep handed the report over.
+        return False
     path = PurePosixPath(excluded)
     if "/" not in pattern:
         return PurePosixPath(path.name).full_match(pattern)

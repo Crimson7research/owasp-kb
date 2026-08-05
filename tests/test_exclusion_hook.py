@@ -263,6 +263,35 @@ def test_a_negation_that_does_exclude_the_path_is_allowed(config_dir, glob):
     assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
 
 
+@pytest.mark.parametrize(
+    "glob",
+    [
+        "!./docs/**",
+        "!docs/../docs/**",
+        "!docs//security/*",
+        "!docs/./security/*",
+        "!docs/security/../security/*",
+    ],
+    ids=["dot-prefix", "walk-back", "empty-segment", "dot-segment", "walk-back-inner"],
+)
+def test_a_negation_ripgrep_cannot_honour_is_denied(config_dir, glob):
+    """ripgrep matches a glob against the walked path verbatim -- `.`, `..` and an empty
+    segment are literal components there, so none of these exclude anything. Normalising
+    the pattern first made the hook believe each one covered the report while ripgrep
+    handed it over. Verified against rg 15.2.0.
+
+    `_selects` normalises for the opposite reason: over-approximating there is a denial.
+    """
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize("glob", ["!/docs/**", "!/docs/security/*"], ids=["tree", "dir"])
+def test_a_root_anchored_negation_is_allowed(config_dir, glob):
+    """A leading `/` anchors to the search root rather than naming an absolute path, so
+    these do exclude the report."""
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
 # -- Glob has no negation syntax -----------------------------------------------
 
 
