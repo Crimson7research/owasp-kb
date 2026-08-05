@@ -292,6 +292,38 @@ def test_a_root_anchored_negation_is_allowed(config_dir, glob):
     assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
 
 
+@pytest.mark.parametrize(
+    "glob",
+    ["!/*.md", "!/asvs-5.0.0-l2-firmware.md", "!/asvs-*.md", "!/*firmware*"],
+    ids=["extension", "exact-name", "prefix", "substring"],
+)
+def test_a_root_anchored_single_component_negation_is_denied(config_dir, glob):
+    """A leading `/` anchors the glob to the search root, which is exactly what stops it
+    matching a basename at any depth. Stripping the `/` before deciding whether the glob
+    was anchored sent these down the any-depth branch, so the hook read them as excluding
+    a report that sits three levels down and ripgrep hands over."""
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize("glob", ["!docs/", "!docs/security/"], ids=["tree", "subdir"])
+def test_a_trailing_slash_directory_negation_is_allowed(config_dir, glob):
+    """A trailing `/` means "this directory" in gitignore syntax; ripgrep excludes
+    everything under it, not just a literal empty final path segment."""
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize(
+    "glob",
+    ["!firmware/", "!docs/security/*.md/"],
+    ids=["unrelated-tree", "wildcard-then-slash"],
+)
+def test_a_trailing_slash_negation_that_does_not_cover_is_denied(config_dir, glob):
+    """`firmware/` names a directory the excluded path never passes through. A wildcard
+    segment immediately before the slash asks the excluded file itself to be a directory,
+    which it is not -- ripgrep does not exclude it under either glob."""
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
 # -- Glob has no negation syntax -----------------------------------------------
 
 

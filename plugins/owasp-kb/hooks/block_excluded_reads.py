@@ -165,9 +165,22 @@ def _covers(pattern: str, excluded: str) -> bool:
     A leading ``/`` anchors the pattern to the search root rather than naming an absolute
     filesystem path, so it is stripped -- at most once -- before matching: ``!/docs/**``
     does exclude a relative ``excluded`` and must be allowed, while ``!/elsewhere/docs/**``
-    still does not and is refused.
+    still does not and is refused. Whether the pattern is anchored has to be decided on the
+    *un-stripped* pattern, though: for a single-component glob like ``/*.md`` the leading
+    ``/`` is the only ``/`` in it, and stripping it before asking "does this have a ``/``"
+    reclassified it as basename-at-any-depth -- exactly the reach a leading ``/`` exists to
+    remove. ``!/*.md`` does not exclude the report and must stay refused.
+
+    A trailing ``/`` means "this directory" in gitignore syntax, so it is rewritten as a
+    recursive descent (``docs/`` becomes ``docs/**``) before the segment guard runs, rather
+    than left to trip that guard's empty-segment case: ``!docs/`` and ``!docs/security/``
+    do exclude the report and must be allowed, matching a real ripgrep, while ``!firmware/``
+    and a wildcard segment immediately before the slash still do not.
     """
+    anchored = "/" in pattern
     pattern = pattern.removeprefix("/")
+    if pattern.endswith("/") and pattern:
+        pattern = pattern.removesuffix("/") + "/**"
     if any(segment in ("", ".", "..") for segment in pattern.split("/")):
         # ripgrep matches a glob against the walked path verbatim: `.`, `..` and empty
         # segments are literal components there, so a glob carrying one excludes nothing.
@@ -176,7 +189,7 @@ def _covers(pattern: str, excluded: str) -> bool:
         # while ripgrep handed the report over.
         return False
     path = PurePosixPath(excluded)
-    if "/" not in pattern:
+    if not anchored:
         return PurePosixPath(path.name).full_match(pattern)
     return path.full_match(pattern)
 
