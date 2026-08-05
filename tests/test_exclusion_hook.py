@@ -214,3 +214,48 @@ def test_an_absolute_glob_rooted_above_the_excluded_path_is_denied(tmp_path):
     an absolute list entry."""
     listing = _listing(tmp_path, ABSOLUTE)
     assert _denied(_run(_call("Glob", pattern="/home/you/src/target/**"), listing))
+
+
+# -- negated selectors ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("glob", ["!*.py", "!node_modules/**"], ids=["extension", "tree"])
+def test_a_negated_glob_that_still_sweeps_the_excluded_path_is_denied(config_dir, glob):
+    """`!X` searches everything *except* `X`. Reading the `!` as a literal character made
+    every negation unmatchable and so allowed -- in the one syntax this hook's own deny
+    message tells agents to use."""
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize("glob", ["!**/*.md", "!docs/**"], ids=["extension", "tree"])
+def test_a_negated_glob_that_covers_the_excluded_path_is_allowed(config_dir, glob):
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+# -- form mismatch between an absolute pattern and a relative list entry ------
+
+
+def test_an_absolute_glob_is_denied_against_a_relative_list_entry(config_dir):
+    """The two forms share no root, so no suffix of the excluded path lines up with the
+    pattern. Falling back to `_under` on the pattern's literal prefix is the only
+    comparison left that does not need to know the root."""
+    pattern = "/home/you/src/target/docs/**/*.md"
+    assert _denied(_run(_call("Glob", pattern=pattern), config_dir))
+
+
+# -- the suffix chain is what makes a mismatched root line up -----------------
+
+
+def test_a_pattern_matches_below_a_prefix_the_list_entry_carries(tmp_path):
+    """The search root is not knowable, so the pattern is tried against every suffix of
+    the excluded path. A list entry recorded from the repository root, against an agent
+    globbing from a package directory, only lines up on a suffix."""
+    listing = _listing(tmp_path, f"packages/app/{EXCLUDED}")
+    assert _denied(_run(_call("Glob", pattern="docs/**/*.md"), listing))
+
+
+# -- .. segments do not let a pattern walk around the match -------------------
+
+
+def test_a_pattern_that_walks_back_up_is_still_denied(config_dir):
+    assert _denied(_run(_call("Glob", pattern="docs/../docs/**/*.md"), config_dir))

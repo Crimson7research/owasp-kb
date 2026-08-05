@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import re
 import sys
 from pathlib import Path, PurePosixPath
@@ -90,8 +91,23 @@ def _under(root: str, excluded: str) -> bool:
     return any(f"/{'/'.join(segments[i:])}/" in e for i in range(len(segments)))
 
 
+def _literal_prefix(pattern: str) -> str:
+    """The leading directory of ``pattern`` before its first wildcard segment."""
+    kept: list[str] = []
+    for segment in pattern.split("/"):
+        if any(char in segment for char in "*?["):
+            break
+        kept.append(segment)
+    return "/".join(kept)
+
+
 def _selects(pattern: str, excluded: str) -> bool:
     """Can this file-selection pattern expand to ``excluded``?
+
+    ``pattern`` is normalised with ``posixpath.normpath`` before anything else.
+    ``full_match`` does not collapse ``..`` or redundant slashes on its own, so
+    ``docs/../docs/**/*.md`` would otherwise fail to line up with the equivalent
+    ``docs/**/*.md`` and the file would walk out through the one segment nothing checked.
 
     The search root is not knowable here. ``Glob`` roots at ``path`` when given and at the
     agent's cwd otherwise, and the exclusion list is written during scoping relative to the
@@ -110,16 +126,32 @@ def _selects(pattern: str, excluded: str) -> bool:
     ``node_modules``, and this hook has a 5s timeout and fails open -- a slow walk turns
     into the leak it exists to prevent.
 
-    Deliberate limit: an absolute pattern cannot match a list entry recorded only in
-    relative form, because the absolute root is not knowable from the payload either. That
-    under-refuses. ``_under`` still catches the rooted form of the same call, and
-    ``owasp_roster`` rejecting findings that cite an excluded path remains the real gate.
+    When the pattern is absolute and the list entry is relative, neither form carries the
+    other's root, so no suffix of the excluded path can line up with it and the suffix match
+    below would silently under-refuse. Falling back to ``_under`` on the pattern's literal
+    (wildcard-free) leading directory recovers the case: it compares segment chains in both
+    directions, which is the only comparison left that does not need to know the root. It
+    over-refuses in exchange -- an absolute ``/elsewhere/docs/**/*.cs`` pattern is denied
+    against a relative ``.md`` report purely because the leading directory lines up -- and
+    that is the right direction here: the alternative is allowing a sweep of the file
+    outright.
     """
+    pattern = posixpath.normpath(pattern)
+
+    if pattern.startswith("/") and not excluded.startswith("/"):
+        # Neither form carries the other's root, so no suffix of the excluded path can
+        # line up with an absolute pattern. `_under` compares segment chains in both
+        # directions, which is the only comparison left that does not need the root.
+        # It over-refuses -- an absolute `.../docs/**/*.cs` is denied against a `.md`
+        # report -- and that is the correct direction for the one shape where the
+        # alternative is allowing a sweep of the file outright.
+        prefix = _literal_prefix(pattern)
+        if prefix and _under(prefix, excluded):
+            return True
+
     segments = excluded.strip("/").split("/")
     root = "/" if pattern.startswith("/") else ""
-    candidates = [
-        PurePosixPath(root + "/".join(segments[i:])) for i in range(len(segments))
-    ]
+    candidates = [PurePosixPath(root + "/".join(segments[i:])) for i in range(len(segments))]
     return any(candidate.full_match(pattern) for candidate in candidates)
 
 
@@ -151,6 +183,12 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
         return False
 
     selector = str(tool_input.get(FILTER_FIELD.get(tool_name, ""), "") or "")
+    if selector.startswith("!"):
+        # `!X` searches everything except `X`, so the excluded path is out of scope
+        # only when `X` covers it. Reading the `!` as a literal character made every
+        # negation unmatchable and therefore allowed -- the inverse of what it asks for,
+        # in the one syntax this hook's own deny message tells agents to use.
+        return not _selects(selector.removeprefix("!"), excluded)
     if selector and not _selects(selector, excluded):
         return False
     return True
