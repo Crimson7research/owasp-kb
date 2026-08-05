@@ -232,15 +232,73 @@ def test_a_negated_glob_that_covers_the_excluded_path_is_allowed(config_dir, glo
     assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
 
 
+@pytest.mark.parametrize(
+    "glob",
+    ["!security/*.md", "!security/**"],
+    ids=["anchored-partial", "anchored-tree"],
+)
+def test_a_negation_that_does_not_actually_exclude_the_path_is_denied(config_dir, glob):
+    """ripgrep anchors a glob containing `/` to the search root, so `security/*.md` never
+    matches `docs/security/...` and the negation excludes nothing. Reusing the
+    over-approximating `_selects` here and inverting it read these as exclusions and let
+    the report through -- verified against real ripgrep, which still finds the report
+    under both of these."""
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+def test_a_negation_naming_an_unrelated_absolute_tree_is_denied(config_dir):
+    assert _denied(_run(_call("Grep", pattern="session", glob="!/elsewhere/docs/**"), config_dir))
+
+
+@pytest.mark.parametrize(
+    "glob",
+    ["!*.md", "!docs/**", "!*/security/*.md"],
+    ids=["basename", "anchored", "anchored-with-leading-wildcard"],
+)
+def test_a_negation_that_does_exclude_the_path_is_allowed(config_dir, glob):
+    """A glob without `/` matches a basename at any depth; one with `/` is anchored and
+    here does cover the recorded path -- `*/security/*.md` included: its three segments
+    (`*`, `security`, `*.md`) line up with `docs/security/<file>.md` exactly, which a real
+    ripgrep confirms by finding no match under this negation."""
+    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+# -- Glob has no negation syntax -----------------------------------------------
+
+
+@pytest.mark.parametrize("pattern", ["!*.py", "!**/*.cs"], ids=["extension", "recursive"])
+def test_a_bang_in_a_glob_pattern_is_a_filename_character(config_dir, pattern):
+    """`Glob` has no negation syntax. Treating a leading `!` as one denied patterns that
+    cannot reach the path -- the #33 failure, reintroduced by the negation fix."""
+    assert not _denied(_run(_call("Glob", pattern=pattern), config_dir))
+
+
 # -- form mismatch between an absolute pattern and a relative list entry ------
 
 
 def test_an_absolute_glob_is_denied_against_a_relative_list_entry(config_dir):
     """The two forms share no root, so no suffix of the excluded path lines up with the
-    pattern. Falling back to `_under` on the pattern's literal prefix is the only
-    comparison left that does not need to know the root."""
+    pattern as written. Matching the remainder after the pattern's literal leading
+    directory is the comparison that does not need to know the root."""
     pattern = "/home/you/src/target/docs/**/*.md"
     assert _denied(_run(_call("Glob", pattern=pattern), config_dir))
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["/home/you/src/target/**", "/home/you/src/target/**/*.md"],
+    ids=["whole-tree", "tree-md"],
+)
+def test_a_broad_absolute_glob_is_denied_against_a_relative_list_entry(config_dir, pattern):
+    """The broadest absolute globs are the ones an agent writes. Matching on the literal
+    prefix only caught patterns that already named a directory inside the excluded path."""
+    assert _denied(_run(_call("Glob", pattern=pattern), config_dir))
+
+
+def test_an_absolute_glob_of_an_unrelated_tree_stays_allowed(config_dir):
+    """The remainder after the literal prefix still decides, so precision survives."""
+    pattern = "/home/you/src/target/firmware/**/*.cs"
+    assert not _denied(_run(_call("Glob", pattern=pattern), config_dir))
 
 
 # -- the suffix chain is what makes a mismatched root line up -----------------

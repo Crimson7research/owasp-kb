@@ -82,23 +82,80 @@ def _under(root: str, excluded: str) -> bool:
     It is deliberately generous -- a root matching only on its tail counts as
     containing the file. Over-refusing costs an agent one call that states the
     exclusion; under-refusing puts another assessment's conclusions in front of it.
+
+    Compared as segment lists rather than rebuilt-and-rescanned strings: joining a
+    candidate suffix and searching for it as a substring is quadratic in ``root``'s
+    segment count, and ``root`` is attacker-influenced the same way a pattern is -- a
+    ``path`` fifty thousand directories deep took 6.5s against the string form, past
+    this hook's 5s timeout, and a timeout fails open. The candidate range is bounded to
+    suffixes no longer than ``excluded``'s own chain, since a longer one cannot match
+    regardless of how deep ``root`` goes.
     """
     r = root.removeprefix("./").strip("/")
     e = f"/{excluded.strip('/')}"
     if not r or r == ".":
         return True
     segments = r.split("/")
-    return any(f"/{'/'.join(segments[i:])}/" in e for i in range(len(segments)))
+    excluded_segments = e.strip("/").split("/")
+    total = len(excluded_segments)
+    width = len(segments)
+    return any(
+        j + (width - i) < total and excluded_segments[j : j + width - i] == segments[i:]
+        for i in range(max(0, width - total), width)
+        for j in range(total)
+    )
 
 
-def _literal_prefix(pattern: str) -> str:
-    """The leading directory of ``pattern`` before its first wildcard segment."""
-    kept: list[str] = []
-    for segment in pattern.split("/"):
+def _split_at_first_wildcard(pattern: str) -> tuple[str, str]:
+    """``/a/b/**/*.md`` -> ``("/a/b", "**/*.md")``. No wildcard at all -> ``(pattern, "")``."""
+    segments = pattern.split("/")
+    for i, segment in enumerate(segments):
         if any(char in segment for char in "*?["):
-            break
-        kept.append(segment)
-    return "/".join(kept)
+            return "/".join(segments[:i]), "/".join(segments[i:])
+    return pattern, ""
+
+
+def _selects_across_forms(pattern: str, segments: list[str]) -> bool:
+    """An absolute pattern against a path recorded relative.
+
+    Neither form carries the other's root, so no suffix of the excluded path can line up
+    with the pattern as written -- which is why matching it directly allowed a whole-tree
+    ``/abs/root/**`` sweep. Discard the pattern's literal leading directory, which is the
+    part that names the root we cannot see, and match the remainder: it is the part that
+    describes the search, and it is form-independent.
+
+    A pattern with no wildcard has no remainder and is a filename, so it is compared as
+    one.
+    """
+    literal, remainder = _split_at_first_wildcard(pattern)
+    if not remainder:
+        return literal.rstrip("/").endswith("/".join(segments))
+    return any(
+        PurePosixPath("/".join(segments[i:])).full_match(remainder) for i in range(len(segments))
+    )
+
+
+def _covers(pattern: str, excluded: str) -> bool:
+    """Does ``!pattern`` certainly put ``excluded`` out of the search?
+
+    Deliberately the mirror of ``_selects``. That one over-approximates -- it matches
+    every suffix of the excluded path because the search root is unknowable, and an
+    over-approximation there means a denial. Negation reverses which way an error falls,
+    so reusing it and inverting turned each of those over-approximations into an allow:
+    ``--glob '!security/*.md'`` was read as excluding the report when ripgrep anchors it
+    to the search root and it excludes nothing at all -- verified against a real ripgrep,
+    which still found the report under that negation.
+
+    So this one under-approximates, and follows the gitignore semantics ripgrep actually
+    implements: a glob containing ``/`` is anchored to the search root and must match the
+    whole recorded path; a glob without one matches a basename at any depth. Anything it
+    cannot prove is a refusal.
+    """
+    pattern = posixpath.normpath(pattern)
+    path = PurePosixPath(excluded)
+    if "/" not in pattern:
+        return PurePosixPath(path.name).full_match(pattern)
+    return path.full_match(pattern)
 
 
 def _selects(pattern: str, excluded: str) -> bool:
@@ -127,29 +184,21 @@ def _selects(pattern: str, excluded: str) -> bool:
     into the leak it exists to prevent.
 
     When the pattern is absolute and the list entry is relative, neither form carries the
-    other's root, so no suffix of the excluded path can line up with it and the suffix match
-    below would silently under-refuse. Falling back to ``_under`` on the pattern's literal
-    (wildcard-free) leading directory recovers the case: it compares segment chains in both
-    directions, which is the only comparison left that does not need to know the root. It
-    over-refuses in exchange -- an absolute ``/elsewhere/docs/**/*.cs`` pattern is denied
-    against a relative ``.md`` report purely because the leading directory lines up -- and
-    that is the right direction here: the alternative is allowing a sweep of the file
-    outright.
+    other's root, so no suffix of the excluded path can line up with the pattern as written
+    -- matching it directly against those suffixes let a whole-tree ``/abs/root/**`` sweep
+    through, because the pattern's absolute segments never lined up with any relative
+    suffix. ``_selects_across_forms`` recovers the case by discarding the pattern's literal
+    leading directory -- the part naming the root we cannot see -- and matching what
+    remains, which is form-independent and keeps the precision an unrelated absolute tree
+    needs: ``/elsewhere/firmware/**/*.cs`` still misses a relative ``.md`` report because
+    its remainder, ``**/*.cs``, cannot match a ``.md`` file.
     """
     pattern = posixpath.normpath(pattern)
+    segments = excluded.strip("/").split("/")
 
     if pattern.startswith("/") and not excluded.startswith("/"):
-        # Neither form carries the other's root, so no suffix of the excluded path can
-        # line up with an absolute pattern. `_under` compares segment chains in both
-        # directions, which is the only comparison left that does not need the root.
-        # It over-refuses -- an absolute `.../docs/**/*.cs` is denied against a `.md`
-        # report -- and that is the correct direction for the one shape where the
-        # alternative is allowing a sweep of the file outright.
-        prefix = _literal_prefix(pattern)
-        if prefix and _under(prefix, excluded):
-            return True
+        return _selects_across_forms(pattern, segments)
 
-    segments = excluded.strip("/").split("/")
     root = "/" if pattern.startswith("/") else ""
     candidates = [PurePosixPath(root + "/".join(segments[i:])) for i in range(len(segments))]
     return any(candidate.full_match(pattern) for candidate in candidates)
@@ -183,12 +232,13 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
         return False
 
     selector = str(tool_input.get(FILTER_FIELD.get(tool_name, ""), "") or "")
-    if selector.startswith("!"):
+    if tool_name == "Grep" and selector.startswith("!"):
         # `!X` searches everything except `X`, so the excluded path is out of scope
-        # only when `X` covers it. Reading the `!` as a literal character made every
-        # negation unmatchable and therefore allowed -- the inverse of what it asks for,
-        # in the one syntax this hook's own deny message tells agents to use.
-        return not _selects(selector.removeprefix("!"), excluded)
+        # only when `X` certainly covers it -- `_covers` under-approximates for exactly
+        # that reason, unlike `_selects`, whose over-approximation would turn into an
+        # allow once inverted. `Glob` has no negation syntax, so a leading `!` there is
+        # an ordinary filename character and falls through to `_selects` below.
+        return not _covers(selector.removeprefix("!"), excluded)
     if selector and not _selects(selector, excluded):
         return False
     return True
