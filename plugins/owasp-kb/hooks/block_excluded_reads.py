@@ -37,9 +37,16 @@ import json
 import os
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 SEARCH_TOOLS = {"Read", "Grep", "Glob"}
+
+# Which field holds the file filter, per tool. `Grep` narrows with `glob` and searches
+# with `pattern`; `Glob` selects files with `pattern` and has no `glob` at all. Knowing
+# only the first of those two fields is the whole of issue #33 -- a pathless `Glob` matched
+# nothing the function looked at and fell through to the deny, 76 times in one run.
+# `Read` is absent deliberately: it names a file, it does not filter.
+FILTER_FIELD = {"Grep": "glob", "Glob": "pattern"}
 
 
 def _list_file(session_id: str) -> Path:
@@ -83,19 +90,53 @@ def _under(root: str, excluded: str) -> bool:
     return any(f"/{'/'.join(segments[i:])}/" in e for i in range(len(segments)))
 
 
+def _selects(pattern: str, excluded: str) -> bool:
+    """Can this file-selection pattern expand to ``excluded``?
+
+    The search root is not knowable here. ``Glob`` roots at ``path`` when given and at the
+    agent's cwd otherwise, and the exclusion list is written during scoping relative to the
+    target repository root -- which a dispatched subagent's cwd need not be. So the pattern
+    is tried against every suffix of the excluded path's segment chain: if the root is
+    unknown, the file's path *relative to that root* is one of those suffixes. Same
+    generosity ``_under`` documents, for the same reason.
+
+    ``full_match`` supplies real glob semantics from the stdlib rather than a hand-rolled
+    regex -- ``**`` crosses ``/`` and ``*`` does not, which is what makes ``docs/*.md``
+    allowed against ``docs/security/rep.md`` while ``docs/**/*.md`` is denied.
+
+    Rejected: expanding the pattern against the filesystem and testing set membership. It
+    answers the same question by doing O(repo) work to decide something about one known
+    path, ``Path.glob`` does not honour ``.gitignore`` so ``**/*`` walks ``.git`` and
+    ``node_modules``, and this hook has a 5s timeout and fails open -- a slow walk turns
+    into the leak it exists to prevent.
+
+    Deliberate limit: an absolute pattern cannot match a list entry recorded only in
+    relative form, because the absolute root is not knowable from the payload either. That
+    under-refuses. ``_under`` still catches the rooted form of the same call, and
+    ``owasp_roster`` rejecting findings that cite an excluded path remains the real gate.
+    """
+    segments = excluded.strip("/").split("/")
+    root = "/" if pattern.startswith("/") else ""
+    candidates = [
+        PurePosixPath(root + "/".join(segments[i:])) for i in range(len(segments))
+    ]
+    return any(candidate.full_match(pattern) for candidate in candidates)
+
+
 def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
     """Would this call put ``excluded`` in front of the agent?
 
-    Two shapes. A path argument naming the file is unambiguous. A search rooted at
-    a directory containing it is the case actually observed, and is allowed only
-    when the call excludes the path itself -- the agent has to say so, rather than
-    discard hits after seeing them.
+    Three shapes. A path argument naming the file is unambiguous. A search rooted at a
+    directory containing it is the case actually observed, and is allowed only when the
+    call excludes the path itself -- the agent has to say so, rather than discard hits
+    after seeing them. A search that *selects files by pattern* is allowed when the pattern
+    cannot expand to the path, which is the ordinary way a narrow search proceeds.
+
+    Ordering carries weight: ``_under`` releases an unrelated tree before the pattern is
+    consulted, so ``path`` keeps bounding the search and a ``**/*`` aimed into the excluded
+    directory is still refused.
     """
     target = str(tool_input.get("file_path") or tool_input.get("path") or "")
-    # Grep's `pattern` is the search regex, not a file filter; only `glob` narrows
-    # which files are read. Conflating them let a broad grep through, because a
-    # pattern with no wildcard looked like an already-narrow file glob.
-    glob = str(tool_input.get("glob") or "")
     stated = json.dumps(tool_input)
 
     if target and (target.endswith(excluded) or excluded.endswith(target)):
@@ -108,7 +149,9 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
 
     if re.search(rf"!.*{re.escape(excluded)}", stated):
         return False
-    if glob and "*" not in glob and excluded not in glob:
+
+    selector = str(tool_input.get(FILTER_FIELD.get(tool_name, ""), "") or "")
+    if selector and not _selects(selector, excluded):
         return False
     return True
 

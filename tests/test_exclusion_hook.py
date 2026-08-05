@@ -169,3 +169,48 @@ def test_the_denial_says_how_to_proceed(config_dir):
     assert EXCLUDED in reason
     assert "--glob" in reason
     assert "INSUFFICIENT EVIDENCE" in reason
+
+
+# -- what a search pattern can actually reach --------------------------------
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["**/README.md", "docs/*.md", "path/to/OneNamedFile.cs", "src/**/*.py"],
+    ids=["other-name", "one-level", "exact-file", "other-extension"],
+)
+def test_a_glob_that_cannot_expand_to_the_excluded_path_is_allowed(config_dir, pattern):
+    """`Glob` states its file filter in `pattern`, and the hook only ever read `glob` --
+    so every pathless `Glob` fell through to the deny whatever it asked for. 76 of them in
+    one run, against agents that already carried the exclusion list in their prompt.
+
+    `docs/*.md` is the sharp case: `*` does not cross `/`, so it reaches `docs/rep.md` and
+    can never reach `docs/security/rep.md`.
+    """
+    assert not _denied(_run(_call("Glob", pattern=pattern), config_dir))
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["**/*.md", "docs/**/*.md", "**/*", "docs/**"],
+    ids=["any-md", "docs-md", "everything", "docs-tree"],
+)
+def test_a_glob_that_can_expand_to_the_excluded_path_is_denied(config_dir, pattern):
+    assert _denied(_run(_call("Glob", pattern=pattern), config_dir))
+
+
+def test_a_glob_bounded_by_path_into_the_excluded_tree_is_denied(config_dir):
+    """The case the hook exists for. A fix that reads the pattern but forgets that `path`
+    still bounds the search would allow exactly this one."""
+    assert _denied(_run(_call("Glob", path="docs/security", pattern="**/*"), config_dir))
+
+
+def test_a_glob_bounded_by_path_away_from_it_is_allowed(config_dir):
+    assert not _denied(_run(_call("Glob", path="firmware", pattern="**/*.md"), config_dir))
+
+
+def test_an_absolute_glob_rooted_above_the_excluded_path_is_denied(tmp_path):
+    """An absolute pattern is matched against the `/`-prefixed chain, so it lines up with
+    an absolute list entry."""
+    listing = _listing(tmp_path, ABSOLUTE)
+    assert _denied(_run(_call("Glob", pattern="/home/you/src/target/**"), listing))
