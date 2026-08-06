@@ -227,9 +227,10 @@ def test_a_negated_glob_that_still_sweeps_the_excluded_path_is_denied(config_dir
     assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
 
 
-@pytest.mark.parametrize("glob", ["!**/*.md", "!docs/**"], ids=["extension", "tree"])
-def test_a_negated_glob_that_covers_the_excluded_path_is_allowed(config_dir, glob):
-    assert not _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+def test_a_negated_glob_that_covers_the_excluded_path_is_allowed(config_dir):
+    """`!docs/**` used to be asserted here too, with a call identical to the `anchored` id
+    of `test_a_negation_that_does_exclude_the_path_is_allowed`. One copy is enough."""
+    assert not _denied(_run(_call("Grep", pattern="session", glob="!**/*.md"), config_dir))
 
 
 @pytest.mark.parametrize(
@@ -435,10 +436,25 @@ def test_a_negated_brace_list_that_does_not_cover_the_path_is_denied(config_dir,
     assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
 
 
-def test_a_pathological_brace_pattern_is_denied(config_dir):
-    """Expansion is a product of the groups. The hook has a 5s timeout and fails open, so
-    a pattern past the bound is refused rather than expanded."""
+def test_too_many_brace_groups_is_denied(config_dir):
+    """Five groups against a bound of four. This pins `BRACE_GROUPS` only -- it carries four
+    commas, so it says nothing about `BRACE_ALTERNATIVES`, which is what the next test is
+    for. Expansion is a product of the groups, and the hook has a 5s timeout that fails
+    open, so a pattern past either bound is refused rather than expanded."""
     assert _denied(_run(_call("Glob", pattern="{a,b}{c,d}{e,f}{g,h}{i,j}.md"), config_dir))
+
+
+def test_too_many_brace_alternatives_is_denied(config_dir):
+    """One group, seventeen commas: inside `BRACE_GROUPS`, past `BRACE_ALTERNATIVES`. The
+    groups bound alone does not hold the size down -- with the alternatives clause removed
+    and groups still at four, 236 commas expand to 12.9M alternatives in 7.13s and 965MB,
+    past the 5s timeout by 11x, and `WORK_BUDGET` cannot help because it is measured after
+    expansion.
+
+    None of these alternatives can reach a `.md` report, so without the bound this is an
+    allow."""
+    pattern = "{" + ",".join("abcdefghijklmnopqr") + "}.ts"
+    assert _denied(_run(_call("Glob", pattern=pattern), config_dir))
 
 
 def test_a_pathological_negated_brace_pattern_is_denied(config_dir):
@@ -542,8 +558,9 @@ def test_a_segment_with_too_many_wildcards_is_denied(config_dir, call):
 def test_a_very_deep_entry_is_denied_in_selects(tmp_path):
     """Building the suffix chain is quadratic in the entry's depth, which the character
     budget does not cover: `*.zzz` against 8001 candidates is 40,005 candidate-characters,
-    inside it. An 8000-segment entry exhausted 2GB and raised, which `main` catches into an
-    allow.
+    inside it. An 8000-segment entry takes 3.49s and allocates 4.3GB -- close enough to the
+    5s timeout on its own, and a timeout fails open. Under a 2GB cap it raises instead,
+    which `main` catches into an allow; which of the two happens is machine-dependent.
 
     The pattern has to be one that matches nothing -- `*` alone is denied on merit, since it
     matches the final `rep.md` suffix, which hid this bound's removal entirely.
@@ -553,9 +570,11 @@ def test_a_very_deep_entry_is_denied_in_selects(tmp_path):
 
 
 def test_a_very_deep_entry_is_denied_in_under(tmp_path):
-    """`_under` runs before the pattern is consulted and is quadratic in the same depth --
-    26.8s at 4000 segments. A root sharing no chain with the entry is an allow on merit, so
-    the deep entry is the way past this one too."""
+    """`_under` runs before the pattern is consulted and its cost grows with the entry's
+    depth. The 26.8s figure quoted here before needs a deep *root* as well; this call passes
+    a one-segment `path`, which costs about nothing even with the guard disabled. What it
+    pins is the verdict, not the time: a root sharing no chain with the entry is an allow on
+    merit, so without the depth guard the deep entry walks through."""
     deep = "/".join(f"directory-number-{i}" for i in range(2000)) + "/rep.md"
     assert _denied(_run(_call("Grep", pattern="x", path="unrelated"), _listing(tmp_path, deep)))
 
@@ -585,3 +604,85 @@ def test_the_denial_of_a_direct_read_does_not_offer_a_way_to_re_issue_it(config_
     reason = out["hookSpecificOutput"]["permissionDecisionReason"]
     assert "--glob" not in reason
     assert EXCLUDED in reason
+
+
+# -- a concrete path is canonicalised before it is compared ---------------------
+
+
+NON_CANONICAL = [
+    "docs/./security/asvs-5.0.0-l2-firmware.md",
+    "docs//security/asvs-5.0.0-l2-firmware.md",
+    "docs/security/./asvs-5.0.0-l2-firmware.md",
+    "docs/security/../security/asvs-5.0.0-l2-firmware.md",
+    "./docs/./security/asvs-5.0.0-l2-firmware.md",
+]
+
+
+@pytest.mark.parametrize(
+    "path",
+    NON_CANONICAL,
+    ids=["dot-segment", "empty-segment", "dot-before-file", "walk-back", "dot-prefixed"],
+)
+def test_a_read_of_a_non_canonical_path_is_denied(config_dir, path):
+    """Insert `.`, `..` or a doubled slash at or after the second segment and a raw
+    `endswith` sees a different string while the OS opens the same file. Every one of these
+    was allowed, with the report present on disk.
+
+    `docs/../docs/...` was caught, but only by accident: the junk sits before the first
+    segment the comparison needed, so `endswith` still lined up. That accident is what hid
+    this. Unlike `_covers`, which must not normalise, a concrete path is canonicalised by
+    the OS before the file is opened, so normalising here matches what actually happens.
+    """
+    assert _denied(_run(_call("Read", file_path=path), config_dir))
+
+
+@pytest.mark.parametrize("listed", [EXCLUDED, ABSOLUTE], ids=["relative", "absolute"])
+@pytest.mark.parametrize(
+    "path",
+    [f"/home/you/src/target/{p}" for p in NON_CANONICAL],
+    ids=["dot-segment", "empty-segment", "dot-before-file", "walk-back", "dot-prefixed"],
+)
+def test_a_read_of_a_non_canonical_absolute_path_is_denied(tmp_path, path, listed):
+    """The same against an absolute list entry, and against a relative one -- the
+    comparison is bidirectional, so both forms have to survive canonicalisation."""
+    assert _denied(_run(_call("Read", file_path=path), _listing(tmp_path, listed)))
+
+
+# -- the exclusion has to be stated in the field that filters --------------------
+
+
+@pytest.mark.parametrize(
+    "tool_input",
+    [
+        {"pattern": f"session|!{EXCLUDED}", "path": "docs"},
+        {"pattern": "session", "path": "docs", "-B": f"!{EXCLUDED}"},
+        {"pattern": "session", "path": "docs", "output_mode": f"!{EXCLUDED}"},
+    ],
+    ids=["search-regex", "context-flag", "output-mode"],
+)
+def test_a_bang_outside_the_filter_field_does_not_excuse_the_call(config_dir, tool_input):
+    """The escape hatch used to scan `json.dumps(tool_input)`, so an inert alternation
+    branch in the *search regex* satisfied it -- and that call, run for real, returns the
+    excluded report's contents. It worked from any string field, against every branch of
+    `_reaches`, which made it a universal one-shot bypass.
+
+    `_covers` on the filter field already decides this properly, so the scan is gone rather
+    than narrowed."""
+    assert _denied(_run(_call("Grep", **tool_input), config_dir))
+
+
+def test_stating_the_exclusion_in_the_filter_field_still_works(config_dir):
+    """The other half: removing the scan must not close the documented way through."""
+    call = _call("Grep", pattern="session", path="docs", glob=f"!{EXCLUDED}")
+    assert not _denied(_run(call, config_dir))
+
+
+def test_a_negation_ripgrep_does_not_honour_is_denied_even_though_it_names_the_path(
+    config_dir,
+):
+    """The scan accepted any `!` followed by the recorded path, including this one. A
+    leading `/` anchors to the search root rather than naming an absolute path, so rg
+    15.2.0 still returns the report under this glob -- the scan was buying a pass for a
+    negation that excludes nothing."""
+    glob = f"!/home/you/src/target/{EXCLUDED}"
+    assert _denied(_run(_call("Grep", pattern="session", path="docs", glob=glob), config_dir))

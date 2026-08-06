@@ -23,10 +23,15 @@ sessions on a bug of its own -- worse than the leak it prevents. ``owasp_roster`
 rejecting findings that cite an excluded path remains the real gate; this sits in
 front of it.
 
-NOT DEFENDED: a deliberately crafted pattern. ``full_match`` compiles to a
-backtracking regex, and a pattern can be built whose matching exceeds the hook's
-5s timeout -- ``**/*a*a*aX/**`` against a deep enough entry runs past 20s from
+NOT DEFENDED: a deliberately crafted pattern, when the list entry is deep.
+``full_match`` compiles to a backtracking regex, and a pattern can be built whose
+matching exceeds the hook's 5s timeout -- ``**/*a*a*aX/**`` runs past 20s from
 thirteen characters. A timeout fails open, so that is a bypass.
+
+It needs both halves. The candidate count is the entry's own segment count, so
+the same pattern against a realistic three-segment entry is instantaneous; the
+blowup needs an exclusion-list entry hundreds of segments deep, and that file is
+written by the scoping step rather than by the agent being refused.
 
 It is left open because there is a wider one beside it: the ``PreToolUse``
 matcher is ``Read|Grep|Glob``, and ``Bash`` is not hooked at all. An agent
@@ -34,11 +39,12 @@ willing to craft such a pattern can simply run ``cat``. Closing this one would
 put signal handling in the hot path of every hooked call to shut a door standing
 next to an open one.
 
-So the ceilings below (``MAX_DEPTH``, ``WORK_BUDGET``,
-``MAX_WILDCARDS_PER_SEGMENT``) bound the *accidental* case -- a large but
-ordinary brace glob, which is what agents actually write -- and not the
-adversarial one. For a finding that cites an excluded path, ``owasp_roster``
-remains the gate; this only makes the accident less likely.
+So the ceilings below (``BRACE_GROUPS``, ``BRACE_ALTERNATIVES``, ``MAX_DEPTH``,
+``WORK_BUDGET``, ``MAX_WILDCARDS_PER_SEGMENT``) bound the *accidental* case -- a
+large but ordinary brace glob, which is what agents actually write -- and not the
+adversarial one. The first two guard the largest measured blowup of the set. For
+a finding that cites an excluded path, ``owasp_roster`` remains the gate; this
+only makes the accident less likely.
 
 It can block a call but cannot filter output, so a broad search is refused with
 instructions to re-issue it excluding the path, rather than silently returning
@@ -53,7 +59,6 @@ from __future__ import annotations
 import json
 import os
 import posixpath
-import re
 import sys
 from pathlib import Path, PurePosixPath
 
@@ -97,8 +102,16 @@ def _under(root: str, excluded: str) -> bool:
     rather than two.
 
     It is deliberately generous -- a root matching only on its tail counts as
-    containing the file. Over-refusing costs an agent one call that states the
-    exclusion; under-refusing puts another assessment's conclusions in front of it.
+    containing the file -- because under-refusing puts another assessment's
+    conclusions in front of the agent.
+
+    This used to add "over-refusing costs an agent one call that states the
+    exclusion". That was measured and is false: ADR 0011 records a PR-scoped run of
+    142 agents producing 87 denials across 42 of them, every one against an agent
+    already carrying the exclusion list, and traces one agent abandoning the refused
+    tool for the rest of its run. The generosity is still the right trade *here*,
+    where the alternative is a leak -- but it is a trade with a real price, not a
+    free one, and it should not be cited as though refusing were costless.
 
     Compared as segment lists rather than rebuilt-and-rescanned strings: joining a
     candidate suffix and searching for it as a substring is quadratic in ``root``'s
@@ -165,10 +178,13 @@ BRACE_GROUPS = 4
 BRACE_ALTERNATIVES = 16
 
 # Ceiling on the depth of a list entry. Building the suffix chain is quadratic in that depth
-# rather than linear, so it is bounded on its own: a 4000-segment entry cost 0.9s and an
-# 8000-segment one exhausted 2GB and raised, which ``main`` catches into an allow. The
-# character budget below does not cover it, since a one-character pattern leaves the depth
-# free. Introduced with ``_selects`` in b3f1746, not inherited from before it.
+# rather than linear, so it is bounded on its own: a 4000-segment entry cost 0.96s and 1.1GB,
+# an 8000-segment one 3.49s and 4.3GB. Whether the memory figure becomes a `MemoryError` is
+# machine-dependent -- it did under a 2GB cap and did not on a larger box, where it merely
+# returned late -- so the bound is justified by the time, which approaches the 5s timeout on
+# its own, with the allocation as the reason the margin disappears fast. The character budget
+# below does not cover it, since a one-character pattern leaves the depth free. Introduced
+# with `_selects` in b3f1746, not inherited from before it.
 MAX_DEPTH = 1_000
 
 # Ceiling on matching work, counted in candidate-characters: the characters of every expanded
@@ -439,22 +455,54 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
     after seeing them. A search that *selects files by pattern* is allowed when the pattern
     cannot expand to the path, which is the ordinary way a narrow search proceeds.
 
-    Ordering carries weight: ``_under`` releases an unrelated tree before the pattern is
-    consulted, so ``path`` keeps bounding the search and a ``**/*`` aimed into the excluded
-    directory is still refused.
+    Saying so means the *filter field*, and nothing else. This used to scan
+    ``json.dumps(tool_input)`` for ``!`` followed by the excluded path, which any string
+    field satisfied: ``Grep(pattern="session|!docs/security/rep.md", path="docs")`` was
+    allowed, and run for real it returns the report's contents -- an inert alternation
+    branch in the search regex buying a pass on every other check. It was a universal
+    bypass, and it was also over-permissive on its own terms: it accepted
+    ``!/abs/repo/docs/security/rep.md``, which ripgrep does not honour at all, since a
+    leading ``/`` anchors to the search root rather than naming an absolute path. Verified
+    against rg 15.2.0, which still returns the report under that glob.
+
+    Deleting it lost nothing, because ``_covers`` already decides the same question
+    properly: on the literal path it is anchored, ``full_match``es exactly, and allows. So
+    the check is gone rather than narrowed -- one mechanism fewer, and the remaining one is
+    the one that asks whether the negation actually excludes anything.
+
+    Ordering is mostly not load-bearing, contrary to what this said before. Every check
+    below except the last is a ``return False`` allow-guard, and those commute: moving the
+    ``_under`` guard after both selector checks leaves the whole suite green. A ``**/*``
+    aimed into the excluded directory is refused because ``_selects`` returns ``True``, not
+    because ``_under`` ran first. The one real ordering effect is the negation branch's
+    early ``return not _covers(...)``, which skips ``_selects`` -- and moving *that* costs
+    an over-refusal rather than a leak. Nothing here should be rearranged casually, but a
+    reader should not be defending an invariant that is not there.
+
+    Both sides of the identity comparison are normalised, and only here. ``.`` , ``..`` and
+    a doubled slash are navigation in a concrete path -- the OS resolves them before it
+    opens the file -- so ``docs/./security/rep.md`` names the excluded file exactly as
+    surely as ``docs/security/rep.md`` does, while a raw ``endswith`` sees two different
+    strings and allows the read. ``docs/../docs/rep.md`` was caught only by the accident of
+    the junk sitting before the first segment the comparison needed.
+
+    This is the opposite of what ``_covers`` must do, deliberately. There the pattern is a
+    glob matched against a path ripgrep walks, where those segments are literal components
+    that match nothing -- normalising them away invents an exclusion ripgrep would not
+    honour. Here the pattern is a concrete path the OS canonicalises for us. Same
+    characters, opposite meaning, so opposite treatment.
     """
     target = str(tool_input.get("file_path") or tool_input.get("path") or "")
-    stated = json.dumps(tool_input)
 
-    if target and (target.endswith(excluded) or excluded.endswith(target)):
-        return True
+    if target:
+        here = posixpath.normpath(target)
+        there = posixpath.normpath(excluded)
+        if here.endswith(there) or there.endswith(here):
+            return True
     if tool_name == "Read":
         return False
 
     if target and not _under(target, excluded):
-        return False
-
-    if re.search(rf"!.*{re.escape(excluded)}", stated):
         return False
 
     selector = str(tool_input.get(FILTER_FIELD.get(tool_name, ""), "") or "")
