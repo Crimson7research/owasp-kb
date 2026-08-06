@@ -13,7 +13,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -548,46 +547,9 @@ def test_a_very_deep_entry_is_denied_in_selects(tmp_path):
 
     The pattern has to be one that matches nothing -- `*` alone is denied on merit, since it
     matches the final `rep.md` suffix, which hid this bound's removal entirely.
-
-    The deadline would catch this too, so what is pinned is that the refusal is *cheap*:
-    without the depth check the call survives by burning the whole shared budget, and that
-    budget is process-wide, so the next entry in the list pays for it.
     """
     deep = "/".join(f"directory-number-{i}" for i in range(8000)) + "/rep.md"
-    started = time.monotonic()
     assert _denied(_run(_call("Glob", pattern="*.zzz"), _listing(tmp_path, deep)))
-    assert time.monotonic() - started < 0.6
-
-
-@pytest.mark.parametrize(
-    "call",
-    [
-        _call("Glob", pattern="**/*a*a*aX/**"),
-        _call("Grep", pattern="session", glob="!{**/*a*a*aX/**,**/*.md}"),
-    ],
-    ids=["selects", "covers"],
-)
-def test_a_pattern_too_slow_for_any_static_ceiling_is_denied(tmp_path, call):
-    """The bound that actually holds. These few characters sit inside every static ceiling --
-    3 wildcards a segment, tens of candidate-characters, depth 201 -- and still ran past 20s,
-    because `**` either side makes the regex try the wildcard segment against every segment
-    of every candidate. Counting the input cannot catch that; only watching the clock can.
-
-    The negated case pairs the slow alternative with `**/*.md`, which genuinely covers the
-    entry, so without the deadline it is an allow rather than a slow denial -- `!X` alone is
-    refused on merit and would pin nothing.
-    """
-    entry = "/".join("a" * 255 for _ in range(200)) + "/rep.md"
-    assert _denied(_run(call, _listing(tmp_path, entry)))
-
-
-def test_the_deadline_is_shared_across_the_whole_list(tmp_path):
-    """The clock is process-wide. Were it per call, a list of six pathological entries would
-    cost six deadlines and land past the hook's 5s timeout, which fails open."""
-    entries = ["/".join("a" * 255 for _ in range(200)) + f"/rep{k}.md" for k in range(6)]
-    started = time.monotonic()
-    assert _denied(_run(_call("Glob", pattern="**/*a*a*aX/**"), _listing(tmp_path, *entries)))
-    assert time.monotonic() - started < 3
 
 
 def test_a_very_deep_entry_is_denied_in_under(tmp_path):
