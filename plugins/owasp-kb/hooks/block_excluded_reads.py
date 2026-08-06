@@ -37,7 +37,10 @@ import json
 import os
 import posixpath
 import re
+import signal
 import sys
+import time
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 SEARCH_TOOLS = {"Read", "Grep", "Glob"}
@@ -90,6 +93,11 @@ def _under(root: str, excluded: str) -> bool:
     this hook's 5s timeout, and a timeout fails open. The candidate range is bounded to
     suffixes no longer than ``excluded``'s own chain, since a longer one cannot match
     regardless of how deep ``root`` goes.
+
+    That bound leaves the cost quadratic in ``excluded``'s own depth, though, which the
+    range does not cap: a 4000-segment entry took 26.8s and an 8000-segment one had not
+    finished in two minutes. So the same ``MAX_DEPTH`` that bounds ``_selects`` applies
+    here, and past it the generous answer is the safe one, exactly as it is above.
     """
     r = root.removeprefix("./").strip("/")
     e = f"/{excluded.strip('/')}"
@@ -98,6 +106,8 @@ def _under(root: str, excluded: str) -> bool:
     segments = r.split("/")
     excluded_segments = e.strip("/").split("/")
     total = len(excluded_segments)
+    if total > MAX_DEPTH:
+        return True
     width = len(segments)
     return any(
         j + (width - i) < total and excluded_segments[j : j + width - i] == segments[i:]
@@ -140,20 +150,107 @@ def _selects_across_forms(pattern: str, segments: list[str]) -> bool:
 BRACE_GROUPS = 4
 BRACE_ALTERNATIVES = 16
 
-# Ceilings on what one ``_selects`` call may cost. It tries every alternative against every
-# suffix of the excluded path, so expanding a brace list multiplies a cost that used to be
-# linear in that path's depth -- at the bound above, by 625. Past either ceiling the pattern
-# is refused rather than matched, the same trade ``_expand_braces`` makes and for the same
-# reason: the 5s timeout fails open, so the slow path is the leak.
-#
-# The depth ceiling is the separate one because building those suffixes is quadratic in the
-# depth, not linear: a 4000-segment entry cost 0.9s and an 8000-segment one exhausted 2GB
-# and raised, which ``main`` catches into an allow. That predates brace expansion -- it is
-# the same shape ``_under`` documents -- but the product ceiling alone does not bound it,
-# since a single alternative leaves the depth free. ``_covers`` needs neither, matching each
-# alternative once against one path rather than per suffix.
-MATCH_BUDGET = 50_000
+# Ceiling on the depth of a list entry. Building the suffix chain is quadratic in that depth
+# rather than linear, so it is bounded on its own: a 4000-segment entry cost 0.9s and an
+# 8000-segment one exhausted 2GB and raised, which ``main`` catches into an allow. The
+# character budget below does not cover it, since a one-character pattern leaves the depth
+# free. Introduced with ``_selects`` in b3f1746, not inherited from before it.
 MAX_DEPTH = 1_000
+
+# Ceiling on matching work, counted in candidate-characters: the characters of every expanded
+# alternative, times the number of candidates each is matched against. Cheap to compute and
+# portable, so it runs first -- but it is not the real bound. Counting *characters* rather
+# than alternatives already matters: a count-based ceiling reads
+# `{J,J,J,J,docs}{J,J,J,J,/**/*.md}{J,J,J,J,}{J,J,J,J,}` as 625 cheap alternatives, while
+# each `J` carries thousands of wildcards and one alternative reaches the report.
+WORK_BUDGET = 50_000
+
+# Ceiling on wildcards in a single path segment. `full_match` compiles to a backtracking
+# regex, and a failing match explores every placement, so cost goes as C(segment length,
+# wildcards) -- about 1.5e8 placements per second. Against a 255-character segment, the
+# longest any filesystem allows, 3 wildcards costs 0.017s and 4 costs 1.07s; at 60
+# characters, 8 costs 19.7s. Real globs sit far below it: `**`, `*.md` and `*firmware*`
+# are 2, 1 and 2.
+MAX_WILDCARDS_PER_SEGMENT = 3
+
+# The bound that actually holds, because neither ceiling above is sufficient and no static
+# one is. Both count the *input*, and the cost is not a function of the input's size: the
+# thirteen characters `**/*a*a*aX/**` sit inside every static ceiling here and still run past
+# 20s against an entry of 200 long segments, because `**` on either side makes the regex try
+# the wildcard-bearing segment against every segment of every candidate. Searching for the
+# worst admissible input is what turned this up; predicting it from the shape of the code did
+# not, twice.
+#
+# So the quantity bounded is the one that matters -- wall clock. CPython's `re` does check
+# for signals while matching, verified: a match that runs 18.7s uninterrupted was preempted
+# at exactly 2.00s by an itimer. One second leaves a fivefold margin under the hook's 5s
+# timeout, and the deadline is process-wide so a long exclusion list cannot multiply it.
+#
+# `setitimer` is Unix-only. Where it is missing the two static ceilings above are all that is
+# left, which is why they are kept rather than replaced: they are a weaker fallback, not a
+# complete one.
+WORK_SECONDS = 1.0
+
+_expires_at: float | None = None
+
+
+class _OutOfTime(Exception):
+    """The process-wide matching deadline passed mid-match."""
+
+
+def _raise_out_of_time(_signum: int, _frame: object) -> None:
+    raise _OutOfTime
+
+
+def _too_costly(alternatives: list[str], candidates: int) -> bool:
+    """Would matching these alternatives obviously risk the 5s timeout, and so fail open?
+
+    A cheap pre-filter, not the guarantee -- see ``WORK_SECONDS`` for that. Both ceilings are
+    refusals, and both callers turn a refusal into a denial: ``_selects`` by returning a
+    match and ``_covers`` by failing to prove coverage. That is the same trade
+    ``_expand_braces`` makes one step earlier -- the slow path is the leak, not the denial.
+    """
+    if candidates * sum(len(alternative) for alternative in alternatives) > WORK_BUDGET:
+        return True
+    return any(
+        segment.count("*") + segment.count("?") > MAX_WILDCARDS_PER_SEGMENT
+        for alternative in alternatives
+        for segment in alternative.split("/")
+    )
+
+
+def _before_deadline(match: Callable[[], bool], refusal: bool) -> bool:
+    """Run ``match``, giving up and returning ``refusal`` once the process is out of time.
+
+    ``refusal`` is each caller's safe direction, so running out of time denies either way.
+    The clock starts at the first match rather than at import, so a session with no exclusion
+    list never arms it.
+    """
+    global _expires_at
+    if not hasattr(signal, "setitimer"):  # not Unix: the static ceilings are all there is
+        return match()
+    if _expires_at is None:
+        _expires_at = time.monotonic() + WORK_SECONDS
+    remaining = _expires_at - time.monotonic()
+    if remaining <= 0:
+        return refusal
+    try:
+        previous = signal.signal(signal.SIGALRM, _raise_out_of_time)
+    except ValueError:  # not the main thread, so no signal to arm
+        return match()
+    # The outer handler covers the whole arming and disarming dance, not just ``match``: an
+    # alarm that lands in the microseconds between ``match`` returning and the timer being
+    # cancelled would otherwise escape to ``main``, which catches it into an allow -- the
+    # timeout leaking through the very guard that exists to stop it.
+    try:
+        try:
+            signal.setitimer(signal.ITIMER_REAL, max(remaining, 0.001))
+            return match()
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+    except _OutOfTime:
+        return refusal
 
 
 def _split_alternatives(body: str) -> list[str]:
@@ -252,7 +349,10 @@ def _covers(pattern: str, excluded: str) -> bool:
     is what the glob means, since matching any alternative excludes the file. ``None`` from
     ``_expand_braces``, for a pattern past its bound, is a refusal: coverage is what has to
     be proven here, so failing to expand proves nothing. That is the mirror of ``_selects``,
-    where a ``None`` is a match, and both land on a denial.
+    where a ``None`` is a match, and both land on a denial. Running out of ``WORK_SECONDS``
+    is refused the same way and for the same reason -- this predicate matches each
+    alternative once rather than per suffix, but a single alternative can still carry enough
+    wildcards to hang.
 
     Whether the pattern is anchored, and the leading and trailing ``/``, are decided on the
     unexpanded pattern, because ripgrep decides them once for the whole glob rather than per
@@ -271,19 +371,22 @@ def _covers(pattern: str, excluded: str) -> bool:
     if pattern.endswith("/"):
         pattern = pattern.removesuffix("/") + "/**"
     alternatives = _expand_braces(pattern)
-    if alternatives is None:
+    if alternatives is None or _too_costly(alternatives, 1):
         return False
     path = PurePosixPath(excluded)
     candidate = path if anchored else PurePosixPath(path.name)
-    return any(
-        # ripgrep matches a glob against the walked path verbatim: `.`, `..` and empty
-        # segments are literal components there, so an alternative carrying one excludes
-        # nothing. Normalising them away was an over-approximation, and in this branch an
-        # over-approximation is an allow -- `!./docs/**` read as covering the report
-        # while ripgrep handed the report over.
-        all(segment not in ("", ".", "..") for segment in alternative.split("/"))
-        and candidate.full_match(alternative)
-        for alternative in alternatives
+    return _before_deadline(
+        lambda: any(
+            # ripgrep matches a glob against the walked path verbatim: `.`, `..` and empty
+            # segments are literal components there, so an alternative carrying one excludes
+            # nothing. Normalising them away was an over-approximation, and in this branch an
+            # over-approximation is an allow -- `!./docs/**` read as covering the report
+            # while ripgrep handed the report over.
+            all(segment not in ("", ".", "..") for segment in alternative.split("/"))
+            and candidate.full_match(alternative)
+            for alternative in alternatives
+        ),
+        refusal=False,
     )
 
 
@@ -333,9 +436,9 @@ def _selects(pattern: str, excluded: str) -> bool:
     two extensions at once. ``None`` from ``_expand_braces``, for a pattern past its bound,
     is treated as a match: over-approximating is the safe direction here, and this hook has
     a 5s timeout that fails open, so refusing to expand costs a denial rather than a leak.
-    ``MATCH_BUDGET`` and ``MAX_DEPTH`` are the same trade one step later, since every
-    alternative is tried against every suffix and it is that work, not the expansion, which
-    the timeout actually feels.
+    ``MAX_DEPTH``, ``_too_costly`` and ``WORK_SECONDS`` are the same trade one step later,
+    since every alternative is tried against every suffix and it is that work, not the
+    expansion, which the timeout actually feels.
 
     Each alternative is normalised and routed on its own leading ``/`` rather than the whole
     pattern's, since a brace at position zero can make them differ. Both are only ever
@@ -347,27 +450,30 @@ def _selects(pattern: str, excluded: str) -> bool:
     if (
         alternatives is None
         or len(segments) > MAX_DEPTH
-        or len(alternatives) * len(segments) > MATCH_BUDGET
+        or _too_costly(alternatives, len(segments))
     ):
         return True
 
-    joined = ["/".join(segments[i:]) for i in range(len(segments))]
-    relative = [PurePosixPath(suffix) for suffix in joined]
-    absolute = [PurePosixPath(f"/{suffix}") for suffix in joined]
+    def matches() -> bool:
+        joined = ["/".join(segments[i:]) for i in range(len(segments))]
+        relative = [PurePosixPath(suffix) for suffix in joined]
+        absolute = [PurePosixPath(f"/{suffix}") for suffix in joined]
 
-    for alternative in alternatives:
-        alternative = posixpath.normpath(alternative)
-        if not alternative.startswith("/"):
-            candidates = relative
-        elif excluded.startswith("/"):
-            candidates = absolute
-        elif _selects_across_forms(alternative, segments):
-            return True
-        else:
-            continue
-        if any(candidate.full_match(alternative) for candidate in candidates):
-            return True
-    return False
+        for alternative in alternatives:
+            alternative = posixpath.normpath(alternative)
+            if not alternative.startswith("/"):
+                candidates = relative
+            elif excluded.startswith("/"):
+                candidates = absolute
+            elif _selects_across_forms(alternative, segments):
+                return True
+            else:
+                continue
+            if any(candidate.full_match(alternative) for candidate in candidates):
+                return True
+        return False
+
+    return _before_deadline(matches, refusal=True)
 
 
 def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:

@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -494,23 +495,107 @@ def test_a_brace_alternative_that_walks_back_up_is_still_denied(config_dir):
     assert _denied(_run(_call("Glob", pattern="{docs/../docs,zz}/**/*.md"), config_dir))
 
 
-def test_a_brace_list_against_a_deep_path_is_denied_rather_than_matched(tmp_path):
-    """Every alternative is tried against every suffix of the excluded path, so expansion
-    multiplies a cost that was linear in that path's depth -- 625 alternatives against a
-    2000-segment entry took 8s against a 5s timeout that fails open, which is the leak
-    rather than a slow denial. Past the budget the call is refused."""
-    deep = "/".join(f"d{i}" for i in range(2000)) + "/rep.md"
+# -- ceilings on matching work ------------------------------------------------
+#
+# One test per ceiling, each arranged so that only its own clause fires: a shared input
+# would let a deleted clause hide behind whichever bound caught it first.
+
+
+def test_work_past_the_budget_is_denied_in_selects(tmp_path):
+    """625 alternatives against a 200-segment entry is 502,500 candidate-characters. Depth
+    and expansion are both inside their own bounds here, so only the character budget can
+    refuse it -- and on merit the pattern reaches nothing, so without the budget it is an
+    allow arriving after the timeout, which is an allow."""
+    deep = "/".join(f"d{i}" for i in range(200)) + "/rep.md"
     pattern = "{a,b,c,d,e}{a,b,c,d,e}{a,b,c,d,e}{a,b,c,d,e}"
     assert _denied(_run(_call("Glob", pattern=pattern), _listing(tmp_path, deep)))
 
 
-def test_a_brace_free_pattern_against_a_very_deep_path_is_denied_rather_than_matched(tmp_path):
-    """Building those suffixes is quadratic in the entry's depth, so the product ceiling
-    does not bound it on its own -- one alternative leaves the depth free. An 8000-segment
-    entry exhausted 2GB and raised, and `main` catches that into an allow: the deep path is
-    then the way past the hook rather than a slow denial."""
+def test_work_past_the_budget_is_denied_in_covers(config_dir):
+    """The mirror, and the case a count-based ceiling misses: three alternatives is nothing,
+    but two of them carry 30,000 characters each. The third genuinely covers the report, so
+    without the budget this is an allow -- the expensive way to be let through."""
+    padding = "a" * 30_000
+    glob = f"!{{{padding},{padding},**/*.md}}"
+    assert _denied(_run(_call("Grep", pattern="session", glob=glob), config_dir))
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        _call("Glob", pattern="*a*b*c*d*.ts"),
+        _call("Grep", pattern="session", glob="!*a*s*v*s*.md"),
+    ],
+    ids=["selects", "covers"],
+)
+def test_a_segment_with_too_many_wildcards_is_denied(config_dir, call):
+    """`full_match` compiles to a backtracking regex and a failing match explores every
+    placement, so cost goes as C(segment length, wildcards): 8 wildcards against a
+    60-character segment took 19.7s, past a 5s timeout that fails open.
+
+    Both of these are over-refusals -- rg confirms `*a*b*c*d*.ts` cannot reach a `.md`
+    report and that `!*a*s*v*s*.md` genuinely excludes it -- so without the ceiling both
+    are allows. That is the cost of the bound, and it is the direction to be wrong in.
+    """
+    assert _denied(_run(call, config_dir))
+
+
+def test_a_very_deep_entry_is_denied_in_selects(tmp_path):
+    """Building the suffix chain is quadratic in the entry's depth, which the character
+    budget does not cover: `*.zzz` against 8001 candidates is 40,005 candidate-characters,
+    inside it. An 8000-segment entry exhausted 2GB and raised, which `main` catches into an
+    allow.
+
+    The pattern has to be one that matches nothing -- `*` alone is denied on merit, since it
+    matches the final `rep.md` suffix, which hid this bound's removal entirely.
+
+    The deadline would catch this too, so what is pinned is that the refusal is *cheap*:
+    without the depth check the call survives by burning the whole shared budget, and that
+    budget is process-wide, so the next entry in the list pays for it.
+    """
     deep = "/".join(f"directory-number-{i}" for i in range(8000)) + "/rep.md"
-    assert _denied(_run(_call("Glob", pattern="src/**/*.py"), _listing(tmp_path, deep)))
+    started = time.monotonic()
+    assert _denied(_run(_call("Glob", pattern="*.zzz"), _listing(tmp_path, deep)))
+    assert time.monotonic() - started < 0.6
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        _call("Glob", pattern="**/*a*a*aX/**"),
+        _call("Grep", pattern="session", glob="!{**/*a*a*aX/**,**/*.md}"),
+    ],
+    ids=["selects", "covers"],
+)
+def test_a_pattern_too_slow_for_any_static_ceiling_is_denied(tmp_path, call):
+    """The bound that actually holds. These few characters sit inside every static ceiling --
+    3 wildcards a segment, tens of candidate-characters, depth 201 -- and still ran past 20s,
+    because `**` either side makes the regex try the wildcard segment against every segment
+    of every candidate. Counting the input cannot catch that; only watching the clock can.
+
+    The negated case pairs the slow alternative with `**/*.md`, which genuinely covers the
+    entry, so without the deadline it is an allow rather than a slow denial -- `!X` alone is
+    refused on merit and would pin nothing.
+    """
+    entry = "/".join("a" * 255 for _ in range(200)) + "/rep.md"
+    assert _denied(_run(call, _listing(tmp_path, entry)))
+
+
+def test_the_deadline_is_shared_across_the_whole_list(tmp_path):
+    """The clock is process-wide. Were it per call, a list of six pathological entries would
+    cost six deadlines and land past the hook's 5s timeout, which fails open."""
+    entries = ["/".join("a" * 255 for _ in range(200)) + f"/rep{k}.md" for k in range(6)]
+    started = time.monotonic()
+    assert _denied(_run(_call("Glob", pattern="**/*a*a*aX/**"), _listing(tmp_path, *entries)))
+    assert time.monotonic() - started < 3
+
+
+def test_a_very_deep_entry_is_denied_in_under(tmp_path):
+    """`_under` runs before the pattern is consulted and is quadratic in the same depth --
+    26.8s at 4000 segments. A root sharing no chain with the entry is an allow on merit, so
+    the deep entry is the way past this one too."""
+    deep = "/".join(f"directory-number-{i}" for i in range(2000)) + "/rep.md"
+    assert _denied(_run(_call("Grep", pattern="x", path="unrelated"), _listing(tmp_path, deep)))
 
 
 def test_an_unbalanced_brace_is_matched_literally(config_dir):
