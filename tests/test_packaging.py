@@ -22,6 +22,21 @@ EXPECTED_SKILLS = {
     "owasp-asvs-gap-report",
     "owasp-threat-model",
 }
+# The two skills that fan out over ~140 subagents for hours. The other two run in one
+# session in minutes, where a nine-stage ledger over five steps is overhead.
+FAN_OUT_SKILLS = {"owasp-asvs-verify", "owasp-asvs-gap-report"}
+
+STAGES = [
+    "Agree scope",
+    "Record exclusions",
+    "Build inventory",
+    "Triage applicability",
+    "Refute exemptions",
+    "Assess chapters",
+    "Verify findings",
+    "Assemble roster",
+    "Write report",
+]
 TOOL_NAMES = {
     "kb_info",
     "owasp_search",
@@ -1766,3 +1781,38 @@ def test_the_secure_coding_body_says_what_recall_cannot_give():
         "a search run to confirm a chosen approach does not surface what the "
         "decision already excluded, which is how the observed gap survived"
     )
+
+
+def _step_zero(skill: str) -> str:
+    """The step 0 block of a fan-out skill's Process, up to where step 1 begins."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    _, _, after = body.partition("0. **Declare the stages")
+    assert after, f"{skill} has no step 0: the run never states its plan"
+    block, separator, _ = after.partition("\n1. **Agree the scope")
+    assert separator, f"{skill} step 0 is not followed by step 1"
+    return block
+
+
+def _declared_stages(skill: str) -> list[str]:
+    """The stage subjects from step 0's table, in document order."""
+    return [
+        row.group(1).strip()
+        # The rows are indented: the table sits inside a numbered list item.
+        for row in re.finditer(r"^\s*\|\s*\d\s*\|([^|]+)\|", _step_zero(skill), re.MULTILINE)
+    ]
+
+
+@pytest.mark.parametrize("skill", sorted(FAN_OUT_SKILLS))
+def test_a_fan_out_skill_declares_its_stages_before_dispatching(skill):
+    """A run of ~140 agents over several hours otherwise states its plan nowhere, so a
+    skipped stage is noticeable only by what fails downstream -- which is why
+    gate_triage_on_inventory.py had to exist."""
+    assert _declared_stages(skill) == STAGES
+
+
+def test_both_fan_out_skills_carry_the_identical_step_zero():
+    """These two share ~450 lines and have already drifted by ~167. This pins the part being
+    added, so an edit to one is an edit to both -- byte-for-byte, not just the stage names,
+    which the test above already covers."""
+    verify, gap_report = sorted(FAN_OUT_SKILLS)
+    assert _step_zero(verify) == _step_zero(gap_report)

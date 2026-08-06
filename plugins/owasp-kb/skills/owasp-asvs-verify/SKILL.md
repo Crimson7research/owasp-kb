@@ -60,6 +60,39 @@ and what was deliberately left out.
 The assessment runs as a fan-out. You orchestrate; the work happens in subagents so that
 no verdict is graded by the agent that produced it.
 
+0. **Declare the stages before dispatching anything.** Create these nine tasks with `TaskCreate`,
+   then mark each `in_progress` when you enter it and `completed` when you leave it. Set the
+   dependencies with `TaskUpdate(addBlockedBy=...)` so the ordering is declared rather than
+   described.
+
+   | # | subject | activeForm | blockedBy |
+   |---|---|---|---|
+   | 1 | Agree scope | Agreeing scope | — |
+   | 2 | Record exclusions | Recording exclusions | 1 |
+   | 3 | Build inventory | Building the inventory | 2 |
+   | 4 | Triage applicability | Triaging applicability | 3 |
+   | 5 | Refute exemptions | Refuting exemptions | 4 |
+   | 6 | Assess chapters | Assessing chapters | 4 |
+   | 7 | Verify findings | Verifying findings | 6 |
+   | 8 | Assemble roster | Assembling the roster | 5, 6, 7 |
+   | 9 | Write report | Writing the report | 8 |
+
+   `Refute exemptions` and `Assess chapters` both hang off `Triage applicability` rather than
+   chaining, because step 3 dispatches both groups at once. The graph should say what the run
+   does, not something tidier that the run then visibly violates.
+
+   Put a count in the subject of the three long stages as returns arrive — `Assess chapters
+   (3/12)`. Those are where the hours go. The other six complete in one action, where a count
+   is noise.
+
+   **This is not a recovery mechanism.** The dispatch ledger in step 2 is: it is per-agent, it
+   is on disk, and it survives a compaction this list is not known to survive. Keep both. They
+   answer different questions — this one is "which stage are we in", for whoever is watching.
+
+   Nothing checks this list. A run that stops updating it produces a stale display and a correct
+   assessment: `verification_complete`, the inventory gate and the exclusion hook are what gate
+   correctness, and none of them depends on this.
+
 1. **Agree the scope** (above). This gates everything — a wrong scope wastes every agent
    dispatched after it.
 
