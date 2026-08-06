@@ -1887,3 +1887,15 @@ def test_the_finder_offers_a_probe_when_a_claim_is_executable():
     assert "probe" in body.lower()
     for part in ("build", "run", "observe", "falsify"):
         assert f'"{part}"' in body, f"the probe spec must name its {part} part"
+
+
+def test_the_orchestrator_vets_a_probe_before_dispatching_it():
+    """The runner is given no exclusion list, so this is the only place a spec naming
+    an excluded path can be stopped. It is also the place the list already lives."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    assert "owasp-probe-runner" in body
+    assert "EXCLUDED" in body
+    # Not `"refuse" in body`: that matches "refused" elsewhere in the same section and
+    # passes even when the instruction is softened to a warning. Pin the behaviour.
+    normalised = " ".join(body.split()).lower()
+    assert "do not dispatch" in normalised, "vetting must stop the dispatch, not warn about it"

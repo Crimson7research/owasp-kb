@@ -45,6 +45,25 @@ the intended behaviour, not a rabbit hole. The same applies to the refuter dispa
 below and to any finder you re-dispatch after a refuted claim — waiting on those is
 still not searching, however many turns it takes.
 
+## Running a probe a finder asked for
+
+A finder that could settle its claim by running something returns a `probe` alongside its
+verdict. It cannot run one itself, so you do.
+
+1. **Vet the spec first.** If any part of it names a path on the EXCLUDED list, refuse it:
+   do not dispatch, and record the finding as argued rather than probed. The probe runner is
+   given no exclusion list — this is the only point at which such a spec can be stopped, and
+   you are the one holding the list.
+2. **Dispatch `owasp-probe-runner`** with the spec verbatim. It holds a shell and nothing
+   else, forms no verdict, and returns what it observed.
+3. **Pass the probe output to the verifier** together with the finding, unchanged. Do not
+   summarise it and do not decide what it means — the verifier's job is to weigh it, and a
+   summary is where the observation turns back into an argument.
+
+A probe that comes back `not runnable`, or one you refused, is not a failure of the finding.
+It means the claim is judged on reasoning, which is how every claim was judged before this
+existed. Forward it as such.
+
 ## Requirements that do not apply
 
 Your chapter applies, but some of its requirements will not. ASVS V7 is written for
