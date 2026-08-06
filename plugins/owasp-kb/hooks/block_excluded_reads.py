@@ -491,6 +491,14 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
     that match nothing -- normalising them away invents an exclusion ripgrep would not
     honour. Here the pattern is a concrete path the OS canonicalises for us. Same
     characters, opposite meaning, so opposite treatment.
+
+    Do not delete this as redundant on the grounds that the harness already canonicalises.
+    It does: an end-to-end run against a live install found ``Read`` arriving here with
+    ``./``, ``//`` and ``../`` already collapsed, so those forms were refused even before
+    this normalisation existed, and a trailing slash was the only spelling that reached the
+    comparison intact. That is a property of the caller, observed once, not a guarantee this
+    hook is owed -- ``tool_input`` is whatever the payload says, and a hook that leans on
+    someone else's normalisation is one release away from allowing the read.
     """
     target = str(tool_input.get("file_path") or tool_input.get("path") or "")
 
