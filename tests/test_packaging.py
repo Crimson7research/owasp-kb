@@ -1909,3 +1909,17 @@ def test_the_verifier_weighs_probe_output_it_is_given():
     normalised = " ".join(body.split()).lower()
     assert "probe" in normalised
     assert "not runnable" in normalised, "it must handle the case where nothing ran"
+
+
+def test_the_finder_meets_the_probe_decision_before_it_writes_a_verdict():
+    """This instruction first shipped *after* the Output example and opened with "Omit
+    `probe` when the claim is settled by reading. Most are." Sixteen finders in one run
+    reached the moment it exists for and not one emitted a spec -- two wrote that they
+    wanted to build a test case and then reasoned instead. An instruction the consumer
+    never reaches is not an instruction, so the ordering is pinned rather than trusted."""
+    _, body = _agent("owasp-requirement-finder")
+    process = body.index("## Process")
+    probe = body.index("## When the verdict turns on runtime behaviour")
+    output = body.index("## Output")
+    assert process < probe < output, "the probe decision must precede the output example"
+    assert "write a probe" in body[process:probe], "Process must name the probe at the decision step"
