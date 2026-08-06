@@ -518,19 +518,43 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
     return True
 
 
+def _grep_remediation(excluded: str) -> str:
+    """`--glob '!<path>'` is only provable when ``excluded`` is relative to the search
+    root: that is the one form ``_covers`` can confirm without knowing where the search
+    is rooted. An absolute entry has no provable form at all -- the absolute string
+    itself is refused because a glob's leading ``/`` anchors to the search root rather
+    than naming an absolute path, and the relative form is refused because it assumes a
+    root this hook cannot see. Offering ``--glob '!{excluded}'`` there would hand back
+    the same instruction that just got refused, for a reason re-issuing it cannot fix --
+    the unfollowable-remediation failure this whole change exists to avoid, reappearing
+    one level down.
+    """
+    if excluded.startswith("/"):
+        return (
+            "There is no negation to offer: a glob rooted at `/` anchors to the search "
+            "root, so it cannot name a file by absolute path, and a relative form would "
+            "assume a root this hook cannot confirm. Scope the search with `path` "
+            "instead, rooted away from that tree. Do not filter the results afterwards: "
+            "by then the text has reached you, which is the thing being prevented."
+        )
+    return (
+        "Re-issue the search excluding that path explicitly, for example "
+        f"--glob '!{excluded}'. Do not filter the results afterwards: by then the text "
+        "has reached you, which is the thing being prevented."
+    )
+
+
 # The remediation, per tool. One message for all three told a `Glob` caller to pass a
 # parameter `Glob` does not have, which is a refusal it cannot act on -- and an agent that
-# cannot act on a refusal works around it or stops using the tool.
+# cannot act on a refusal works around it or stops using the tool. `Grep`'s entry is a
+# function rather than a string for the same reason: whether a negation is provable at all
+# depends on whether the excluded entry is absolute, and a fixed string cannot say that.
 REMEDIATION = {
     "Read": (
         "There is nothing narrower to re-issue: the path itself is excluded, not a "
         "search that happens to reach it."
     ),
-    "Grep": (
-        "Re-issue the search excluding that path explicitly, for example "
-        "--glob '!{excluded}'. Do not filter the results afterwards: by then the text "
-        "has reached you, which is the thing being prevented."
-    ),
+    "Grep": _grep_remediation,
     "Glob": (
         "Glob has no exclusion parameter, so there is nothing to negate. Narrow the "
         "pattern so it cannot match that path, or scope the search with `path`. Do not "
@@ -566,12 +590,18 @@ def _decision(raw: str) -> str | None:
             # `tool_name` is in `SEARCH_TOOLS`, and a `KeyError` here for a genuinely
             # unknown tool would be caught by `main()` and fail open, which is the right
             # outcome.
+            remediation = REMEDIATION[tool_name]
+            remediation_text = (
+                remediation(excluded)
+                if callable(remediation)
+                else remediation.format(excluded=excluded)
+            )
             return (
                 f"Blocked: this call would put {excluded} into your context. It is a "
                 "prior assessment of this same target, excluded for this run -- another "
                 "assessment's conclusion is not evidence, and reading one makes you "
                 "likely to confirm it rather than test it.\n\n"
-                f"{REMEDIATION[tool_name].format(excluded=excluded)}\n\n"
+                f"{remediation_text}\n\n"
                 "If a verdict here would depend on excluded material, return "
                 "INSUFFICIENT EVIDENCE and say so without naming the file."
             )

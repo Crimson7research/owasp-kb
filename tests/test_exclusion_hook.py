@@ -167,8 +167,23 @@ def test_the_denial_says_how_to_proceed(config_dir):
     out = _run(_call("Grep", pattern="session", path="docs"), config_dir)
     reason = out["hookSpecificOutput"]["permissionDecisionReason"]
     assert EXCLUDED in reason
-    assert "--glob" in reason
+    assert f"--glob '!{EXCLUDED}'" in reason
     assert "INSUFFICIENT EVIDENCE" in reason
+
+
+def test_the_denial_of_an_absolute_entry_does_not_offer_a_negation(tmp_path):
+    """`--glob '!<path>'` is only provable when the entry is relative to the search
+    root. For an absolute entry, `_covers` can prove neither the absolute string (a
+    glob's leading `/` anchors to the search root rather than naming an absolute path)
+    nor the relative form (it would assume a root this hook cannot see) -- so every
+    negation is refused, and offering one anyway would just repeat the same unfollowable
+    instruction issue #33 was about."""
+    listing = _listing(tmp_path, ABSOLUTE)
+    out = _run(_call("Grep", pattern="session", path="docs"), listing)
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert ABSOLUTE in reason
+    assert "--glob" not in reason
+    assert "`path`" in reason
 
 
 # -- what a search pattern can actually reach --------------------------------
