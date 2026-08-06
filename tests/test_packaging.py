@@ -1877,3 +1877,13 @@ def test_the_probe_runner_carries_the_sandbox_contract(clause):
     so its clauses are pinned here."""
     _, body = _agent("owasp-probe-runner")
     assert clause in body
+
+
+def test_the_finder_offers_a_probe_when_a_claim_is_executable():
+    """A claim settled by running something should ship the recipe. The finder cannot
+    run it -- it holds no shell by design -- so the spec travels to the orchestrator,
+    which dispatches the runner."""
+    _, body = _agent("owasp-requirement-finder")
+    assert "probe" in body.lower()
+    for part in ("build", "run", "observe", "falsify"):
+        assert f'"{part}"' in body, f"the probe spec must name its {part} part"

@@ -58,6 +58,40 @@ Leave `file` and `line` null only for `INSUFFICIENT EVIDENCE`.
 The `REPORT COMPLETE` line required below goes after the JSON block, on its own
 line. Keep the JSON itself parseable — the sentinel is not part of it.
 
+## When the claim can be settled by running something
+
+Some claims are decided by behaviour rather than by source. Whether an exception type is
+where the code assumes, whether a redirect is followed past a guard, whether a value
+reaches a sink — reading tells you what was intended, running tells you what happens.
+
+You cannot run anything: you hold no shell, deliberately. What you can do is ship the
+recipe. Add a `probe` alongside your verdict:
+
+```json
+{
+  "req_id": "V6.2.1",
+  "verdict": "GAP",
+  "evidence": "the audit branch tests for an exception type two levels down the chain",
+  "file": "src/audit.c",
+  "line": 88,
+  "probe": {
+    "build": "a console program targeting the same runtime, throwing what the production path throws from the same callback position",
+    "run": "the program, printing the exception chain",
+    "observe": "the depth at which the tested type appears",
+    "falsify": "the tested type appears at depth 0, so the branch does fire"
+  }
+}
+```
+
+Write `falsify` honestly. It is the part that makes the probe evidence rather than
+decoration: a recipe that cannot come out against you does not test anything.
+
+Omit `probe` when the claim is settled by reading. Most are, and a probe that adds nothing
+costs an agent dispatch.
+
+Never name a path from the EXCLUDED list in a probe. A spec that does is refused before it
+runs, and the refusal costs the finding its evidence.
+
 ## Remediation
 
 When your verdict is a `GAP`, attach the guidance the knowledge base already maps to the
