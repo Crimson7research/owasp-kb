@@ -1922,4 +1922,5 @@ def test_the_finder_meets_the_probe_decision_before_it_writes_a_verdict():
     probe = body.index("## When the verdict turns on runtime behaviour")
     output = body.index("## Output")
     assert process < probe < output, "the probe decision must precede the output example"
-    assert "write a probe" in body[process:probe], "Process must name the probe at the decision step"
+    step = body[process:probe]
+    assert "write a probe" in step, "Process must name the probe at the decision step"
