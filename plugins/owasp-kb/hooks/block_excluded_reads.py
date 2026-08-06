@@ -470,6 +470,28 @@ def _reaches(tool_name: str, tool_input: dict, excluded: str) -> bool:
     return True
 
 
+# The remediation, per tool. One message for all three told a `Glob` caller to pass a
+# parameter `Glob` does not have, which is a refusal it cannot act on -- and an agent that
+# cannot act on a refusal works around it or stops using the tool.
+REMEDIATION = {
+    "Read": (
+        "There is nothing narrower to re-issue: the path itself is excluded, not a "
+        "search that happens to reach it."
+    ),
+    "Grep": (
+        "Re-issue the search excluding that path explicitly, for example "
+        "--glob '!{excluded}'. Do not filter the results afterwards: by then the text "
+        "has reached you, which is the thing being prevented."
+    ),
+    "Glob": (
+        "Glob has no exclusion parameter, so there is nothing to negate. Narrow the "
+        "pattern so it cannot match that path, or scope the search with `path`. Do not "
+        "filter the results afterwards: by then the text has reached you, which is the "
+        "thing being prevented."
+    ),
+}
+
+
 def _decision(raw: str) -> str | None:
     try:
         payload = json.loads(raw)
@@ -492,14 +514,16 @@ def _decision(raw: str) -> str | None:
 
     for excluded in _exclusions(str(session_id)):
         if _reaches(tool_name, tool_input, excluded):
+            # A direct subscript, not `.get()`: `_decision` has already returned unless
+            # `tool_name` is in `SEARCH_TOOLS`, and a `KeyError` here for a genuinely
+            # unknown tool would be caught by `main()` and fail open, which is the right
+            # outcome.
             return (
                 f"Blocked: this call would put {excluded} into your context. It is a "
                 "prior assessment of this same target, excluded for this run -- another "
                 "assessment's conclusion is not evidence, and reading one makes you "
                 "likely to confirm it rather than test it.\n\n"
-                f"Re-issue the search excluding that path explicitly, for example "
-                f"--glob '!{excluded}'. Do not filter the results afterwards: by then "
-                "the text has reached you, which is the thing being prevented.\n\n"
+                f"{REMEDIATION[tool_name].format(excluded=excluded)}\n\n"
                 "If a verdict here would depend on excluded material, return "
                 "INSUFFICIENT EVIDENCE and say so without naming the file."
             )

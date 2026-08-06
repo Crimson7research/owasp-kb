@@ -564,3 +564,24 @@ def test_an_unbalanced_brace_is_matched_literally(config_dir):
     """`{` is a legal filename character and rg rejects an unclosed group outright, so the
     pattern is left alone rather than guessed at."""
     assert not _denied(_run(_call("Glob", pattern="src/**/*.{ts"), config_dir))
+
+
+def test_the_denial_tells_a_glob_caller_something_glob_can_do(config_dir):
+    """The deny text told every caller to re-issue with `--glob '!<path>'`. `Glob` has no
+    such parameter and no exclusion syntax, so the refusal was unactionable -- and one
+    traced agent responded by abandoning `Glob` for the rest of its run, reaching for
+    `Grep` with an absolute path even to check whether a file existed."""
+    out = _run(_call("Glob", pattern="**/*.md"), config_dir)
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "--glob" not in reason
+    assert "`path`" in reason
+    assert EXCLUDED in reason
+    assert "INSUFFICIENT EVIDENCE" in reason
+
+
+def test_the_denial_of_a_direct_read_does_not_offer_a_way_to_re_issue_it(config_dir):
+    """There is no narrower `Read`. Offering one invites the agent to look for it."""
+    out = _run(_call("Read", file_path=EXCLUDED), config_dir)
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "--glob" not in reason
+    assert EXCLUDED in reason
