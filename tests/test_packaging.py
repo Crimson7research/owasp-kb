@@ -1899,3 +1899,13 @@ def test_the_orchestrator_vets_a_probe_before_dispatching_it():
     # passes even when the instruction is softened to a warning. Pin the behaviour.
     normalised = " ".join(body.split()).lower()
     assert "do not dispatch" in normalised, "vetting must stop the dispatch, not warn about it"
+
+
+def test_the_verifier_weighs_probe_output_it_is_given():
+    """It cannot run a probe -- it forms verdicts, so it holds no shell -- but it is
+    handed the output. An observation it ignores is an agent dispatch spent for
+    nothing."""
+    _, body = _agent("owasp-finding-verifier")
+    normalised = " ".join(body.split()).lower()
+    assert "probe" in normalised
+    assert "not runnable" in normalised, "it must handle the case where nothing ran"
