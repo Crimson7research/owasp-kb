@@ -119,6 +119,27 @@ so those stay in scope.
   from these files is forbidden, and a grep is not exempt because the hit was
   not opened* — and the hook enforces it. Once armed, it fired in 36 of 145
   subagents on the next run.
+- **Over-refusal has a measured cost, and it is not one call.** `_under()`
+  reasoned that "over-refusing costs an agent one call that states the
+  exclusion". A later PR-scoped run of 142 agents produced 87 denials across 42
+  of them — 76 `Glob`, 11 `Grep` — every one against an agent that already
+  carried the exclusion list in its prompt, and many against patterns that
+  could not reach the excluded path under any expansion. The generosity
+  argument was sound for `Grep` and `Read`; it was never load-bearing for
+  `Glob`, because the field `Glob` states its filter in was never read (#33).
+
+  Three effects, each worse than the wasted call. The remediation named a
+  parameter `Glob` does not have, so the refusal was unfollowable. One agent
+  took five denials and then stopped using `Glob` for the remainder of its run
+  — a control on *what* may be read became a control on *how* an agent
+  searches. And the deny text names the excluded path, so 87 denials put that
+  path into agent context 87 times, by the mechanism whose purpose is keeping
+  it out.
+
+  The fix evaluates each tool's own filter field and gives each tool a
+  remediation it can act on. Naming the path in the refusal was kept: an agent
+  cannot exclude what it cannot name, and the leak shrinks with the denial
+  count.
 - **The exclusion is only as good as the discovery step.** A prior assessment
   that the scope interview does not find is not excluded, and nothing downstream
   will notice. The interview asks the user directly for this reason.
