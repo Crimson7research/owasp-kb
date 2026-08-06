@@ -402,7 +402,14 @@ EXPECTED_AGENTS = {
     "owasp-requirement-finder",
     "owasp-exemption-refuter",
     "owasp-finding-verifier",
+    "owasp-probe-runner",
 }
+
+# Agents that read the target codebase looking for evidence. `owasp-probe-runner` is
+# deliberately absent: it executes a spec it is handed and never searches, so it is given
+# no exclusion list at all -- the orchestrator refuses a spec naming an excluded path
+# before dispatch, which keeps those paths away from the one agent holding a shell.
+READING_AGENTS = EXPECTED_AGENTS - {"owasp-probe-runner"}
 
 MCP_AGENTS = {
     "owasp-chapter-orchestrator",
@@ -418,7 +425,7 @@ def _agent(name: str) -> tuple[dict, str]:
     return yaml.safe_load(raw), body
 
 
-def test_all_five_agents_exist():
+def test_the_expected_agents_exist():
     assert {p.stem for p in AGENTS_DIR.glob("*.md")} == EXPECTED_AGENTS
 
 
@@ -433,17 +440,25 @@ def test_agent_declares_name_description_and_tools(name):
 
 @pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
 def test_no_agent_can_write(name):
-    """Every role reads and reports. None edits the target codebase."""
+    """No role is granted an editing tool. This is weaker than it reads for
+    ``owasp-probe-runner``, which holds ``Bash`` and can therefore write: what stops
+    it touching the target is the contract in its prompt, not the allowlist. That is
+    stated in its own tests below rather than implied here."""
     meta, _ = _agent(name)
     tools = meta["tools"]
     assert "Write" not in tools
     assert "Edit" not in tools
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
-def test_every_agent_carries_the_exclusion_rule(name):
+@pytest.mark.parametrize("name", sorted(READING_AGENTS))
+def test_every_reading_agent_carries_the_exclusion_rule(name):
     """A prior assessment in the target is another agent's conclusion. Every role
-    that reads the codebase can stumble on one -- the verifiers did."""
+    that reads the codebase can stumble on one -- the verifiers did.
+
+    ``owasp-probe-runner`` is excluded: handing the paths to the only agent with a
+    shell is what the design avoids, and its output flows on to a verifier, so
+    anything it read would propagate into a verdict's context. The orchestrator vets
+    the spec instead."""
     _, body = _agent(name)
     assert "EXCLUDED" in body
     assert "never open" in body.lower()
@@ -706,6 +721,10 @@ MIN_TURNS = {
     "owasp-exemption-refuter": 75,
     "owasp-finding-verifier": 75,
     "owasp-chapter-orchestrator": 200,
+    # Builds and runs software rather than reading it: a compile-fix-run loop is
+    # strictly more turn-hungry than a search, so it gets no less headroom than the
+    # agents that only read.
+    "owasp-probe-runner": 75,
 }
 
 
@@ -1816,3 +1835,45 @@ def test_both_fan_out_skills_carry_the_identical_step_zero():
     which the test above already covers."""
     verify, gap_report = sorted(FAN_OUT_SKILLS)
     assert _step_zero(verify) == _step_zero(gap_report)
+
+
+def test_only_the_probe_runner_holds_a_shell():
+    """The grant must not spread. A verdict-forming agent with `Bash` bypasses
+    block_excluded_reads.py entirely -- its matcher is Read|Grep|Glob, so `cat` is
+    outside it, which is why the shell went to an agent that decides nothing."""
+    with_shell = {n for n in EXPECTED_AGENTS if "Bash" in _agent(n)[0]["tools"]}
+    assert with_shell == {"owasp-probe-runner"}
+
+
+def test_the_probe_runner_holds_nothing_but_a_shell():
+    """It runs a spec it was handed. Read, Grep or Glob would let it go looking, and
+    looking is what the exclusion control governs."""
+    meta, _ = _agent("owasp-probe-runner")
+    assert [t.strip() for t in meta["tools"].split(",")] == ["Bash"]
+
+
+def test_the_probe_runner_is_given_no_exclusion_list():
+    """The counterpart to test_every_reading_agent_carries_the_exclusion_rule: this
+    one must NOT carry it. Naming the paths to the agent that could open them is the
+    thing the vetting step exists to avoid."""
+    _, body = _agent("owasp-probe-runner")
+    assert "EXCLUDED" not in body
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "sessions/$CLAUDE_CODE_SESSION_ID/probes",
+        "never write inside the target",
+        "never modify",
+        "loopback",
+        "not runnable",
+    ],
+    ids=["scratch-dir", "no-target-writes", "no-mutation", "loopback-only", "declines"],
+)
+def test_the_probe_runner_carries_the_sandbox_contract(clause):
+    """Nothing enforces this contract -- a hook on Bash cannot be scoped to one agent,
+    since PreToolUse payloads carry no agent identity. The prompt is the whole control,
+    so its clauses are pinned here."""
+    _, body = _agent("owasp-probe-runner")
+    assert clause in body
