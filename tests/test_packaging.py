@@ -1924,3 +1924,38 @@ def test_the_finder_meets_the_probe_decision_before_it_writes_a_verdict():
     assert process < probe < output, "the probe decision must precede the output example"
     step = body[process:probe]
     assert "write a probe" in step, "Process must name the probe at the decision step"
+
+
+@pytest.mark.parametrize("skill", sorted(FAN_OUT_SKILLS))
+def test_the_scope_interview_asks_whether_code_may_be_run(skill):
+    """Nobody asked. A probe reached a live public IP on its first real run, and the
+    reason is that running code against a target had never been authorised by anyone --
+    the interview established level, boundaries and evidence depth, and said nothing
+    about execution. This is the SAST/DAST line and it is the user's call."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "**Execution**" in body
+    for scope in ("`none`", "`local`", "`loopback`"):
+        assert scope in body, f"the interview must offer {scope}"
+    assert "sessions/$CLAUDE_CODE_SESSION_ID/execution" in body
+
+
+@pytest.mark.parametrize(
+    "agent", ["owasp-requirement-finder", "owasp-chapter-orchestrator", "owasp-probe-runner"]
+)
+def test_the_execution_scope_reaches_every_agent_that_acts_on_it(agent):
+    """A decision recorded in a report header changes nothing. The finder must not emit a
+    spec, the orchestrator must not dispatch, and the runner must not run -- each needs
+    the scope where it acts, which is the failure this repo keeps repeating."""
+    _, body = _agent(agent)
+    assert "`none`" in body and "`loopback`" in body
+    assert "not authorised" in body or "not given one" in body
+
+
+def test_the_probe_runner_is_given_the_method_not_just_the_rule():
+    """It was told "bind loopback only" and reached for the obvious command anyway,
+    because a rule without a mechanism leaves the obvious command available. The order --
+    server first, pin resolution, then run -- makes the violation impossible rather than
+    forbidden."""
+    _, body = _agent("owasp-probe-runner")
+    assert "--resolve" in body, "the pinning mechanism must be named, not implied"
+    assert "Stand up the local server first" in body

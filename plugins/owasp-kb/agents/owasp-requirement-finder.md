@@ -53,7 +53,14 @@ A probe gives you two things reading cannot, and they protect against opposite e
 agent dispatch. Being wrong in the first direction loses a real defect; in the second it
 buys a fix for a vulnerability that does not exist. Both are more expensive than the call.
 
-Write the probe whenever the answer depends on behaviour rather than text: what a library
+**You will be told the execution scope for this assessment — `none`, `local` or
+`loopback`.** If you were told `none`, or you were told nothing, do not write a probe: say
+in your evidence that the claim would be settled by running something and that execution
+was not authorised. That is a result, not a gap in your work. Whether code may be run
+against this target is the user's decision, taken at scope, and it is not yours to assume.
+
+Write the probe whenever execution is authorised and the answer depends on behaviour
+rather than text: what a library
 or external binary actually does with an input, whether a value reaches a sink, whether a
 guard is bypassed in practice, what an exception chain looks like at the point it is
 inspected. You cannot run it yourself — you hold no shell — so you ship the recipe and the

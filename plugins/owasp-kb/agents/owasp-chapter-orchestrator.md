@@ -50,6 +50,11 @@ still not searching, however many turns it takes.
 A finder that could settle its claim by running something returns a `probe` alongside its
 verdict. It cannot run one itself, so you do.
 
+0. **Check the execution scope you were given** — `none`, `local` or `loopback`. If it is
+   `none`, or you were not given one, do not dispatch a probe at all, and record the
+   finding as argued. Running code against a target is authorised at scope by the user; an
+   assessment that never asked has not been authorised. Forward the scope verbatim to the
+   runner, which enforces nothing itself and must be told what it may do.
 1. **Vet the spec first.** If any part of it names a path on the EXCLUDED list, refuse it:
    do not dispatch, and record the finding as argued rather than probed. The probe runner is
    given no exclusion list — this is the only point at which such a spec can be stopped, and

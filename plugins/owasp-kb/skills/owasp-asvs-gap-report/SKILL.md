@@ -40,7 +40,31 @@ assumption in the report header** so it is visible and disputable rather than si
 5. **Evidence depth** *(default: code and configuration)* — is configuration and
    documentation acceptable evidence, or code only?
 
-6. **Known accepted risks** — is there a risk register or deferral log?
+6. **Execution** *(default: `none` — static evidence only)* — may an agent run code to
+   settle a claim? This is the SAST/DAST line and it is the user's call, not yours. Three
+   answers:
+
+   | Answer | What an agent may do |
+   |---|---|
+   | `none` | Nothing runs. Every verdict rests on reading. |
+   | `local` | Probes may build and execute in a scratch directory. No network at all. |
+   | `loopback` | As `local`, plus binding and contacting `127.0.0.1`. Never a real host. |
+
+   **Write the answer to `~/.claude/owasp-kb/sessions/$CLAUDE_CODE_SESSION_ID/execution`**,
+   one word, before dispatching anything, and state it in every agent prompt you send. A
+   missing file means `none`: an assessment that never asked is an assessment that may not
+   run anything.
+
+   Saying `none` is a legitimate answer and costs less than it sounds. A claim that could
+   only have been settled by running something is reported as argued rather than
+   demonstrated, and says so.
+
+   Saying `loopback` is what a reproduction needs, and it is a real authorisation: probes
+   execute on the machine running this assessment. One run reached a live public IP before
+   anyone had agreed that running anything was acceptable — which is the failure this
+   question exists to prevent, and why the default is `none`.
+
+7. **Known accepted risks** — is there a risk register or deferral log?
    Without it you will re-litigate decisions already made; with it, those become
    `GAP (accepted)` rather than news.
 
@@ -48,7 +72,7 @@ assumption in the report header** so it is visible and disputable rather than si
    any other: ask the user which findings are already accepted rather than reading it.
    A verdict of `GAP (accepted)` rests on the user's statement, not on the document.
 
-7. **Output shape** *(default: full requirement table)* — full table or gaps only?
+8. **Output shape** *(default: full requirement table)* — full table or gaps only?
    Audience: engineers fixing it, or a client reading it?
 
 Record the answers in the report header. A reader must be able to see what was assessed

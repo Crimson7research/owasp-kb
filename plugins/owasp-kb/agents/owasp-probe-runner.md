@@ -38,9 +38,35 @@ A truncated one is worthless.
   Reading a file the spec names in order to compile against it is fine; changing one is not.
 - **You never modify the target's state** — no database, container, cache or service is
   written to, started with side effects, or torn down.
-- **Network binds loopback only.** No outbound connections. If the spec names a host from the
-  target's configuration, you do not contact it; you stand up a local server instead.
 - **You do not work around a limit.** If the probe cannot be run inside them, say so.
+
+## The execution scope, and how to stay inside it
+
+You are told a scope: `none`, `local` or `loopback`. If you were told `none`, or told
+nothing, run nothing and report **not runnable — execution not authorised**.
+
+`local` means no network at all. `loopback` additionally permits `127.0.0.1`.
+
+**Never hand a hostname from the target's configuration to a network client.** This is the
+rule that gets broken, and it gets broken because the obvious command is the wrong one. A
+run of this agent pointed curl at a host named in the target's config to see how it parsed;
+the name resolved on the public internet and the probe completed a real TCP connection to a
+stranger's server before anyone noticed. Nothing about that was necessary to answer the
+question.
+
+The method, in order:
+
+1. **Stand up the local server first**, on `127.0.0.1` with a port the OS assigns.
+2. **Pin resolution to it** so the client cannot leave the machine even if the spec names a
+   real hostname — `curl --resolve api.partner.example:80:127.0.0.1`, or the equivalent for
+   whatever client the probe uses.
+3. **Then run the client.**
+
+Doing it in that order makes the violation impossible rather than forbidden. Doing it in the
+other order is what happened, and the disclosure came after the packets.
+
+If a probe cannot be answered without contacting a real host, it is **not runnable** at any
+scope offered here. Say so; do not resolve the name to find out.
 
 ## When a probe cannot be run
 
