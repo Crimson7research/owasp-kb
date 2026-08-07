@@ -402,7 +402,14 @@ EXPECTED_AGENTS = {
     "owasp-requirement-finder",
     "owasp-exemption-refuter",
     "owasp-finding-verifier",
+    "owasp-probe-runner",
 }
+
+# Agents that read the target codebase looking for evidence. `owasp-probe-runner` is
+# deliberately absent: it executes a spec it is handed and never searches, so it is given
+# no exclusion list at all -- the orchestrator refuses a spec naming an excluded path
+# before dispatch, which keeps those paths away from the one agent holding a shell.
+READING_AGENTS = EXPECTED_AGENTS - {"owasp-probe-runner"}
 
 MCP_AGENTS = {
     "owasp-chapter-orchestrator",
@@ -418,7 +425,7 @@ def _agent(name: str) -> tuple[dict, str]:
     return yaml.safe_load(raw), body
 
 
-def test_all_five_agents_exist():
+def test_the_expected_agents_exist():
     assert {p.stem for p in AGENTS_DIR.glob("*.md")} == EXPECTED_AGENTS
 
 
@@ -433,17 +440,25 @@ def test_agent_declares_name_description_and_tools(name):
 
 @pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
 def test_no_agent_can_write(name):
-    """Every role reads and reports. None edits the target codebase."""
+    """No role is granted an editing tool. This is weaker than it reads for
+    ``owasp-probe-runner``, which holds ``Bash`` and can therefore write: what stops
+    it touching the target is the contract in its prompt, not the allowlist. That is
+    stated in its own tests below rather than implied here."""
     meta, _ = _agent(name)
     tools = meta["tools"]
     assert "Write" not in tools
     assert "Edit" not in tools
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED_AGENTS))
-def test_every_agent_carries_the_exclusion_rule(name):
+@pytest.mark.parametrize("name", sorted(READING_AGENTS))
+def test_every_reading_agent_carries_the_exclusion_rule(name):
     """A prior assessment in the target is another agent's conclusion. Every role
-    that reads the codebase can stumble on one -- the verifiers did."""
+    that reads the codebase can stumble on one -- the verifiers did.
+
+    ``owasp-probe-runner`` is excluded: handing the paths to the only agent with a
+    shell is what the design avoids, and its output flows on to a verifier, so
+    anything it read would propagate into a verdict's context. The orchestrator vets
+    the spec instead."""
     _, body = _agent(name)
     assert "EXCLUDED" in body
     assert "never open" in body.lower()
@@ -706,6 +721,10 @@ MIN_TURNS = {
     "owasp-exemption-refuter": 75,
     "owasp-finding-verifier": 75,
     "owasp-chapter-orchestrator": 200,
+    # Builds and runs software rather than reading it: a compile-fix-run loop is
+    # strictly more turn-hungry than a search, so it gets no less headroom than the
+    # agents that only read.
+    "owasp-probe-runner": 75,
 }
 
 
@@ -1816,3 +1835,127 @@ def test_both_fan_out_skills_carry_the_identical_step_zero():
     which the test above already covers."""
     verify, gap_report = sorted(FAN_OUT_SKILLS)
     assert _step_zero(verify) == _step_zero(gap_report)
+
+
+def test_only_the_probe_runner_holds_a_shell():
+    """The grant must not spread. A verdict-forming agent with `Bash` bypasses
+    block_excluded_reads.py entirely -- its matcher is Read|Grep|Glob, so `cat` is
+    outside it, which is why the shell went to an agent that decides nothing."""
+    with_shell = {n for n in EXPECTED_AGENTS if "Bash" in _agent(n)[0]["tools"]}
+    assert with_shell == {"owasp-probe-runner"}
+
+
+def test_the_probe_runner_holds_nothing_but_a_shell():
+    """It runs a spec it was handed. Read, Grep or Glob would let it go looking, and
+    looking is what the exclusion control governs."""
+    meta, _ = _agent("owasp-probe-runner")
+    assert [t.strip() for t in meta["tools"].split(",")] == ["Bash"]
+
+
+def test_the_probe_runner_is_given_no_exclusion_list():
+    """The counterpart to test_every_reading_agent_carries_the_exclusion_rule: this
+    one must NOT carry it. Naming the paths to the agent that could open them is the
+    thing the vetting step exists to avoid."""
+    _, body = _agent("owasp-probe-runner")
+    assert "EXCLUDED" not in body
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "sessions/$CLAUDE_CODE_SESSION_ID/probes",
+        "never write inside the target",
+        "never modify",
+        "loopback",
+        "not runnable",
+    ],
+    ids=["scratch-dir", "no-target-writes", "no-mutation", "loopback-only", "declines"],
+)
+def test_the_probe_runner_carries_the_sandbox_contract(clause):
+    """Nothing enforces this contract -- a hook on Bash cannot be scoped to one agent,
+    since PreToolUse payloads carry no agent identity. The prompt is the whole control,
+    so its clauses are pinned here."""
+    _, body = _agent("owasp-probe-runner")
+    assert clause in body
+
+
+def test_the_finder_offers_a_probe_when_a_claim_is_executable():
+    """A claim settled by running something should ship the recipe. The finder cannot
+    run it -- it holds no shell by design -- so the spec travels to the orchestrator,
+    which dispatches the runner."""
+    _, body = _agent("owasp-requirement-finder")
+    assert "probe" in body.lower()
+    for part in ("build", "run", "observe", "falsify"):
+        assert f'"{part}"' in body, f"the probe spec must name its {part} part"
+
+
+def test_the_orchestrator_vets_a_probe_before_dispatching_it():
+    """The runner is given no exclusion list, so this is the only place a spec naming
+    an excluded path can be stopped. It is also the place the list already lives."""
+    _, body = _agent("owasp-chapter-orchestrator")
+    assert "owasp-probe-runner" in body
+    assert "EXCLUDED" in body
+    # Not `"refuse" in body`: that matches "refused" elsewhere in the same section and
+    # passes even when the instruction is softened to a warning. Pin the behaviour.
+    normalised = " ".join(body.split()).lower()
+    assert "do not dispatch" in normalised, "vetting must stop the dispatch, not warn about it"
+
+
+def test_the_verifier_weighs_probe_output_it_is_given():
+    """It cannot run a probe -- it forms verdicts, so it holds no shell -- but it is
+    handed the output. An observation it ignores is an agent dispatch spent for
+    nothing."""
+    _, body = _agent("owasp-finding-verifier")
+    normalised = " ".join(body.split()).lower()
+    assert "probe" in normalised
+    assert "not runnable" in normalised, "it must handle the case where nothing ran"
+
+
+def test_the_finder_meets_the_probe_decision_before_it_writes_a_verdict():
+    """This instruction first shipped *after* the Output example and opened with "Omit
+    `probe` when the claim is settled by reading. Most are." Sixteen finders in one run
+    reached the moment it exists for and not one emitted a spec -- two wrote that they
+    wanted to build a test case and then reasoned instead. An instruction the consumer
+    never reaches is not an instruction, so the ordering is pinned rather than trusted."""
+    _, body = _agent("owasp-requirement-finder")
+    process = body.index("## Process")
+    probe = body.index("## When the verdict turns on runtime behaviour")
+    output = body.index("## Output")
+    assert process < probe < output, "the probe decision must precede the output example"
+    step = body[process:probe]
+    assert "write a probe" in step, "Process must name the probe at the decision step"
+
+
+@pytest.mark.parametrize("skill", sorted(FAN_OUT_SKILLS))
+def test_the_scope_interview_asks_whether_code_may_be_run(skill):
+    """Nobody asked. A probe reached a live public IP on its first real run, and the
+    reason is that running code against a target had never been authorised by anyone --
+    the interview established level, boundaries and evidence depth, and said nothing
+    about execution. This is the SAST/DAST line and it is the user's call."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text()
+    assert "**Execution**" in body
+    for scope in ("`none`", "`local`", "`loopback`"):
+        assert scope in body, f"the interview must offer {scope}"
+    assert "sessions/$CLAUDE_CODE_SESSION_ID/execution" in body
+
+
+@pytest.mark.parametrize(
+    "agent", ["owasp-requirement-finder", "owasp-chapter-orchestrator", "owasp-probe-runner"]
+)
+def test_the_execution_scope_reaches_every_agent_that_acts_on_it(agent):
+    """A decision recorded in a report header changes nothing. The finder must not emit a
+    spec, the orchestrator must not dispatch, and the runner must not run -- each needs
+    the scope where it acts, which is the failure this repo keeps repeating."""
+    _, body = _agent(agent)
+    assert "`none`" in body and "`loopback`" in body
+    assert "not authorised" in body or "not given one" in body
+
+
+def test_the_probe_runner_is_given_the_method_not_just_the_rule():
+    """It was told "bind loopback only" and reached for the obvious command anyway,
+    because a rule without a mechanism leaves the obvious command available. The order --
+    server first, pin resolution, then run -- makes the violation impossible rather than
+    forbidden."""
+    _, body = _agent("owasp-probe-runner")
+    assert "--resolve" in body, "the pinning mechanism must be named, not implied"
+    assert "Stand up the local server first" in body
