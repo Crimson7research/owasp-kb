@@ -4,7 +4,10 @@ Date: 2026-08-04
 
 ## Status
 
-Accepted.
+Accepted. Refined by ADR 0015: `verify_pin.sh` holds the shipped digest to the packs
+recorded for it at pin time, not to whatever `sources.lock.yml` declares on the
+branch — the form below fails every content refresh, because the image for those
+versions is not built until the release that follows the merge.
 
 ## Context
 

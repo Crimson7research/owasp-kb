@@ -17,6 +17,11 @@ after the push, so this runs at release time and its output reaches the default
 branch through a pull request. The marketplace is read from the default branch, so
 that merge is the delivery.
 
+Alongside the digest this records the pack versions the lock declared *at the moment
+the image was built*, because that is the only claim the shipped image can be held
+to. The lock moves ahead of the image on every content refresh and stays ahead until
+the next release ships -- see ADR 0015.
+
 See ADR 0014.
 """
 
@@ -28,7 +33,14 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 MCP_CONFIG = Path("plugins/owasp-kb/.mcp.json")
+LOCK = Path("sources.lock.yml")
+# Written beside the config it describes rather than at the repository root: the two
+# are one fact -- this digest holds these packs -- and a release pull request that
+# carried one without the other would ship a claim about the wrong image.
+PINNED_PACKS = Path("plugins/owasp-kb/pinned-packs.json")
 
 # The whole ${OWASP_KB_IMAGE:-...} default, whatever form it currently holds. The
 # override itself is preserved: it is how a dev points at a local build and how the
@@ -73,6 +85,27 @@ def rewrite(text: str, image: str) -> str:
     return result
 
 
+def record(image: str, lock_text: str) -> str:
+    """The provenance record for `image`: the digest, and the pack versions the lock
+    declared when it was built.
+
+    `scripts/verify_pin.sh` reads this rather than the working tree's lock. Reading
+    the lock directly asserted that the shipped image is current with whatever the
+    branch declares, which no lock-bump commit can satisfy: the image for those
+    versions does not exist until the release that follows the merge. That check
+    failed the first content-refresh pull request it ever saw, and would have turned
+    master red on merge. See ADR 0015.
+    """
+    if not PINNED.match(image):
+        raise SystemExit(f"error: {image!r} is not a digest-pinned GHCR reference.")
+    packs = yaml.safe_load(lock_text)["packs"]
+    document = {
+        "image": image,
+        "packs": {name: str(packs[name]["version"]) for name in sorted(packs)},
+    }
+    return json.dumps(document, indent=2) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pin_image.py", description=__doc__)
     parser.add_argument("--image", help="the digest-pinned reference to pin to")
@@ -90,16 +123,28 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--image is required unless --show is given")
 
     updated = rewrite(text, args.image)
+    provenance = record(args.image, LOCK.read_text())
+
     if not args.write:
         print(updated, end="")
+        print(f"== {PINNED_PACKS} ==")
+        print(provenance, end="")
         return 0
 
+    # The two files are written independently. Pinning the same digest twice is not
+    # a no-op if the lock moved in between -- that is a re-tagged release of newer
+    # content, and skipping the record would leave it describing the older packs.
     if updated == text:
         print(f"{MCP_CONFIG} already pins {args.image}")
-        return 0
+    else:
+        MCP_CONFIG.write_text(updated)
+        print(f"pinned {MCP_CONFIG} to {args.image}")
 
-    MCP_CONFIG.write_text(updated)
-    print(f"pinned {MCP_CONFIG} to {args.image}")
+    if PINNED_PACKS.exists() and PINNED_PACKS.read_text() == provenance:
+        print(f"{PINNED_PACKS} already records these packs")
+    else:
+        PINNED_PACKS.write_text(provenance)
+        print(f"recorded {PINNED_PACKS}")
     return 0
 
 

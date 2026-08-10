@@ -108,11 +108,13 @@ mandatory before the file is packaged into an image.
   and only pushes to GHCR if every smoke test passes — a broken image is never
   published, regardless of what tag triggered the release. It then captures the
   `full` image's registry digest, runs `scripts/pin_image.py --write`, and opens a
-  pull request carrying the new `plugins/owasp-kb/.mcp.json`. **Merging that PR is
-  the delivery step**, because the marketplace is read from the default branch, so
-  master is the surface devs install from. The digest is only knowable after the
-  push, which is why the reference the plugin ships is written by the workflow
-  rather than by hand.
+  pull request carrying the new `plugins/owasp-kb/.mcp.json` and
+  `plugins/owasp-kb/pinned-packs.json`. **Merging that PR is the delivery step**,
+  because the marketplace is read from the default branch, so master is the surface
+  devs install from. The digest is only knowable after the push, which is why the
+  reference the plugin ships is written by the workflow rather than by hand. The
+  record beside it names the pack versions that image was built from — see ADR 0015
+  and "What the shipped pin is checked against" below.
 
 ## Image tag scheme
 
@@ -147,8 +149,29 @@ reproducibility. What `plugins/owasp-kb/.mcp.json` names is the `full` image's
 **digest**, because a tag can be reassigned and, worse, is shadowed by any local
 image of the same name — `--pull=missing` is docker's default and `docker tag` is
 unprivileged. A digest cannot be shadowed: a local cache hit on it *is* the
-published bytes. `scripts/verify_pin.sh` checks in CI that the shipped digest
-resolves and that the image it names carries the packs the lock declares.
+published bytes.
+
+### What the shipped pin is checked against
+
+`scripts/verify_pin.sh` checks in CI that the shipped digest resolves and that the
+image it names carries the packs recorded for it in
+`plugins/owasp-kb/pinned-packs.json`, written by `scripts/pin_image.py` at release
+time from the lock that build read.
+
+It read `sources.lock.yml` directly until ADR 0015, which asserts something no
+lock-bump commit can satisfy: the image holding new content is not built until the
+release that follows the merge. The first refresh pull request failed on it, and
+merging would have taken master with it. Drift between the record and the lock is
+therefore reported and not failed —
+
+```
+note: sources.lock.yml is ahead of the shipped image -- a release is pending
+  cheatsheets: shipped 20260724, lock 20260805
+```
+
+— and a release closes it. What still fails: a digest that does not resolve, an image
+that does not hold its recorded packs, and a record naming some other digest (that
+last one in `pytest`, since it needs neither docker nor the registry).
 
 The base image is pinned by digest for the same reason one layer down.
 `python:3.13-slim` moves, so two builds of identical source produced different

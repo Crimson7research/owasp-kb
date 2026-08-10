@@ -115,6 +115,9 @@ jobs:
           echo "full=$DIGEST" >> "$GITHUB_OUTPUT"
           echo "captured $DIGEST"
 
+      # Writes two files: the digest into .mcp.json, and the pack versions this
+      # release was built from into pinned-packs.json. Both have to reach master or
+      # verify_pin checks the new digest against the previous release's packs.
       - name: Pin the plugin to the published image
         run: python scripts/pin_image.py --image "${{ steps.digest.outputs.full }}" --write
 
@@ -125,10 +128,13 @@ jobs:
           base: master
           title: "Pin the plugin to the ${{ github.ref_name }} image"
           commit-message: "Pin the plugin to the ${{ github.ref_name }} image"
-          add-paths: plugins/owasp-kb/.mcp.json
+          add-paths: |
+            plugins/owasp-kb/.mcp.json
+            plugins/owasp-kb/pinned-packs.json
           body: |
             The images for ${{ github.ref_name }} are published and smoke-tested. This
-            points the plugin at the `full` variant by digest.
+            points the plugin at the `full` variant by digest, and records the pack
+            versions that image holds so CI can check the two against each other.
 
             Merging this is the delivery step: the marketplace is read from the
             default branch, so master is the surface devs install from.
