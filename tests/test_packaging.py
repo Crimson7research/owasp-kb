@@ -14,6 +14,7 @@ import yaml
 MARKETPLACE = Path(".claude-plugin/marketplace.json")
 PLUGIN = Path("plugins/owasp-kb/.claude-plugin/plugin.json")
 MCP_CONFIG = Path("plugins/owasp-kb/.mcp.json")
+PINNED_PACKS = Path("plugins/owasp-kb/pinned-packs.json")
 SKILLS_DIR = Path("plugins/owasp-kb/skills")
 
 EXPECTED_SKILLS = {
@@ -157,7 +158,7 @@ def test_the_default_image_is_pinned_by_digest():
     digest.
 
     This asserts the shape. scripts/verify_pin.sh asserts the substance -- that the
-    digest resolves and that the image it names carries the packs the lock declares.
+    digest resolves and that the image it names carries the packs recorded for it.
     See ADR 0014.
     """
     args = _server_command()
@@ -165,6 +166,40 @@ def test_the_default_image_is_pinned_by_digest():
         "the default image is not a digest-pinned ghcr.io reference. Run "
         "scripts/pin_image.py --image <ref> --write with a digest from a published "
         f"release; found: {args}"
+    )
+
+
+def test_the_pack_record_describes_the_image_the_plugin_ships():
+    """`pinned-packs.json` is what verify_pin holds the shipped image to, so a
+    record naming some earlier digest would check the new image against the old
+    image's packs -- and pass, because the old versions are usually still there.
+
+    The failure this guards is a release that wrote `.mcp.json` and left the record
+    behind, or a hand-edited pin. Asserted here rather than only in verify_pin
+    because this needs no registry and no docker: it is two files disagreeing.
+    """
+    recorded = json.loads(PINNED_PACKS.read_text())
+    args = _server_command()
+    assert recorded["image"] in args, (
+        f"{PINNED_PACKS} records {recorded['image']}, which is not the image "
+        f"{MCP_CONFIG} defaults to. Run scripts/pin_image.py --write, which "
+        "writes both files from one digest."
+    )
+
+
+def test_the_pack_record_names_only_packs_the_lock_declares():
+    """A recorded name the lock never had is a pack verify_pin would look for in
+    kb_info and never find, or -- worse, if the name is simply stale -- a pack it
+    checks under the wrong identity.
+
+    Deliberately not equality. The lock gaining a pack must not fail here: no image
+    holds it until the release after the merge, and asserting equality would
+    recreate exactly the deadlock ADR 0015 removed, one pack later.
+    """
+    recorded = set(json.loads(PINNED_PACKS.read_text())["packs"])
+    declared = set(yaml.safe_load(Path("sources.lock.yml").read_text())["packs"])
+    assert recorded <= declared, (
+        f"{PINNED_PACKS} records packs the lock does not declare: {sorted(recorded - declared)}"
     )
 
 

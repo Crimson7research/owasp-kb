@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Verify the digest the plugin ships resolves, and that the image it names holds
-# the packs sources.lock.yml declares.
+# the packs it was published with -- as recorded in plugins/owasp-kb/pinned-packs.json
+# by scripts/pin_image.py at release time.
+#
+# It read sources.lock.yml directly until ADR 0015. That asserted the shipped image
+# is current with whatever the branch declares, which no lock-bump commit can
+# satisfy: the image holding those versions is not built until the release that
+# follows the merge. Drift between the record and the lock is the normal state
+# between a content refresh and the next release, so it is reported below and does
+# not fail. What still fails is an image that does not hold what it claims to.
 #
 # Separate from docker_smoke.sh on purpose: that script tests whichever image it is
 # handed, and ci.yml hands it locally built tags. This asks a different question --
@@ -11,6 +19,7 @@
 set -euo pipefail
 
 MCP_CONFIG=plugins/owasp-kb/.mcp.json
+PINNED_PACKS=plugins/owasp-kb/pinned-packs.json
 
 IMAGE="$(python3 -c '
 import re, sys
@@ -36,12 +45,21 @@ esac
 docker pull --quiet "$IMAGE" >/dev/null
 echo "  ok: the digest resolves and pulls"
 
+# The record has to name this digest. A pin written without one -- by hand, or by a
+# release that pushed .mcp.json and left the record behind -- would otherwise be
+# checked against some earlier image's packs and pass.
 EXPECTED="$(python3 -c '
-import yaml
-packs = yaml.safe_load(open("sources.lock.yml"))["packs"]
-for name in sorted(packs):
-    print(name + "=" + str(packs[name]["version"]))
-')"
+import json, sys
+record = json.load(open(sys.argv[1]))
+if record["image"] != sys.argv[2]:
+    sys.exit(
+        "  FAIL: " + sys.argv[1] + " records " + record["image"] + "\n"
+        "  but the plugin ships " + sys.argv[2] + ". Run\n"
+        "  scripts/pin_image.py --image <ref> --write, which writes both."
+    )
+for name in sorted(record["packs"]):
+    print(name + "=" + str(record["packs"][name]))
+' "$PINNED_PACKS" "$IMAGE")"
 
 # Poll for the answer rather than sleeping at it, and read kb_info's response
 # alone -- both for the reasons scripts/docker_smoke.sh documents at length: a
@@ -72,10 +90,27 @@ while IFS= read -r pair; do
         echo "  ok: pack $name reports $version"
     else
         echo "  FAIL: pack $name should report $version and does not" >&2
+        echo "  The shipped image does not hold what $PINNED_PACKS says it does." >&2
         echo "--- kb_info ---" >&2
         printf '%s\n' "$KB_INFO" >&2
         exit 1
     fi
 done <<< "$EXPECTED"
+
+# Reported, never failed. Between a content refresh landing and the release that
+# ships it, the lock is ahead of the image by design, and there is no digest that
+# could make this quiet. Silence would be worse than a notice: a release that never
+# happened looks identical to one that did.
+python3 -c '
+import json, sys, yaml
+recorded = json.load(open(sys.argv[1]))["packs"]
+packs = yaml.safe_load(open("sources.lock.yml"))["packs"]
+declared = {name: str(pack["version"]) for name, pack in packs.items()}
+drift = sorted(n for n in set(recorded) | set(declared) if recorded.get(n) != declared.get(n))
+if drift:
+    print("  note: sources.lock.yml is ahead of the shipped image -- a release is pending")
+    for name in drift:
+        print("    " + name + ": shipped " + recorded.get(name, "-") + ", lock " + declared.get(name, "-"))
+' "$PINNED_PACKS"
 
 echo "  PASS"

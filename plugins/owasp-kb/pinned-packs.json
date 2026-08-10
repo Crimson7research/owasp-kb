@@ -1,0 +1,8 @@
+{
+  "image": "ghcr.io/crimson7research/owasp-kb@sha256:dbf8bab289848b485ed2f7ee99e0ee3363796679a75c0cae5ca91ad94413eff7",
+  "packs": {
+    "asvs": "5.0.0",
+    "cheatsheets": "20260724",
+    "cwe": "4.20"
+  }
+}

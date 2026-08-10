@@ -102,10 +102,13 @@ not targets. Reread them for tone rather than for leaks.
   version literal and `pyproject.toml` derives from it. The plugin manifests declare no version at
   all — Claude Code resolves it to the commit — so there is no version agreement left to assert.
   What is asserted instead is stronger: `plugins/owasp-kb/.mcp.json` must default to a
-  digest-pinned GHCR reference (`test_the_default_image_is_pinned_by_digest`), and
-  `scripts/verify_pin.sh` fails CI if that digest does not resolve or if the image it names does
-  not carry the packs `sources.lock.yml` declares. Two images can report the same version and hold
-  different indexes; only the digest tells them apart. See ADR 0014.
+  digest-pinned GHCR reference (`test_the_default_image_is_pinned_by_digest`), that digest must be
+  the one `plugins/owasp-kb/pinned-packs.json` describes
+  (`test_the_pack_record_describes_the_image_the_plugin_ships`), and `scripts/verify_pin.sh` fails
+  CI if the digest does not resolve or if the image it names does not carry the packs recorded for
+  it. Two images can report the same version and hold different indexes; only the digest tells them
+  apart. A lock that has moved ahead of the shipped image is normal between a content refresh and
+  the release that ships it — reported, not failed. See ADRs 0014 and 0015.
 - **The test suite passes and the image smoke-tests clean** against `--network none`.
 
 ## Judgement: secrets

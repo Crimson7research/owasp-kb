@@ -174,9 +174,9 @@ done
 # The comparison was a proxy for "this image is the one published for this plugin",
 # expressible only because a moving tag could not state it. The plugin pins the
 # image by digest instead, which states it directly, and scripts/verify_pin.sh
-# checks that the shipped digest resolves and carries the packs the lock declares.
-# Two images can report the same version and hold different indexes; only a digest
-# tells them apart. See ADR 0014.
+# checks that the shipped digest resolves and carries the packs recorded for it in
+# plugins/owasp-kb/pinned-packs.json. Two images can report the same version and
+# hold different indexes; only a digest tells them apart. See ADRs 0014 and 0015.
 #
 # The kb_info response is still isolated above rather than searched for across the
 # whole exchange, which is what caught a dropped kb_info reaching this point.

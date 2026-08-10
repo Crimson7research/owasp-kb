@@ -19,8 +19,8 @@ packs:
   cheatsheets:
     type: corpus
     repo: OWASP/CheatSheetSeries
-    commit: 7d1c2d3daf632206e8f2c685214c699ff8f11938
-    version: "20260724"
+    commit: da4c967e9de854727f72bb2748dd98f76c888b06
+    version: "20260805"
     license: CC-BY-SA-4.0
     paths:
       - cheatsheets/

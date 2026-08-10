@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 DIGEST = "ghcr.io/crimson7research/owasp-kb@sha256:" + "a" * 64
 
@@ -91,6 +92,63 @@ def test_rewrite_is_idempotent():
     module = _module()
     once = module.rewrite(TEMPLATE, DIGEST)
     assert module.rewrite(once, DIGEST) == once
+
+
+LOCK = """
+packs:
+  asvs:
+    version: 5.0.0
+  cheatsheets:
+    version: "20260805"
+  cwe:
+    version: "4.20"
+"""
+
+
+def test_record_names_the_digest_and_the_versions_the_lock_declares():
+    """This is the claim verify_pin holds the image to, so both halves matter: the
+    digest it describes, and what that digest was built from."""
+    document = json.loads(_module().record(DIGEST, LOCK))
+    assert document["image"] == DIGEST
+    assert document["packs"] == {"asvs": "5.0.0", "cheatsheets": "20260805", "cwe": "4.20"}
+
+
+def test_record_stringifies_versions_yaml_reads_as_numbers():
+    """`version: 5.0.0` is a string to YAML but `version: 4.2` is a float, and a
+    pack numbered that way would be recorded as `4.2` and compared against kb_info's
+    `"4.2"` by substring -- which happens to work, until a float renders as
+    `4.20000000001` or `1e+20`. Recording the text sidesteps the whole question."""
+    document = json.loads(_module().record(DIGEST, "packs:\n  cwe:\n    version: 4.2\n"))
+    assert document["packs"] == {"cwe": "4.2"}
+
+
+def test_record_refuses_an_image_that_is_not_digest_pinned():
+    """A record naming a tag would describe whatever that tag points at today, which
+    is the shadowing problem the digest pin exists to remove."""
+    with pytest.raises(SystemExit):
+        _module().record("ghcr.io/crimson7research/owasp-kb:full", LOCK)
+
+
+def test_record_round_trips_the_shipped_file_byte_for_byte():
+    """The write is skipped when the content matches, so a formatting difference
+    between what this produces and what is committed would show up as a release that
+    rewrites the record every time -- or, in review, as a diff nobody asked for."""
+    module = _module()
+    shipped = Path("plugins/owasp-kb/pinned-packs.json")
+    recorded = json.loads(shipped.read_text())
+    assert (
+        module.record(
+            recorded["image"],
+            yaml.safe_dump(
+                {
+                    "packs": {
+                        name: {"version": version} for name, version in recorded["packs"].items()
+                    }
+                }
+            ),
+        )
+        == shipped.read_text()
+    )
 
 
 def test_the_real_config_carries_a_default_this_script_can_find():
