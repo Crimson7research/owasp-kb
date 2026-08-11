@@ -4,5 +4,6 @@
     "asvs": "5.0.0",
     "cheatsheets": "20260724",
     "cwe": "4.20"
-  }
+  },
+  "server_version": "0.17.2"
 }
