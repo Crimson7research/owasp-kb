@@ -2032,6 +2032,35 @@ def test_the_secure_coding_description_denies_the_framing_exemption():
     )
 
 
+def test_the_secure_coding_description_names_the_code_level_nouns_and_precedence():
+    """The refactor and framing-exemption tests pin the two sentences that get the skill
+    considered; neither pins what the discovery half actually rests on. A field move does
+    not mention SSRF or access control -- it mentions the identifier it moves -- and a
+    description that promises retrieval alone gives an agent no reason to look for a
+    control the repository already has."""
+    described = " ".join(
+        _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower().split()
+    )
+    assert "checks whether the codebase already has the control" in described, (
+        "the description promises retrieval only, so an agent that reads it has no "
+        "reason to look for an existing control and designs a second one"
+    )
+    nouns = (
+        "api keys",
+        "credentials",
+        "connection strings",
+        "base urls",
+        "outbound requests",
+        "redirects",
+    )
+    missing = [noun for noun in nouns if noun not in described]
+    assert not missing, (
+        f"the description does not name {', '.join(missing)}; these are the "
+        "identifier-shaped words a mechanical-looking field move actually contains, "
+        "and the vulnerability-class vocabulary alone never matches such a diff"
+    )
+
+
 def test_the_secure_coding_process_probes_before_it_greps():
     """ADR 0009 records that an instruction whose result nothing downstream needs was
     skipped 100% of the time, so each retrieval step here has to feed the next. The

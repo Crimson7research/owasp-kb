@@ -16,6 +16,10 @@ Then three failures arrived that the assembly point cannot see, and each was
 fixed with a different mechanism. Nothing wrote down which mechanism suits
 which job, so the next person meets three unexplained precedents.
 
+All three mechanisms below are about enforcing invariants; the
+`UserPromptSubmit` routing hook added later is a discovery mechanism instead,
+whose case is recorded in [docs/discoverability.md](../discoverability.md).
+
 | Failure | Visible at assembly? | Fixed with |
 |---|---|---|
 | A finder grepped an excluded prior assessment and quoted the hit | No — the text had already reached the agent | A `PreToolUse` hook |
@@ -84,6 +88,7 @@ wrong by pattern-matching the last case.
 | `block_excluded_reads` | **open** | A hook failing closed breaks unrelated sessions on a bug of its own. The roster rejecting findings that cite an excluded path remains the real gate, so an open failure degrades to the pre-hook state rather than to nothing. |
 | `gate_triage_on_inventory` | **open** | An over-refusal stops the assessment outright. There is no cheaper downstream gate, but a halt is worse than the hole it guards. |
 | `findings.jsonl` loading | **closed** | A missing file read as an empty set produces a roster reporting every requirement as `INSUFFICIENT EVIDENCE` — which reads as an assessment result, not as a missing file. |
+| `flag_security_topic` | **open** | It guards a reminder, so an open failure degrades to exactly the behaviour before the hook existed, which is recognisable and survivable. |
 
 The rule underneath: **fail open when the degraded state is recognisable as
 degraded, and fail closed when it is indistinguishable from a legitimate
@@ -92,8 +97,8 @@ entirely wrong, and nothing downstream can tell. An unarmed exclusion hook
 yields the behaviour the project had a week earlier, with another gate still
 standing.
 
-Note that both hooks fail open and the reasoning differs for each. Two
-mechanisms agreeing on a direction is not a pattern to copy — it is two
+Note that all three hooks fail open and the reasoning differs for each. Three
+mechanisms agreeing on a direction is not a pattern to copy — it is three
 separate arguments that happened to land the same way.
 
 ### Scoping is what makes a hook shippable

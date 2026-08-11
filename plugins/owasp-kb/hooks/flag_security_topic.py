@@ -14,9 +14,9 @@ validation, which the SSRF cheat sheet documents as bypassable via DNS pinning.
 
 So the failure was not a missed cue. The skill was seen, priced, and declined. A
 reminder that merely names the skill is disposed of by the same reasoning, which is
-why the injected text argues about cost rather than value: checking is one call
-now, and not checking risks a fix that ships, is believed done, and is reopened
-later.
+why the injected text argues about cost rather than value: the whole check was
+measured at six minutes, and not checking risks a fix that ships, is believed done,
+and is reopened later.
 
 ONCE PER SESSION. Whether the skill was already invoked is not observable from
 here -- a UserPromptSubmit hook receives the prompt, not the conversation. One
@@ -55,9 +55,10 @@ which from the inside. Requirements in this area typically enumerate several \
 dimensions a fix has to cover; missing one produces a fix that looks correct and \
 is not.
 
-The costs are not symmetric. Checking is one owasp_search call, now. Not checking \
-risks a fix that ships, is believed done, and has to be reopened and redone later \
--- after the code is in.
+The costs are not symmetric. Checking is a handful of retrieval calls -- an \
+owasp_search, then the steps it points to -- paid once, before anything is written. \
+Not checking risks a fix that ships, is believed done, and has to be reopened and \
+redone later -- after the code is in.
 
 So call it before deciding the approach, not to confirm one you already chose. \
 Then cite the ASVS ids and Cheat Sheet anchors you relied on, or state plainly \

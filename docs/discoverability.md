@@ -172,6 +172,6 @@ findable, and findability was never the problem in this case. That is why the
 routing mechanism added here is a `UserPromptSubmit` hook rather than a longer
 description: a hook fires without being chosen, and the skill was chosen against.
 Its payload argues about cost rather than value, because the objection was about
-cost — checking is one call now; not checking risks a fix that ships, is believed
-done, and is reopened later. See ADR 0012 for which failure each mechanism can
+cost — the whole check was measured at six minutes; not checking risks a fix that
+ships, is believed done, and is reopened later. See ADR 0012 for which failure each mechanism can
 stop, and ADR 0014's sibling reasoning about proxies versus the thing itself.
