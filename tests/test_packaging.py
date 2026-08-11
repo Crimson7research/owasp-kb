@@ -2179,3 +2179,50 @@ def test_the_discoverability_note_counts_the_hooks_the_plugin_ships():
     assert spelled[count] in claim, (
         f"the plugin ships {count} hooks and the sentence that states the count does not say so"
     )
+
+
+def _release_steps() -> list[dict]:
+    workflow = yaml.safe_load(Path(".github/workflows/release.yml").read_text())
+    return workflow["jobs"]["publish"]["steps"]
+
+
+def _step_index(needle: str) -> int:
+    for position, step in enumerate(_release_steps()):
+        if needle in (step.get("run") or ""):
+            return position
+    raise AssertionError(f"no step in release.yml runs {needle!r}")
+
+
+def test_the_release_writes_the_version_before_it_builds_anything():
+    """At v0.17.1 the hand bump was skipped and the published image reported 0.17.0.
+    The fix only works in one order: the version is baked in at docker build time, so
+    a write that lands afterwards fixes the repository and leaves the artefact wrong --
+    which is the same failure, one release later."""
+    assert _step_index("scripts/set_version.py") < _step_index("docker build"), (
+        "release.yml writes the version after building the image, so the published "
+        "image carries the previous release's number"
+    )
+
+
+def test_the_release_takes_the_version_from_the_tag_it_was_triggered_by():
+    """A hardcoded version, or one read from the tree, reintroduces the hand step this
+    removes."""
+    step = _release_steps()[_step_index("scripts/set_version.py")]
+    assert "github.ref_name" in step["run"], (
+        "the version does not come from the tag, so nothing ties the published "
+        "artefact to the tag that published it"
+    )
+
+
+def test_the_pin_request_carries_the_version_it_wrote():
+    """The workflow writes the literal into the build tree. If the pull request does
+    not carry it, master keeps the previous number and the next release starts from a
+    stale literal -- the v0.17.1 state, reached a different way."""
+    for step in _release_steps():
+        paths = (step.get("with") or {}).get("add-paths")
+        if paths:
+            assert "src/owasp_kb/__init__.py" in paths, (
+                "the pin pull request does not carry the version file"
+            )
+            return
+    raise AssertionError("no step in release.yml declares add-paths")

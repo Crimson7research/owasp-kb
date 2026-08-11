@@ -33,6 +33,15 @@ jobs:
           python-version: "3.13"
           cache: pip
 
+      # Before the build, not after. The version is baked into the image at build time
+      # and reported by kb_info as that build's identity, so a write that lands later
+      # fixes the repository and leaves the artefact wrong -- which is what shipped at
+      # v0.17.1. Early also means a tag this rejects fails the job before any image is
+      # built, since the trigger glob is broader than the form a release may carry.
+      # The same edit reaches master through the pin pull request below. See ADR 0016.
+      - name: Write the release version
+        run: python scripts/set_version.py --tag "${{ github.ref_name }}" --write
+
       - name: Install
         run: pip install -e '.[dev]'
 
@@ -129,12 +138,16 @@ jobs:
           title: "Pin the plugin to the ${{ github.ref_name }} image"
           commit-message: "Pin the plugin to the ${{ github.ref_name }} image"
           add-paths: |
+            src/owasp_kb/__init__.py
             plugins/owasp-kb/.mcp.json
             plugins/owasp-kb/pinned-packs.json
           body: |
             The images for ${{ github.ref_name }} are published and smoke-tested. This
             points the plugin at the `full` variant by digest, and records the pack
             versions that image holds so CI can check the two against each other.
+
+            It also carries the version this release wrote, taken from the tag. The
+            image was built with it; this is how the default branch catches up.
 
             Merging this is the delivery step: the marketplace is read from the
             default branch, so master is the surface devs install from.
