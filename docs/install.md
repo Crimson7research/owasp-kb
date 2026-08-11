@@ -244,6 +244,7 @@ symptom under.
 | Server starts then exits | `server` | Something wrote to stdout; logs must go to stderr |
 | `no index at /opt/owasp-kb/...` | `server` | Image built without a baked index; run `make build` |
 | `is still in WAL mode and cannot be served safely` | `server` | Index not finalized; rebuild via `make build-full`, which depends on `index-full` |
+| The server's version disagrees with `pinned-packs.json` | `server` | The record and the image it names come from different releases: `pin_image.py` wrote one without the other, or the release wrote the version after building. With an `OWASP_KB_IMAGE` tag override instead of the shipped digest, the tag has moved — `docker pull` it |
 | An exclusion or inventory gate never fires | `hooks` | A hook file the manifest names is absent. Doctor cannot see harness registration and says so |
 | An assessment cannot write findings | `state` | The state directory is root-owned, usually from a bind mount the daemon created |
 | Marketplace clone fails with no prompt | `ssh` | SSH does not authenticate to `github.com`. Doctor runs `ssh -T` and only then distinguishes the causes — an unknown host, an empty `ssh-agent`, or a key GitHub does not accept. Claude Code suppresses both the fingerprint and passphrase prompts, so none of these announce themselves |

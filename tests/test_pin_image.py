@@ -108,7 +108,7 @@ packs:
 def test_record_names_the_digest_and_the_versions_the_lock_declares():
     """This is the claim verify_pin holds the image to, so both halves matter: the
     digest it describes, and what that digest was built from."""
-    document = json.loads(_module().record(DIGEST, LOCK))
+    document = json.loads(_module().record(DIGEST, LOCK, version="0.18.0"))
     assert document["image"] == DIGEST
     assert document["packs"] == {"asvs": "5.0.0", "cheatsheets": "20260805", "cwe": "4.20"}
 
@@ -118,7 +118,9 @@ def test_record_stringifies_versions_yaml_reads_as_numbers():
     pack numbered that way would be recorded as `4.2` and compared against kb_info's
     `"4.2"` by substring -- which happens to work, until a float renders as
     `4.20000000001` or `1e+20`. Recording the text sidesteps the whole question."""
-    document = json.loads(_module().record(DIGEST, "packs:\n  cwe:\n    version: 4.2\n"))
+    document = json.loads(
+        _module().record(DIGEST, "packs:\n  cwe:\n    version: 4.2\n", version="0.18.0")
+    )
     assert document["packs"] == {"cwe": "4.2"}
 
 
@@ -126,7 +128,51 @@ def test_record_refuses_an_image_that_is_not_digest_pinned():
     """A record naming a tag would describe whatever that tag points at today, which
     is the shadowing problem the digest pin exists to remove."""
     with pytest.raises(SystemExit):
-        _module().record("ghcr.io/crimson7research/owasp-kb:full", LOCK)
+        _module().record("ghcr.io/crimson7research/owasp-kb:full", LOCK, version="0.18.0")
+
+
+def test_record_names_the_version_the_image_reports():
+    """doctor compares kb_info's server_version against this. Without it there is
+    nothing to compare, which is how a stale server went undiagnosed: the number it
+    reported was a legitimate value for a different release."""
+    document = json.loads(_module().record(DIGEST, LOCK, version="0.18.0"))
+    assert document["server_version"] == "0.18.0"
+
+
+@pytest.mark.parametrize("bad", ["", "v0.18.0", "latest", "0.18"])
+def test_record_refuses_a_version_that_is_not_a_version(bad):
+    """The record is what doctor holds the running server to. A record naming an empty
+    string or a tag would report every server as mismatched, and a check that always
+    fails gets ignored."""
+    with pytest.raises(SystemExit):
+        _module().record(DIGEST, LOCK, version=bad)
+
+
+def test_both_scripts_read_the_same_version_literal():
+    """pin_image and set_version each carry their own copy of the pattern, because
+    scripts/ is not importable under bare pytest. Two copies drift.
+
+    The real file offers no second match, so running both patterns against it cannot
+    detect a divergence in anchoring -- only a disagreement about the value. The decoy
+    below is what discriminates: an unanchored pattern finds the docstring's mention
+    first and reports a version the module does not declare.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("set_version", Path("scripts/set_version.py"))
+    set_version = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(set_version)
+
+    text = Path("src/owasp_kb/__init__.py").read_text()
+    assert _module().version_of(text) == set_version.current(text)
+
+    decoy = 'x = \'__version__ = "9.9.9"\'\n\n__version__ = "0.17.2"\n'
+    assert _module().version_of(decoy) == "0.17.2", (
+        "pin_image's pattern matched a version-shaped string that is not the assignment"
+    )
+    assert set_version.current(decoy) == "0.17.2", (
+        "set_version's pattern matched a version-shaped string that is not the assignment"
+    )
 
 
 def test_record_round_trips_the_shipped_file_byte_for_byte():
@@ -146,6 +192,7 @@ def test_record_round_trips_the_shipped_file_byte_for_byte():
                     }
                 }
             ),
+            version=recorded["server_version"],
         )
         == shipped.read_text()
     )

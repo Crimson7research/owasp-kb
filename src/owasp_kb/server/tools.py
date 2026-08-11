@@ -209,10 +209,12 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         other, so they carry an edge count and no coverage -- absent because it
         does not apply, not because it is zero.
 
-        server_version is this build's version, and it is the same number the
-        plugin carries. Compare it against the plugin version you expect: a
-        reconnect reports success whether or not the image behind it is current,
-        so this is how you tell a stale server from a fresh one."""
+        server_version is the release this image was built from. Compare it
+        against the release you expect to be running: a reconnect reports success
+        whether or not the image behind it is current. It is not the plugin's
+        version -- the plugin declares none, and the two drift on purpose. Two
+        images can also report the same version and hold different indexes, so
+        only the digest the plugin pins distinguishes those."""
         info = kb.info()
         return {
             "server_version": __version__,

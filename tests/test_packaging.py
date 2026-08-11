@@ -2179,3 +2179,166 @@ def test_the_discoverability_note_counts_the_hooks_the_plugin_ships():
     assert spelled[count] in claim, (
         f"the plugin ships {count} hooks and the sentence that states the count does not say so"
     )
+
+
+def _release_steps() -> list[dict]:
+    workflow = yaml.safe_load(Path(".github/workflows/release.yml").read_text())
+    return workflow["jobs"]["publish"]["steps"]
+
+
+def _named_step(name: str) -> tuple[int, dict]:
+    """The one step called `name`, and its position.
+
+    Indexed by name rather than by searching each step's `run` for a command. A
+    substring search returns the first hit anywhere in the file, so a comment
+    mentioning `docker build` -- or a build command split across a variable -- moves the
+    index off the real step, and an ordering assertion built on it passes while the
+    order is wrong. That is the failure these assertions exist to catch.
+    """
+    matches = [(i, step) for i, step in enumerate(_release_steps()) if step.get("name") == name]
+    assert len(matches) == 1, f"expected exactly one step named {name!r}, found {len(matches)}"
+    return matches[0]
+
+
+def test_the_release_writes_the_version_before_it_builds_anything():
+    """At v0.17.1 the hand bump was skipped and the published image reported 0.17.0.
+    The fix only works in one order: the version is baked in at docker build time, so
+    a write that lands afterwards fixes the repository and leaves the artefact wrong --
+    which is the same failure, one release later."""
+    version_at, version_step = _named_step("Write the release version")
+    build_at, build_step = _named_step("Build, smoke test, then push")
+    assert "scripts/set_version.py" in version_step["run"], (
+        "the step named for writing the version does not run the script that writes it"
+    )
+    assert "docker build" in build_step["run"], (
+        "the build step no longer builds, so this ordering assertion is comparing "
+        "against the wrong step"
+    )
+    assert version_at < build_at, (
+        "release.yml writes the version after building the image, so the published "
+        "image carries the previous release's number"
+    )
+
+
+def test_the_release_takes_the_version_from_the_tag_it_was_triggered_by():
+    """A hardcoded version, or one read from the tree, reintroduces the hand step this
+    removes."""
+    _, step = _named_step("Write the release version")
+    assert "github.ref_name" in step["run"], (
+        "the version does not come from the tag, so nothing ties the published "
+        "artefact to the tag that published it"
+    )
+
+
+def test_the_pin_request_carries_the_version_it_wrote():
+    """The workflow writes the literal into the build tree. If the pull request does
+    not carry it, master keeps the previous number and the next release starts from a
+    stale literal -- the v0.17.1 state, reached a different way."""
+    for step in _release_steps():
+        paths = (step.get("with") or {}).get("add-paths")
+        if paths:
+            assert "src/owasp_kb/__init__.py" in paths, (
+                "the pin pull request does not carry the version file"
+            )
+            return
+    raise AssertionError("no step in release.yml declares add-paths")
+
+
+def test_the_release_drafts_a_release_only_after_the_images_are_pushed():
+    """A Release page created before the push would name a version whose images do not
+    exist if a smoke test then fails. The smoke test gates the push for the same
+    reason: a broken image is never published."""
+    draft_at, draft_step = _named_step("Draft the release")
+    push_at, push_step = _named_step("Build, smoke test, then push")
+    assert "docker push" in push_step["run"], (
+        "the push step no longer pushes, so this ordering assertion is comparing "
+        "against the wrong step"
+    )
+    assert "gh release create" in draft_step["run"], (
+        "the step named for drafting the release does not create one"
+    )
+    assert draft_at > push_at, (
+        "release.yml creates the GitHub Release before pushing the images, so a "
+        "failed push leaves a Release naming artefacts that were never published"
+    )
+
+
+def test_the_drafted_release_is_a_draft():
+    """Delivery is the pin pull request merging -- docs/build.md says so. A published
+    Release before that merge claims a version nobody installing the plugin can get."""
+    _, step = _named_step("Draft the release")
+    assert "--draft" in step["run"], "the release is published before delivery"
+    assert "--generate-notes" in step["run"], "the release carries no notes"
+
+
+PROMOTE = Path(".github/workflows/release-promote.yml")
+
+
+def test_the_promotion_runs_only_on_a_merged_pin_request():
+    """A pin pull request closed without merging means the release was abandoned and
+    the draft must stay a draft. `pull_request: closed` fires on both, so the guard is
+    the only thing separating them."""
+    workflow = yaml.safe_load(PROMOTE.read_text())
+    # YAML 1.1 reads a bare `on:` as the boolean True, so the trigger block is not
+    # under the key it is written as.
+    triggers = workflow.get("on") or workflow[True]
+    assert triggers["pull_request"]["types"] == ["closed"]
+    condition = " ".join(workflow["jobs"]["promote"]["if"].split())
+    assert "github.event.pull_request.merged == true" in condition, (
+        "the promotion would publish a release whose pin request was closed unmerged"
+    )
+    assert "release/pin-v" in condition, (
+        "the promotion is not restricted to pin requests, so any merged pull request "
+        "would try to publish a release"
+    )
+
+
+def test_the_promotion_derives_the_tag_from_the_branch_name():
+    """release.yml names the branch release/pin-<tag>, which is what makes the tag
+    recoverable in a later run without rediscovering which release a merge belongs to."""
+    text = PROMOTE.read_text()
+    assert "release/pin-" in text and "--draft=false" in text, (
+        "the promotion does not turn the draft into a published release"
+    )
+
+
+def test_the_pin_branch_name_is_a_contract_between_the_two_workflows():
+    """release-promote.yml recovers the tag by stripping a prefix off the branch name,
+    and gates on that same prefix. Both are literals in a second file, so changing
+    release.yml's branch -- adding create-pull-request's `branch-suffix`, renaming the
+    prefix -- breaks them with nothing to notice it.
+
+    The failure is silent in the worst way available: the guard stops matching, so the
+    promote job is *skipped* rather than failed. No check goes red anywhere, and every
+    Release from then on stays a draft forever while the release itself looks complete.
+    A suffix is the same shape -- the branch becomes release/pin-<tag>-1 and the strip
+    yields a tag that does not exist, so `gh release edit` fails on a tag nobody
+    expects to be missing."""
+    _, step = _named_step("Open the pin pull request")
+    inputs = step["with"]
+    branch = re.fullmatch(r"(.*)\$\{\{ github\.ref_name \}\}", inputs["branch"])
+    assert branch, (
+        f"the pin branch is {inputs['branch']!r}, which does not end in the tag "
+        "release-promote.yml strips back out of it"
+    )
+    assert "branch-suffix" not in inputs, (
+        "create-pull-request would append a suffix to the branch, so the promotion "
+        "would strip release/pin-<tag>-1 down to a tag that does not exist"
+    )
+
+    promote = PROMOTE.read_text()
+    stripped = re.search(r"\$\{BRANCH#([^}]+)\}", promote)
+    assert stripped, "release-promote.yml no longer derives the tag by stripping a prefix"
+    condition = " ".join(yaml.safe_load(promote)["jobs"]["promote"]["if"].split())
+    guard = re.search(r"startsWith\(github\.event\.pull_request\.head\.ref, '([^']+)'\)", condition)
+    assert guard, "release-promote.yml no longer gates on the branch name"
+
+    assert branch.group(1) == stripped.group(1) == "release/pin-", (
+        f"release.yml names the branch {branch.group(1)!r}<tag> and release-promote.yml "
+        f"strips {stripped.group(1)!r}; the tag it publishes is not the tag that built"
+    )
+    assert guard.group(1).startswith(stripped.group(1)), (
+        f"the promotion only runs for branches starting {guard.group(1)!r} but the pin "
+        f"branch starts {branch.group(1)!r}, so the job is skipped and the draft never "
+        "publishes -- silently, because a skipped job is not a failed one"
+    )

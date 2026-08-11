@@ -42,6 +42,19 @@ LOCK = Path("sources.lock.yml")
 # carried one without the other would ship a claim about the wrong image.
 PINNED_PACKS = Path("plugins/owasp-kb/pinned-packs.json")
 
+INIT = Path("src/owasp_kb/__init__.py")
+
+# Duplicated deliberately from scripts/set_version.py rather than shared. A module under
+# src/owasp_kb/ would be importable here, but not from set_version.py: that runs before
+# release.yml's Install step, so the package is not installed and src/ is not on the path
+# when the version is written. `test_both_scripts_read_the_same_version_literal` guards
+# the duplication instead.
+VERSION_LITERAL = re.compile(r'^__version__ = "([^"]*)"$', re.MULTILINE)
+
+# What kb_info reports and what doctor compares against: the same narrow form the
+# release tag is held to.
+VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+
 # The whole ${OWASP_KB_IMAGE:-...} default, whatever form it currently holds. The
 # override itself is preserved: it is how a dev points at a local build and how the
 # lite variant is selected.
@@ -66,6 +79,17 @@ def current(text: str) -> str:
     return match.group(1)
 
 
+def version_of(text: str) -> str:
+    """The version `src/owasp_kb/__init__.py` declares."""
+    match = VERSION_LITERAL.search(text)
+    if not match:
+        raise SystemExit(
+            f"error: no __version__ assignment found in {INIT}, so the record cannot "
+            "name the version this image reports."
+        )
+    return match.group(1)
+
+
 def rewrite(text: str, image: str) -> str:
     """`text` with its default image reference replaced by `image`."""
     if not PINNED.match(image):
@@ -85,7 +109,7 @@ def rewrite(text: str, image: str) -> str:
     return result
 
 
-def record(image: str, lock_text: str) -> str:
+def record(image: str, lock_text: str, version: str) -> str:
     """The provenance record for `image`: the digest, and the pack versions the lock
     declared when it was built.
 
@@ -95,13 +119,24 @@ def record(image: str, lock_text: str) -> str:
     versions does not exist until the release that follows the merge. That check
     failed the first content-refresh pull request it ever saw, and would have turned
     master red on merge. See ADR 0015.
+
+    The version is here so `doctor` can tell a stale server from a fresh one. At
+    v0.17.1 the hand bump was skipped and the published image reported the previous
+    release's number, which made that comparison impossible -- see ADR 0016.
     """
     if not PINNED.match(image):
         raise SystemExit(f"error: {image!r} is not a digest-pinned GHCR reference.")
+    if not VERSION.match(version):
+        raise SystemExit(
+            f"error: {version!r} is not a version of the form X.Y.Z.\n"
+            "doctor holds the running server to this value, and a record naming "
+            "something no server can report makes every check fail."
+        )
     packs = yaml.safe_load(lock_text)["packs"]
     document = {
         "image": image,
         "packs": {name: str(packs[name]["version"]) for name in sorted(packs)},
+        "server_version": version,
     }
     return json.dumps(document, indent=2) + "\n"
 
@@ -123,7 +158,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--image is required unless --show is given")
 
     updated = rewrite(text, args.image)
-    provenance = record(args.image, LOCK.read_text())
+    provenance = record(
+        image=args.image,
+        lock_text=LOCK.read_text(),
+        version=version_of(INIT.read_text()),
+    )
 
     if not args.write:
         print(updated, end="")

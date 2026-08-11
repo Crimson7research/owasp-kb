@@ -543,3 +543,160 @@ def test_the_hook_fails_open_on_an_unusable_state_directory(tmp_path):
     result = _run_hook({"session_id": "s1", "prompt": "an SSRF bug"}, blocker)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == ""
+
+
+def test_the_server_version_check_reports_a_mismatch():
+    """Not the v0.17.1 incident, which `scripts/set_version.py` fixes: this compares one
+    plugin copy's record against the image that same copy pins, and those come from the
+    same commit, so a session reading 0.17.0 from a stale local image would see a match
+    here. What it catches is the record disagreeing with the image it names -- the
+    release ordering having regressed, or a moved OWASP_KB_IMAGE tag. Naming both
+    numbers is what makes the direction of that disagreement readable."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.17.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, '{"server_version": "0.18.0"}') == ("0.17.0", "0.18.0")
+
+
+def test_the_server_version_check_passes_when_they_agree():
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, '{"server_version": "0.18.0"}') is None
+
+
+def test_the_server_version_check_stays_quiet_when_the_record_predates_it():
+    """A plugin installed before the record carried a version must not start failing its
+    own doctor. An absent field is not a mismatch."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, '{"packs": {}}') is None
+
+
+def test_the_server_version_check_stays_quiet_when_the_server_says_nothing():
+    """check_server_answers already reports a server that did not answer kb_info. This
+    must not turn that into a confusing second failure about versions."""
+    doctor = _module("doctor")
+    assert doctor.version_mismatch("", '{"server_version": "0.18.0"}') is None
+
+
+def test_the_server_version_check_survives_an_unreadable_record():
+    """The record is a file on disk that a user could have edited. A crash inside doctor
+    is worse than the drift it was looking for."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, "not json at all") is None
+
+
+def test_the_server_version_check_survives_a_missing_record():
+    """doctor must not fail its server check because the record is absent -- a plugin
+    copy without one is not evidence that the server is stale."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, "") is None
+
+
+def test_the_server_version_check_ignores_a_differently_named_key():
+    """The pattern is deliberately tolerant of JSON-RPC's escaped quotes, which is how a
+    loose version of it could match a neighbouring key that merely starts the same way.
+
+    The second payload is the one that discriminates. A pattern permitting any few
+    non-digits between the key and the number -- the first form this check had -- rejects
+    `server_version_major` only because the intervening text is long and `9` is not a
+    version. Shorten the suffix and supply a version-shaped value and it matches, so that
+    is the case asserted here as well."""
+    doctor = _module("doctor")
+    record = '{"server_version": "0.18.0"}'
+    major = '{"id":2,"result":{"content":[{"text":"{\\"server_version_major\\": \\"9\\"}"}]}}'
+    assert doctor.version_mismatch(major, record) is None
+    short = '{"id":2,"result":{"content":[{"text":"{\\"server_version_x\\":\\"1.2.3\\"}"}]}}'
+    assert doctor.version_mismatch(short, record) is None
+
+
+def _answering_server(monkeypatch, tmp_path, doctor, answer_body: str, record: str | None):
+    """Stub check_server_answers' docker calls so its real detail string can be read.
+
+    Every existing version test calls `version_mismatch` directly, and none of them
+    reads what a user is shown -- which is how "version matches" survived being printed
+    for a copy whose record has no version. These assert the Result.
+    """
+    monkeypatch.setattr(doctor, "pinned_image", lambda: f"ghcr.io/o/owasp-kb@sha256:{'a' * 64}")
+    monkeypatch.setattr(doctor, "_run", lambda *command: subprocess.CompletedProcess(command, 0))
+    monkeypatch.setattr(doctor, "plugin_root", lambda: tmp_path)
+    if record is not None:
+        (tmp_path / "pinned-packs.json").write_text(record)
+    line = '{"id":2,"result":{"content":[{"text":"' + answer_body + '"}]}}'
+    monkeypatch.setattr(
+        doctor.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0] if a else [], 0, stdout=line, stderr=""),
+    )
+
+
+def test_the_server_check_names_the_version_it_compared(monkeypatch, tmp_path):
+    """The detail string has to say a comparison happened *and* against what, or a
+    reader cannot tell this line apart from the one printed when nothing was compared."""
+    doctor = _module("doctor")
+    answer = '{\\"server_version\\": \\"0.18.0\\", \\"retrieval_mode\\": \\"hybrid\\"}'
+    _answering_server(monkeypatch, tmp_path, doctor, answer, '{"server_version": "0.18.0"}')
+    result = doctor.check_server_answers()
+    assert result.ok
+    assert (
+        result.detail
+        == "the server answers; retrieval mode hybrid, version 0.18.0 matches the record"
+    )
+
+
+def test_the_server_check_says_when_the_record_names_no_version(monkeypatch, tmp_path):
+    """The path that was silently wrong. An installed copy predating the field must not
+    be told its version matches, because nothing was compared -- and the check must
+    still pass, since an absent field is not evidence of drift."""
+    doctor = _module("doctor")
+    answer = '{\\"server_version\\": \\"0.18.0\\", \\"retrieval_mode\\": \\"hybrid\\"}'
+    _answering_server(monkeypatch, tmp_path, doctor, answer, '{"packs": {}}')
+    result = doctor.check_server_answers()
+    assert result.ok
+    assert result.detail == (
+        "the server answers; retrieval mode hybrid; the record names no version to compare"
+    )
+    assert "matches" not in result.detail
+
+
+def test_the_server_check_says_when_the_record_is_absent(monkeypatch, tmp_path):
+    """Same claim, reached the other way: no record on disk at all."""
+    doctor = _module("doctor")
+    answer = '{\\"server_version\\": \\"0.18.0\\", \\"retrieval_mode\\": \\"hybrid\\"}'
+    _answering_server(monkeypatch, tmp_path, doctor, answer, None)
+    result = doctor.check_server_answers()
+    assert result.ok
+    assert "the record names no version to compare" in result.detail
+
+
+def test_the_server_check_says_when_the_server_names_no_version(monkeypatch, tmp_path):
+    """Reachable because the kb_info gate is a substring test: `server_version_major`
+    passes it and matches no version pattern. The record has a version here, so the
+    other silence's wording would be a false statement about which side was quiet."""
+    doctor = _module("doctor")
+    answer = '{\\"server_version_major\\": \\"9\\", \\"retrieval_mode\\": \\"lexical\\"}'
+    _answering_server(monkeypatch, tmp_path, doctor, answer, '{"server_version": "0.18.0"}')
+    result = doctor.check_server_answers()
+    assert result.ok
+    assert result.detail == (
+        "the server answers; retrieval mode lexical; the server named no version to compare"
+    )
+
+
+def test_the_server_check_does_not_offer_to_pull_a_digest(monkeypatch, tmp_path):
+    """A digest is content-addressed: it cannot report two versions, and pulling it
+    again changes nothing, so `docker pull` cannot fix the condition it was printed
+    for. A tag override is the one case where it can."""
+    doctor = _module("doctor")
+    answer = '{\\"server_version\\": \\"0.17.0\\", \\"retrieval_mode\\": \\"hybrid\\"}'
+    _answering_server(monkeypatch, tmp_path, doctor, answer, '{"server_version": "0.18.0"}')
+    digest = doctor.check_server_answers()
+    assert not digest.ok
+    assert "docker pull" not in digest.remedy, "a digest cannot be fixed by pulling it again"
+    assert "pin_image.py" in digest.remedy
+
+    monkeypatch.setattr(doctor, "pinned_image", lambda: "ghcr.io/o/owasp-kb:full")
+    tag = doctor.check_server_answers()
+    assert not tag.ok
+    assert "docker pull ghcr.io/o/owasp-kb:full" in tag.remedy
