@@ -6,13 +6,14 @@ built from it, and `kb_info` reports it as `server_version`. It was bumped by ha
 before a tag was cut, and at `v0.17.1` the bump was skipped: the image published for
 that tag reports `0.17.0`, and nothing failed.
 
-The cost is not a wrong number in a response. `kb_info`'s own description tells a caller
-to compare `server_version` against the plugin version it expects, because a reconnect
-reports success whether or not the image behind it is current. That comparison is the
-only staleness detector this project has, and a skipped bump makes a stale server
-indistinguishable from a fresh one. It cost exactly that once: a session read `0.17.0`
-from a server pinned at `v0.17.2` and could not tell which of the two failures it was
-looking at.
+The cost is not a wrong number in a response. `kb_info` reports `server_version` so a
+caller can tell which build answered, and a reconnect reports success whether or not the
+image behind it is current. When the tag writes the literal, a version corresponds to a
+release, so a human who knows which release they expect can read `server_version` and
+tell -- that is what the number buys, and a skipped bump is exactly what takes it away,
+leaving a stale server indistinguishable from a fresh one. It cost exactly that once: a
+session read `0.17.0` from a server pinned at `v0.17.2` and could not tell which of the
+two failures it was looking at.
 
 So the tag writes it. `release.yml` runs this before the image is built, because a
 version written afterwards fixes the repository and not the artefact -- which is the

@@ -111,8 +111,9 @@ mandatory before the file is packaged into an image.
   and only pushes to GHCR if every smoke test passes — a broken image is never
   published, regardless of what tag triggered the release. It then captures the
   `full` image's registry digest, runs `scripts/pin_image.py --write`, and opens a
-  pull request carrying the new `plugins/owasp-kb/.mcp.json` and
-  `plugins/owasp-kb/pinned-packs.json`. **Merging that PR is the delivery step**,
+  pull request carrying the new `plugins/owasp-kb/.mcp.json`,
+  `plugins/owasp-kb/pinned-packs.json` and the `src/owasp_kb/__init__.py` the tag
+  wrote. **Merging that PR is the delivery step**,
   because the marketplace is read from the default branch, so master is the surface
   devs install from. The digest is only knowable after the push, which is why the
   reference the plugin ships is written by the workflow rather than by hand. The

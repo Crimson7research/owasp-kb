@@ -136,27 +136,63 @@ def check_image_present() -> Result:
 REPORTED_VERSION = re.compile(r'server_version\\?"?\s*:\s*\\?"?(\d+\.\d+\.\d+)')
 
 
-def version_mismatch(answer: str, record_text: str) -> tuple[str, str] | None:
-    """`(reported, expected)` when the running server's version disagrees with the
-    shipped record, or None.
+def recorded_version(record_text: str) -> str | None:
+    """The version pinned-packs.json names, or None when there is nothing to compare.
 
-    None when either side is silent, and that is deliberate in both directions. A record
-    written before this field existed must not make a correctly installed plugin fail its
-    own doctor, and a server that did not answer kb_info is already reported by the
-    caller -- turning it into a second failure about versions would send a reader after
-    the wrong thing.
+    Three shapes collapse to None, and all three must stay silent: no record on disk
+    (the caller passes an empty string), a record that cannot be parsed, and a record
+    written before this field existed. A plugin copy without the field is not evidence
+    of drift, so it must not make a correctly installed plugin fail its own doctor.
     """
     try:
-        expected = json.loads(record_text).get("server_version")
+        return json.loads(record_text).get("server_version") or None
     except json.JSONDecodeError:
         return None
-    if not expected:
-        return None
+
+
+def reported_version(answer: str) -> str | None:
+    """The version kb_info's answer carries, or None if it names none."""
     found = REPORTED_VERSION.search(answer)
-    if not found:
+    return found.group(1) if found else None
+
+
+def version_mismatch(answer: str, record_text: str) -> tuple[str, str] | None:
+    """`(reported, expected)` when a server started from the image this copy pins
+    reports a different version than this copy's own record names, or None.
+
+    Both sides come from one plugin copy, so this is not a check on the server some
+    session is talking to. What it catches is the record disagreeing with the image it
+    names -- the release ordering having regressed so the digest was built before the
+    version was written, or an OWASP_KB_IMAGE tag override that has moved.
+
+    None when either side is silent, and that is deliberate in both directions: an
+    absent record must not fail the check, and a server that did not answer kb_info is
+    already reported by the caller -- turning it into a second failure about versions
+    would send a reader after the wrong thing. `version_detail` distinguishes those
+    silences from an agreement, because "None" alone cannot be printed as a match.
+    """
+    expected = recorded_version(record_text)
+    reported = reported_version(answer)
+    if not expected or not reported:
         return None
-    reported = found.group(1)
     return None if reported == expected else (reported, expected)
+
+
+def version_detail(mode: str, answer: str, record_text: str) -> str:
+    """check_server_answers' success detail, saying which comparison actually happened.
+
+    Split out and pure because the string is the whole point of the check and the check
+    around it needs docker to reach. This previously read "version matches" whenever
+    `version_mismatch` returned None, which includes both silences: on a plugin copy
+    predating the record it claimed a match having compared nothing.
+    """
+    expected = recorded_version(record_text)
+    reported = reported_version(answer)
+    if expected and reported:
+        return f"the server answers; retrieval mode {mode}, version {expected} matches the record"
+    if not expected:
+        return f"the server answers; retrieval mode {mode}; the record names no version to compare"
+    return f"the server answers; retrieval mode {mode}; the server named no version to compare"
 
 
 def check_server_answers() -> Result:
@@ -212,17 +248,27 @@ def check_server_answers() -> Result:
     drift = version_mismatch(answer, recorded)
     if drift:
         reported, expected = drift
+        # A digest is content-addressed: it cannot report two versions, and pulling it
+        # again is inert, so `docker pull` is only a remedy when the image is a tag.
+        remedy = (
+            "the record and the image it names were built from different releases; "
+            "check scripts/pin_image.py wrote both, and that release.yml still writes "
+            "the version before it builds (ADR 0016)"
+            if "@sha256:" in image
+            else f"docker pull {image}   (then restart the session)"
+        )
         return Result(
             False,
             f"the server reports version {reported}; the shipped record names {expected}",
-            remedy=f"docker pull {image}   (then restart the session)",
+            remedy=remedy,
             notes=(
-                "a reconnect reports success whether or not the image behind it is "
-                "current, so this comparison is the only signal that the server "
-                "answering is not the one this plugin ships",
+                "both sides come from this plugin copy, so this does not say whether a "
+                "session is talking to this image; it says the record disagrees with "
+                "the image it names -- the release ordering having regressed, or a "
+                "stale OWASP_KB_IMAGE tag override",
             ),
         )
-    return Result(True, f"the server answers; retrieval mode {mode}, version matches")
+    return Result(True, version_detail(mode, answer, recorded))
 
 
 def check_hooks() -> Result:

@@ -20,12 +20,14 @@ all asserts that `pyproject.toml` derives from it, which is true whatever the li
 says. A step that exists only in someone's memory of the release procedure is not part of
 the release.
 
-The cost was not the wrong number in a response. `kb_info`'s own description tells a
-caller to compare `server_version` against the plugin version it expects, and it says so
-precisely because a reconnect reports success whether or not the image behind it is
-current. That comparison is the only staleness detector this project has, and a skipped
-bump breaks it in the direction that matters: a stale server becomes indistinguishable
-from a fresh one.
+The cost was not the wrong number in a response. `kb_info` reports `server_version` so a
+caller can tell which build answered, and that matters because a reconnect reports success
+whether or not the image behind it is current. Once the tag writes the literal, a version
+corresponds to a release, so a human who knows which release they expect can read
+`server_version` and tell — which is the whole of what the number buys. It is not a
+comparison against the plugin, which declares no version and drifts from the image on
+purpose (ADR 0014). A skipped bump breaks it in the direction that matters: a stale server
+becomes indistinguishable from a fresh one.
 
 It cost exactly that, once. A session read `0.17.0` from a server while the plugin pinned
 the `v0.17.2` image, and could not tell whether it was holding a stale local image or
@@ -80,9 +82,11 @@ Two alternatives were rejected:
   master behind the registry, and a Release drafted rather than published. That is why
   the Release is a draft: an incomplete release should read as incomplete.
 - `plugins/owasp-kb/pinned-packs.json` gained a `server_version` field, so `doctor` can
-  compare what the running server reports against what the plugin shipped and name both
-  numbers. Naming both is what makes a stale image distinguishable from a skipped bump —
-  the question the original session could not answer.
+  start a server from the image the plugin pins and check that the record beside it names
+  the same version. Both sides come from one plugin copy, so this is not a check on the
+  server a session is talking to: what it catches is a record disagreeing with the image
+  it names — this ordering having regressed, or an `OWASP_KB_IMAGE` tag override that has
+  moved. Naming both numbers is what makes the direction of that disagreement readable.
 - A pre-release version is now unrepresentable. `vX.Y.Z` only, matching every release cut
   so far and the image tag scheme, which has never carried a pre-release form. Adding one
   means changing the pattern and whatever downstream consumes the tag, deliberately.

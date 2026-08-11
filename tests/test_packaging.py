@@ -2300,3 +2300,45 @@ def test_the_promotion_derives_the_tag_from_the_branch_name():
     assert "release/pin-" in text and "--draft=false" in text, (
         "the promotion does not turn the draft into a published release"
     )
+
+
+def test_the_pin_branch_name_is_a_contract_between_the_two_workflows():
+    """release-promote.yml recovers the tag by stripping a prefix off the branch name,
+    and gates on that same prefix. Both are literals in a second file, so changing
+    release.yml's branch -- adding create-pull-request's `branch-suffix`, renaming the
+    prefix -- breaks them with nothing to notice it.
+
+    The failure is silent in the worst way available: the guard stops matching, so the
+    promote job is *skipped* rather than failed. No check goes red anywhere, and every
+    Release from then on stays a draft forever while the release itself looks complete.
+    A suffix is the same shape -- the branch becomes release/pin-<tag>-1 and the strip
+    yields a tag that does not exist, so `gh release edit` fails on a tag nobody
+    expects to be missing."""
+    _, step = _named_step("Open the pin pull request")
+    inputs = step["with"]
+    branch = re.fullmatch(r"(.*)\$\{\{ github\.ref_name \}\}", inputs["branch"])
+    assert branch, (
+        f"the pin branch is {inputs['branch']!r}, which does not end in the tag "
+        "release-promote.yml strips back out of it"
+    )
+    assert "branch-suffix" not in inputs, (
+        "create-pull-request would append a suffix to the branch, so the promotion "
+        "would strip release/pin-<tag>-1 down to a tag that does not exist"
+    )
+
+    promote = PROMOTE.read_text()
+    stripped = re.search(r"\$\{BRANCH#([^}]+)\}", promote)
+    assert stripped, "release-promote.yml no longer derives the tag by stripping a prefix"
+    condition = " ".join(yaml.safe_load(promote)["jobs"]["promote"]["if"].split())
+    guard = re.search(r"startsWith\(github\.event\.pull_request\.head\.ref, '([^']+)'\)", condition)
+    assert guard, "release-promote.yml no longer gates on the branch name"
+
+    assert branch.group(1) == stripped.group(1) == "release/pin-", (
+        f"release.yml names the branch {branch.group(1)!r}<tag> and release-promote.yml "
+        f"strips {stripped.group(1)!r}; the tag it publishes is not the tag that built"
+    )
+    assert guard.group(1).startswith(stripped.group(1)), (
+        f"the promotion only runs for branches starting {guard.group(1)!r} but the pin "
+        f"branch starts {branch.group(1)!r}, so the job is skipped and the draft never "
+        "publishes -- silently, because a skipped job is not a failed one"
+    )
