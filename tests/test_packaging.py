@@ -2078,3 +2078,22 @@ def test_the_secure_coding_body_says_a_citation_is_not_precedence():
     assert "cannot see the codebase" in section, (
         "the body does not say what the corpus structurally cannot supply"
     )
+
+
+def test_the_discoverability_note_counts_the_hooks_the_plugin_ships():
+    """The note said "two hooks" after a third had shipped, and denied that any hook
+    solves discoverability while that third one exists to do exactly that -- as the same
+    file argues 50 lines further down. A doc that contradicts itself is read as whichever
+    half the reader reaches first."""
+    shipped = json.loads(PLUGIN.read_text())["hooks"]
+    count = sum(len(matcher["hooks"]) for event in shipped.values() for matcher in event)
+    doc = Path("docs/discoverability.md").read_text().lower()
+    spelled = {1: "one hook", 2: "two hooks", 3: "three hooks", 4: "four hooks"}
+    assert count in spelled, (
+        f"the plugin ships {count} hooks and this test has no word for that count"
+    )
+    claim_start = doc.index("the plugin has since gained")
+    claim = doc[claim_start : doc.index("\n\n", claim_start)]
+    assert spelled[count] in claim, (
+        f"the plugin ships {count} hooks and the sentence that states the count does not say so"
+    )
