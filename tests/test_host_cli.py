@@ -508,6 +508,27 @@ def test_the_hook_makes_the_cost_argument_rather_than_asserting_value(tmp_path):
     )
 
 
+def test_the_hook_denies_the_framing_exemption_and_demands_precedence(tmp_path):
+    """A second session declined the corpus for a different reason: the issue never said
+    security, so it classified the work as a refactor and moved on. The payload has to
+    refuse that inference, and it has to say the thing the corpus itself cannot -- that
+    the control may already exist in this codebase. The figures are the argument: an
+    unquantified claim that checking is cheap was already there and was declined."""
+    result = _run_hook({"session_id": "s1", "prompt": "an SSRF bug"}, tmp_path)
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"].lower()
+    assert (
+        "absence of security framing in the request is not evidence of absence of "
+        "security relevance" in context
+    ), "the framing exemption is not refused, or is refused inside a frame that grants it"
+    assert "six minutes" in context, "the measured cost of checking is missing"
+    assert "check whether this codebase already has the control before you design one" in context, (
+        "precedence is not demanded as an instruction"
+    )
+    assert "grep for the control names the guidance uses" in context, (
+        "the agent is told to grep but not what to grep for, which is the part the corpus supplies"
+    )
+
+
 def test_the_hook_fails_open_on_an_unusable_state_directory(tmp_path):
     """The fail-open claim has to hold for more than ValueError, and every other
     input in this file raises either ValueError or nothing: json.JSONDecodeError

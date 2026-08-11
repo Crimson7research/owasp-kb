@@ -28,6 +28,25 @@ PARAPHRASED_QUERIES = [
 
 NOISE_QUERIES = ["zzzznotpresentanywhere", "qwertyuiop asdfghjkl", "the of and is a"]
 
+SECURE_CODING_SKILL = Path("plugins/owasp-kb/skills/owasp-secure-coding/SKILL.md")
+
+# Step 4 of the secure-coding process quotes these against pack="asvs", with the
+# requirement each is measured to return first. Held verbatim: every case below also
+# asserts the skill still quotes the string, so a reworded step fails here rather than
+# leaving the file measuring a query nobody is taught any more.
+ASVS_QUERIES_THE_SKILL_QUOTES = [
+    ("SSRF allowlist input validation domain name IP address URL", "V1.3.6"),
+    ("SSRF allowlist validate outbound request destination", "V1.3.6"),
+    (
+        "SSRF allowlist of identified and trusted applications the server may call, "
+        "network layer firewall allowed routes",
+        "V13.2.4",
+    ),
+]
+
+# The step 2 probe, which the skill states must *not* be reused for the ASVS search.
+DATA_FLOW_SENTENCE = "url supplied by an operator, used to make a request from the server"
+
 
 def _kb(path: Path, *, load_vec: bool) -> Kb:
     if not path.exists():
@@ -55,6 +74,32 @@ def _doc_rank(kb: Kb, query: str, expected: str, limit: int = 20) -> int | None:
         if hit.doc_key not in seen:
             seen.append(hit.doc_key)
     return seen.index(expected) + 1 if expected in seen else None
+
+
+def _req_rank(kb: Kb, query: str, expected: str, limit: int = 20) -> int | None:
+    try:
+        hits = kb.search(query, pack="asvs", limit=limit)
+    except LookupError:
+        return None
+    ids = [hit.req_id for hit in hits]
+    return ids.index(expected) + 1 if expected in ids else None
+
+
+def _skill_quotes(query: str) -> bool:
+    return query in " ".join(SECURE_CODING_SKILL.read_text().split())
+
+
+def _skip_unless_hybrid(kb: Kb) -> None:
+    """The skill's numbers were measured on the shipped hybrid retriever.
+
+    An index without the ONNX model beside it degrades to lexical, and the ranks change
+    completely: measured, the data-flow sentence returns 2 hits under hybrid and V1.3.6 at
+    rank 24 of 50 under lexical. Asserting the hybrid figures against a lexical run reports
+    a defect in the skill that is really a missing model, so skip -- and
+    ``test_full_index_uses_hybrid_retrieval`` is the test that fails on the degradation.
+    """
+    if kb.info().retrieval_mode != "hybrid":
+        pytest.skip("retrieval degraded to lexical; run scripts/download_model.py")
 
 
 # -- content ----------------------------------------------------------
@@ -159,6 +204,41 @@ def test_hybrid_mean_rank_beats_lexical(full, lite):
         return sum(ranks) / len(ranks)
 
     assert mean_rank(full) < mean_rank(lite)
+
+
+# -- the queries the skills teach -------------------------------------
+
+
+@pytest.mark.parametrize("query,expected", ASVS_QUERIES_THE_SKILL_QUOTES)
+def test_the_asvs_queries_the_skill_quotes_rank_their_requirement_first(full, query, expected):
+    """Nothing measured a query the skill teaches, which is how the defect shipped: step 4
+    told an agent to search pack="asvs" with the step 2 data-flow sentence, that sentence
+    never reaches V1.3.6, and the whole suite stayed green because every assertion was about
+    the prose rather than about what the prose retrieves."""
+    assert _skill_quotes(query), (
+        f"the skill no longer quotes {query!r}; re-measure the query it quotes now rather "
+        "than leaving this file asserting about a query nobody is taught"
+    )
+    _skip_unless_hybrid(full)
+    rank = _req_rank(full, query, expected)
+    assert rank == 1, f"{expected} ranked {rank} for {query!r} against pack='asvs'"
+
+
+def test_the_data_flow_sentence_does_not_reach_the_ssrf_requirement(full):
+    """The assertion that would have caught the original defect. The data-flow sentence is
+    the right probe for the cheat sheets and the wrong one for ASVS -- measured, it returns
+    exactly two unrelated requirements -- so the skill inverts the phrasing rule at step 4.
+    Asserted as absence at a depth well past the default window, because the failure mode
+    was a plausible-looking non-empty result, not an empty one."""
+    assert _skill_quotes(DATA_FLOW_SENTENCE), (
+        "the skill no longer quotes the data-flow sentence this case is the counter-example to"
+    )
+    _skip_unless_hybrid(full)
+    rank = _req_rank(full, DATA_FLOW_SENTENCE, "V1.3.6", limit=50)
+    assert rank is None, (
+        f"V1.3.6 now ranks {rank} for the data-flow sentence; the skill tells agents this "
+        "query cannot reach it, so either the corpus changed or the instruction is wrong"
+    )
 
 
 # -- relevance floors -------------------------------------------------

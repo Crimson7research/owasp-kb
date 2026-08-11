@@ -1994,3 +1994,188 @@ def test_the_probe_runner_is_given_the_method_not_just_the_rule():
     _, body = _agent("owasp-probe-runner")
     assert "--resolve" in body, "the pinning mechanism must be named, not implied"
     assert "Stand up the local server first" in body
+
+
+def test_the_secure_coding_skill_claims_a_refactor():
+    """The session that skipped it classified its work by type and stopped: "it's a
+    refactor, the attack surface is unchanged". The verb list named writing,
+    reviewing, triaging, diagnosing and planning a fix, so a field move between two
+    entities matched none of them -- while the change moved a stored credential and
+    an operator-supplied outbound URL, and rewrote the validator."""
+    when = _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower()
+    for verb in ("refactor", "moving", "renaming"):
+        assert verb in when, (
+            f"the description does not claim to apply when {verb}...; work classified "
+            "by type rather than by what the code touches reads it as not applicable"
+        )
+    assert "applies to refactors and mechanical-looking field moves" in when, (
+        "the verbs appear somewhere but nothing claims the skill applies to a "
+        "refactor; the words survive a rewrite that denies the claim, which is how "
+        "a hedge added later would pass this test"
+    )
+
+
+def test_the_secure_coding_description_denies_the_framing_exemption():
+    """The stated reason for not loading it was that the issue never mentioned
+    security. That inference has to be refused on the discovery surface itself: by
+    the time the body is read the skill has already been chosen, so a refutation
+    inside the body arrives after the decision it needed to change."""
+    described = " ".join(
+        _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower().split()
+    )
+    assert (
+        "absence of security framing in the request is not evidence of absence of "
+        "security relevance" in described
+    ), (
+        "the phrase is split or hedged; an agent that reads a qualified version of "
+        "this sentence keeps the exemption it needs to have refused"
+    )
+
+
+def test_the_secure_coding_description_names_the_code_level_nouns_and_precedence():
+    """The refactor and framing-exemption tests pin the two sentences that get the skill
+    considered; neither pins what the discovery half actually rests on. A field move does
+    not mention SSRF or access control -- it mentions the identifier it moves -- and a
+    description that promises retrieval alone gives an agent no reason to look for a
+    control the repository already has."""
+    described = " ".join(
+        _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower().split()
+    )
+    # The whole clause, not the fragment: "never checks whether the codebase already has
+    # the control" contains the fragment and promises the opposite. Mutation-proved -- a
+    # description whose closing sentence read "Never retrieves guidance and never checks
+    # whether the codebase already has the control" passed every other test in this file.
+    assert (
+        "retrieves the applicable owasp cheat sheet guidance and asvs requirements, and "
+        "checks whether the codebase already has the control, before the code is written"
+        in described
+    ), (
+        "the description does not affirmatively claim both retrieval and the precedence "
+        "check; a negating frame around either half leaves an agent with no reason to "
+        "look for an existing control, and it designs a second one"
+    )
+    nouns = (
+        "api keys",
+        "credentials",
+        "connection strings",
+        "base urls",
+        "outbound requests",
+        "redirects",
+    )
+    missing = [noun for noun in nouns if noun not in described]
+    assert not missing, (
+        f"the description does not name {', '.join(missing)}; these are the "
+        "identifier-shaped words a mechanical-looking field move actually contains, "
+        "and the vulnerability-class vocabulary alone never matches such a diff"
+    )
+
+
+def test_the_secure_coding_process_probes_before_it_greps():
+    """ADR 0009 records that an instruction whose result nothing downstream needs was
+    skipped 100% of the time, so each retrieval step here has to feed the next. The
+    corpus probe comes first because it supplies the control names to grep for: a
+    session that greps from names it thought of in advance finds only what it already
+    imagined, which is how a shared guard was missed and a second one nearly written."""
+    body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower().split())
+    precedence = "the control names the guidance named"
+    assert 'pack="cheatsheets"' in body, "the process never probes the cheat sheet pack"
+    assert precedence in body, "the process never establishes precedence in the codebase"
+    assert body.index('pack="cheatsheets"') < body.index(precedence), (
+        "the grep step precedes the corpus probe, so it cannot use the vocabulary the "
+        "corpus supplies"
+    )
+
+
+def test_the_secure_coding_process_consumes_every_tool_it_names():
+    """ADR 0009 records that an instruction whose result nothing downstream consumes was
+    skipped 100% of the time. ``test_the_secure_coding_process_probes_before_it_greps``
+    guards only the probe-before-grep ordering, leaving the narrow, cross-to-ASVS and
+    write-up steps unchecked -- and the ASVS step shipped a query measured never to reach
+    the requirement the skill's own preamble cites."""
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text()
+    # Scoped to the Process section, bounded by the next `## ` heading. A whole-file read
+    # also matches the preamble and the unreachable-server section, which name several of
+    # the same tools in an order that has nothing to do with the steps.
+    start = body.index("## Process")
+    section = " ".join(body[start : body.index("\n## ", start + 1)].lower().split())
+
+    for tool in ("owasp_search", "owasp_outline", "owasp_get", "owasp_related", "kb_info"):
+        assert tool in section, (
+            f"the process never calls {tool}, so whatever it was retrieved for is "
+            "no longer being retrieved"
+        )
+
+    assert section.index("owasp_outline") < section.index("owasp_get"), (
+        "owasp_get runs before owasp_outline chose an anchor, so nothing consumes the "
+        "outline and the fetch pulls whole 37,000-character sheets"
+    )
+    assert section.index('pack="asvs"') < section.index("owasp_related"), (
+        'owasp_related runs before the pack="asvs" search produced a requirement id to '
+        "pass it, so the guidance-edge confirmation has no input"
+    )
+    assert "state which requirements it satisfies" in section, (
+        "the final step does not require naming the requirements the code satisfies, so "
+        "every id and section retrieved by the steps above it is consumed by nothing"
+    )
+
+    # The defect this test's docstring cites was the ASVS step reusing the data-flow
+    # sentence, and every assertion above it survives that wording. Mutation-proved:
+    # reverting step 4 to "Search pack=\"asvs\" with the same data-flow sentence" left the
+    # whole suite green until this assertion existed.
+    assert "do not reuse the data-flow sentence" in section, (
+        "step 4 does not forbid reusing the data-flow sentence for the ASVS search; "
+        'measured, that sentence returns two unrelated requirements against pack="asvs" '
+        "-- an OIDC issuer-metadata check and an L3 parser-consistency requirement -- and "
+        "never V1.3.6, so step 5 then greps the codebase for the wrong control names"
+    )
+
+
+def test_the_secure_coding_process_names_the_data_flow_step():
+    """The step that failed was identification, not retrieval: the old step 1 asked for
+    "the security topic in the code", which presumes the topic was already recognised.
+    A factual data-flow sentence needs no such judgement, and it is also what actually
+    retrieves -- a noun plus its type does not."""
+    body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower().split())
+    assert "data flow" in body, "no step asks what the value does"
+    assert "where the value comes from" in body, "the sentence to write is not specified"
+
+
+def test_the_secure_coding_body_says_a_citation_is_not_precedence():
+    """A session that reached the correct requirement still nearly shipped two defects,
+    because the corpus cannot see the codebase: it was about to write a second URL
+    validator beside an existing shared guard, and to "fix" redirects by disabling them
+    where that guard re-validated every hop. Step 5 exists for that, and the body has to
+    say why -- otherwise the step reads as bureaucracy and gets skipped."""
+    text = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text()
+    start = text.index("## Why call the tools")
+    section = " ".join(text[start : text.index("\n## ", start + 1)].lower().split())
+    assert (
+        "a citation proves you read the requirement. it does not prove the control is "
+        "missing" in section
+    ), (
+        "the claim is split or wrapped in a frame that denies it; a reader who takes "
+        "the negated version keeps the assumption that a requirement id settles whether "
+        "the control exists"
+    )
+    assert "cannot see the codebase" in section, (
+        "the body does not say what the corpus structurally cannot supply"
+    )
+
+
+def test_the_discoverability_note_counts_the_hooks_the_plugin_ships():
+    """The note said "two hooks" after a third had shipped, and denied that any hook
+    solves discoverability while that third one exists to do exactly that -- as the same
+    file argues 50 lines further down. A doc that contradicts itself is read as whichever
+    half the reader reaches first."""
+    shipped = json.loads(PLUGIN.read_text())["hooks"]
+    count = sum(len(matcher["hooks"]) for event in shipped.values() for matcher in event)
+    doc = Path("docs/discoverability.md").read_text().lower()
+    spelled = {1: "one hook", 2: "two hooks", 3: "three hooks", 4: "four hooks"}
+    assert count in spelled, (
+        f"the plugin ships {count} hooks and this test has no word for that count"
+    )
+    claim_start = doc.index("the plugin has since gained")
+    claim = doc[claim_start : doc.index("\n\n", claim_start)]
+    assert spelled[count] in claim, (
+        f"the plugin ships {count} hooks and the sentence that states the count does not say so"
+    )

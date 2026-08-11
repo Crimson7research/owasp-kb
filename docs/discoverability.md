@@ -18,7 +18,9 @@ the agent just answers confidently from memory instead.
 ## The layered response
 
 No single layer below is sufficient by itself; each catches what the others
-miss, at a different point in an agent's decision process.
+miss, at a different point in an agent's decision process. A fifth mechanism, a
+`UserPromptSubmit` hook, backstops all four where they have been observed
+failing; see *Claude Code hooks* under what was rejected.
 
 **1. Trigger-worded tool descriptions.** Every tool description in
 `server/tools.py` is written as an explicit list of topics an agent might be
@@ -99,17 +101,23 @@ before a prompt is even in play.
   solution (trigger-worded descriptions and skill bodies) that is identically
   effective everywhere the four layers above are honored by the client.
 
-  **The plugin has since gained two hooks, and this rejection still stands.**
-  They do not solve discoverability; they enforce assessment invariants that
-  no tool description could — refusing a read of an excluded prior assessment,
-  and refusing triage over an incomplete inventory. The cross-agent objection
-  does not apply to them, because the fan-out they guard is already
-  Claude-Code-only: it depends on `agents/*.md` frontmatter that has no
-  equivalent in the Codex or OpenCode install path. A Claude-Code-only
-  mechanism guarding a Claude-Code-only workflow costs the other clients
-  nothing, whereas a Claude-Code-only *discovery* mechanism would have left
-  two thirds of the target surface weaker. See ADR
-  [0012](decisions/0012-enforcement-mechanisms.md).
+  **The plugin has since gained three hooks, and this rejection now stands only for
+  the primary discovery layer.** Two enforce assessment invariants no tool
+  description could — refusing a read of an excluded prior assessment, and refusing
+  triage over an incomplete inventory. The cross-agent objection does not apply to
+  those, because the fan-out they guard is already Claude-Code-only: it depends on
+  `agents/*.md` frontmatter that has no equivalent in the Codex or OpenCode install
+  path. The third, `flag_security_topic.py`, addresses a failure neither the other two
+  nor the four layers above can reach. Findability was not the problem — the observed
+  case below records the skill being found, priced and declined — so a longer
+  description would have changed nothing. Being chosen was the problem, and a hook is
+  the only layer that fires without being chosen. That is why it shipped despite the
+  cross-agent objection, which still rules out a Claude-Code-only mechanism as the
+  *primary* discovery surface: trigger-worded descriptions remain that, because they
+  work identically in Codex and OpenCode. A hook backstops them where they have been
+  observed failing. See ADR
+  [0012](decisions/0012-enforcement-mechanisms.md) for the two invariant-enforcing
+  hooks; the case for this one is in *The anti-goal, observed* below.
 
 ## The anti-goal
 
@@ -164,6 +172,7 @@ findable, and findability was never the problem in this case. That is why the
 routing mechanism added here is a `UserPromptSubmit` hook rather than a longer
 description: a hook fires without being chosen, and the skill was chosen against.
 Its payload argues about cost rather than value, because the objection was about
-cost — checking is one call now; not checking risks a fix that ships, is believed
-done, and is reopened later. See ADR 0012 for which failure each mechanism can
-stop, and ADR 0014's sibling reasoning about proxies versus the thing itself.
+cost — the whole check was measured at six minutes; not checking risks a fix that
+ships, is believed done, and is reopened later. See ADR 0012 for which failure
+each mechanism can stop, and ADR 0014's sibling reasoning about proxies versus
+the thing itself.

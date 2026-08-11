@@ -16,6 +16,10 @@ Then three failures arrived that the assembly point cannot see, and each was
 fixed with a different mechanism. Nothing wrote down which mechanism suits
 which job, so the next person meets three unexplained precedents.
 
+All three mechanisms below are about enforcing invariants; the
+`UserPromptSubmit` routing hook added later is a discovery mechanism instead,
+whose case is recorded in [docs/discoverability.md](../discoverability.md).
+
 | Failure | Visible at assembly? | Fixed with |
 |---|---|---|
 | A finder grepped an excluded prior assessment and quoted the hit | No — the text had already reached the agent | A `PreToolUse` hook |
@@ -77,13 +81,18 @@ outcome; naming an outcome without one yields prose instead of the artefact.
 ### Which way each mechanism fails
 
 This is the part that does not generalise, and the part most likely to be got
-wrong by pattern-matching the last case.
+wrong by pattern-matching the last case. The table covers the fail direction of
+every hook the plugin ships, including the `UserPromptSubmit` routing hook that
+is otherwise outside this ADR's scope: a hook's fail direction is the wrong thing
+to leave unrecorded merely because the argument for its existence lives in
+another document.
 
 | Mechanism | Fails | Because |
 |---|---|---|
 | `block_excluded_reads` | **open** | A hook failing closed breaks unrelated sessions on a bug of its own. The roster rejecting findings that cite an excluded path remains the real gate, so an open failure degrades to the pre-hook state rather than to nothing. |
 | `gate_triage_on_inventory` | **open** | An over-refusal stops the assessment outright. There is no cheaper downstream gate, but a halt is worse than the hole it guards. |
 | `findings.jsonl` loading | **closed** | A missing file read as an empty set produces a roster reporting every requirement as `INSUFFICIENT EVIDENCE` — which reads as an assessment result, not as a missing file. |
+| `flag_security_topic` | **open** | It guards a reminder, so an open failure degrades to exactly the behaviour before the hook existed, which is recognisable and survivable. |
 
 The rule underneath: **fail open when the degraded state is recognisable as
 degraded, and fail closed when it is indistinguishable from a legitimate
@@ -92,19 +101,25 @@ entirely wrong, and nothing downstream can tell. An unarmed exclusion hook
 yields the behaviour the project had a week earlier, with another gate still
 standing.
 
-Note that both hooks fail open and the reasoning differs for each. Two
-mechanisms agreeing on a direction is not a pattern to copy — it is two
+Note that all three hooks fail open and the reasoning differs for each. Three
+mechanisms agreeing on a direction is not a pattern to copy — it is three
 separate arguments that happened to land the same way.
 
 ### Scoping is what makes a hook shippable
 
 A hook ships to every session of everyone who installs the plugin, including
-sessions doing unrelated work. Both are keyed to the session that armed them:
-the exclusion list at `sessions/<id>/excluded`, the inventory gate at that
-session's concerns file. A session that never ran an assessment finds no file
-and every call is allowed. Interference with unrelated work is impossible
-rather than unlikely, and nothing is written into the target repository. See
-ADR [0013](0013-session-state-on-disk.md) for the state directory itself.
+sessions doing unrelated work. The two `PreToolUse` hooks are keyed to the
+session that armed them: the exclusion list at `sessions/<id>/excluded`, the
+inventory gate at that session's concerns file. A session that never ran an
+assessment finds no file and every call is allowed, so for those two,
+interference with unrelated work is impossible rather than unlikely. Nothing
+arms the `UserPromptSubmit` routing hook — it fires in any session whose prompt
+matches its vocabulary and writes its marker unconditionally — so it is scoped
+the other way: by that vocabulary match and by a once-per-session marker that
+holds it to a single reminder, rather than by having been armed. That bounds it
+instead of excluding it, which is why its fail direction is in the table above.
+None of the three writes anything into the target repository. See ADR
+[0013](0013-session-state-on-disk.md) for the state directory itself.
 
 They are written in Python, not node. Node is absent from this project's
 container, and a hook its own CI cannot exercise is an unexercised path by

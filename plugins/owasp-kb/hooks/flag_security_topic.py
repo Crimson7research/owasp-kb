@@ -14,15 +14,23 @@ validation, which the SSRF cheat sheet documents as bypassable via DNS pinning.
 
 So the failure was not a missed cue. The skill was seen, priced, and declined. A
 reminder that merely names the skill is disposed of by the same reasoning, which is
-why the injected text argues about cost rather than value: checking is one call
-now, and not checking risks a fix that ships, is believed done, and is reopened
-later.
+why the injected text argues about cost rather than value: the whole check was
+measured at six minutes, and not checking risks a fix that ships, is believed done,
+and is reopened later.
 
 ONCE PER SESSION. Whether the skill was already invoked is not observable from
 here -- a UserPromptSubmit hook receives the prompt, not the conversation. One
 nudge per session is the achievable approximation and covers the intent: after it,
 the agent has either acted or decided not to, and repeating the line changes
 neither.
+
+REACH IS WIDER THAN A HUMAN PROMPT. Observed: this hook fired on the text of a
+task-notification carrying a subagent's report of work it had just done, not on
+anything a person typed. The vocabulary is therefore matched against agent-generated
+text too, which is a reason the payload argues rather than merely naming the skill --
+the reader may be mid-implementation rather than mid-decision. It also means the one
+nudge a session gets can be spent late: in that session it arrived after the code was
+written, which is worth weighing against the once-per-session reasoning above.
 
 FAILS OPEN, deliberately. Any exception exits 0 and emits nothing. Per ADR 0012 a
 hook failing closed breaks unrelated sessions on a bug of its own, and this one
@@ -47,13 +55,29 @@ which from the inside. Requirements in this area typically enumerate several \
 dimensions a fix has to cover; missing one produces a fix that looks correct and \
 is not.
 
-The costs are not symmetric. Checking is one owasp_search call, now. Not checking \
-risks a fix that ships, is believed done, and has to be reopened and redone later \
--- after the code is in.
+The costs are not symmetric. Checking is a handful of retrieval calls -- an \
+owasp_search, then the steps it points to -- paid once, before anything is written. \
+Not checking risks a fix that ships, is believed done, and has to be reopened and \
+redone later -- after the code is in.
 
 So call it before deciding the approach, not to confirm one you already chose. \
 Then cite the ASVS ids and Cheat Sheet anchors you relied on, or state plainly \
-that you answered from memory."""
+that you answered from memory.
+
+Absence of security framing in the request is not evidence of absence of security \
+relevance. A refactor that moves a credential or a request destination changes the \
+surface even when the diff looks mechanical.
+
+Measured on a session that skipped this check: the check itself cost six minutes, \
+against the three hours and twenty minutes of planning it should have informed. That \
+checking is cheap was already stated above, and was declined anyway. The point here is \
+narrower -- it landed before the code by luck, two tasks ahead of the implementation, \
+and nothing arranges that.
+
+Check whether this codebase already has the control before you design one. That \
+session was about to hand-roll a validator its own repository already had, and to \
+"fix" redirects by disabling them where an existing guard re-validated every hop. The \
+corpus cannot tell you either -- grep for the control names the guidance uses."""
 
 
 def _context() -> str | None:
