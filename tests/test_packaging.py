@@ -2030,3 +2030,29 @@ def test_the_secure_coding_description_denies_the_framing_exemption():
         "the phrase is split or hedged; an agent that reads a qualified version of "
         "this sentence keeps the exemption it needs to have refused"
     )
+
+
+def test_the_secure_coding_process_probes_before_it_greps():
+    """ADR 0009 records that an instruction whose result nothing downstream needs was
+    skipped 100% of the time, so each retrieval step here has to feed the next. The
+    corpus probe comes first because it supplies the control names to grep for: a
+    session that greps from names it thought of in advance finds only what it already
+    imagined, which is how a shared guard was missed and a second one nearly written."""
+    body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower().split())
+    precedence = "the control names the guidance named"
+    assert 'pack="cheatsheets"' in body, "the process never probes the cheat sheet pack"
+    assert precedence in body, "the process never establishes precedence in the codebase"
+    assert body.index('pack="cheatsheets"') < body.index(precedence), (
+        "the grep step precedes the corpus probe, so it cannot use the vocabulary the "
+        "corpus supplies"
+    )
+
+
+def test_the_secure_coding_process_names_the_data_flow_step():
+    """The step that failed was identification, not retrieval: the old step 1 asked for
+    "the security topic in the code", which presumes the topic was already recognised.
+    A factual data-flow sentence needs no such judgement, and it is also what actually
+    retrieves -- a noun plus its type does not."""
+    body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower().split())
+    assert "data flow" in body, "no step asks what the value does"
+    assert "where the value comes from" in body, "the sentence to write is not specified"

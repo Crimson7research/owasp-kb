@@ -28,23 +28,52 @@ validate a decision does not surface what that decision already excluded.
 
 ## Process
 
-1. **Search first.** Call `owasp_search` with the security topic in the code you are about
-   to write or review. **Do not answer from memory** — recalled security advice is often a
-   version out of date and carries no citation a reviewer can check.
+1. **Name the data flow. Do not judge relevance.** For each field, config key, route or
+   parameter the change touches, write one sentence saying where the value comes from,
+   where it is stored, and what it is used to do. This is a factual description of the
+   code and needs no security vocabulary — which is the point, because deciding whether a
+   change "is security work" is the judgement that fails. A field move is a change.
 
-2. **Narrow before fetching.** Cheat sheets reach 37,000 characters. Call `owasp_outline`
+2. **Probe the cheat sheets with those sentences.** Call `owasp_search` with
+   `pack="cheatsheets"`, once per sentence. Cheat sheet titles and bodies are
+   topic-shaped, so mundane wording reaches them — `api key supplied by an operator,
+   stored in the database` returns `Symfony_Cheat_Sheet#sensitive-data` and
+   `REST_Security_Cheat_Sheet#api-keys`, with no security vocabulary in the query at all.
+   A noun plus its *type* reaches less: `base url for outbound http client` never
+   reaches the SSRF sheet, at any depth the search returns, and reaches the
+   unvalidated-redirect sheet only at rank 28 of 44 — past the default window entirely.
+   What surfaces early instead, at rank 7, is
+   `Ruby_on_Rails_Cheat_Sheet#redirects-and-forwards` — real redirect-validation advice,
+   but framework-specific and incidental, not the general treatment. `url supplied by an
+   operator, used to make a request from the server` instead puts
+   `Unvalidated_Redirects_and_Forwards_Cheat_Sheet#dangerous-forward-example` at the top,
+   whose `#validating-urls` section cross-references the SSRF cheat sheet's
+   URL-validation guidance. Follow those cross-references. **Do not answer from memory**
+   — recalled security advice is often a version out of date and carries no citation a
+   reviewer can check. An empty result is cheap and is itself an answer.
+
+3. **Narrow before fetching.** Cheat sheets reach 37,000 characters. Call `owasp_outline`
    on the best-matching `doc_key`, pick the relevant anchor, then `owasp_get` that section
    only.
 
-3. **Find what is required, not just recommended.** For any ASVS requirement ids returned,
-   call `owasp_related(<req_id>)` to reach the cheat sheet section describing how to satisfy
-   it. Cheat sheets say what is advisable; ASVS says what is required at each level.
+4. **Cross to ASVS for the rule.** Cheat sheets describe implementation mistakes; ASVS
+   states what is *required* at each level. Search `pack="asvs"` with the same data-flow
+   sentence, then call `owasp_related(<req_id>, rel="guidance")` to confirm the sheet you
+   read is the one mapped to that requirement. The reverse hop does not exist — passing a
+   cheat sheet `doc_key` to `owasp_related` returns no edges — so do not read that
+   emptiness as the corpus having no mapping.
 
-4. **Cite everything.** Every security claim carries its citation inline — `ASVS 5.0.0
+5. **Establish precedence with the vocabulary the corpus just gave you.** Call `Grep` on
+   the codebase for the control names the guidance named — allowlist, scheme, guard,
+   connect, redirect, whatever it used — and not for names you thought of before reading.
+   Then either extend the control that already exists or state why it does not fit. Do
+   not write a validator, guard or middleware of your own before this step has run.
+
+6. **Cite everything.** Every security claim carries its citation inline — `ASVS 5.0.0
    V6.2.1` or `Authentication_Cheat_Sheet#password-storage`. Get the exact version from
    `kb_info`.
 
-5. **Write the code**, then state which requirements it satisfies and which it does not.
+7. **Write the code**, then state which requirements it satisfies and which it does not.
 
 ## If the knowledge base is unreachable
 
