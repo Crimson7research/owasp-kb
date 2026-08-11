@@ -543,3 +543,67 @@ def test_the_hook_fails_open_on_an_unusable_state_directory(tmp_path):
     result = _run_hook({"session_id": "s1", "prompt": "an SSRF bug"}, blocker)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == ""
+
+
+def test_the_server_version_check_reports_a_mismatch():
+    """The failure this exists for: a session read server_version 0.17.0 from a server
+    while the plugin pinned the v0.17.2 image, and could not tell whether the image was
+    stale or the release had skipped its bump. Naming both numbers is what makes those
+    two distinguishable."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.17.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, '{"server_version": "0.18.0"}') == ("0.17.0", "0.18.0")
+
+
+def test_the_server_version_check_passes_when_they_agree():
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, '{"server_version": "0.18.0"}') is None
+
+
+def test_the_server_version_check_stays_quiet_when_the_record_predates_it():
+    """A plugin installed before the record carried a version must not start failing its
+    own doctor. An absent field is not a mismatch."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, '{"packs": {}}') is None
+
+
+def test_the_server_version_check_stays_quiet_when_the_server_says_nothing():
+    """check_server_answers already reports a server that did not answer kb_info. This
+    must not turn that into a confusing second failure about versions."""
+    doctor = _module("doctor")
+    assert doctor.version_mismatch("", '{"server_version": "0.18.0"}') is None
+
+
+def test_the_server_version_check_survives_an_unreadable_record():
+    """The record is a file on disk that a user could have edited. A crash inside doctor
+    is worse than the drift it was looking for."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, "not json at all") is None
+
+
+def test_the_server_version_check_survives_a_missing_record():
+    """doctor must not fail its server check because the record is absent -- a plugin
+    copy without one is not evidence that the server is stale."""
+    doctor = _module("doctor")
+    answer = '{"id":2,"result":{"content":[{"text":"{\\"server_version\\": \\"0.18.0\\"}"}]}}'
+    assert doctor.version_mismatch(answer, "") is None
+
+
+def test_the_server_version_check_ignores_a_differently_named_key():
+    """The pattern is deliberately tolerant of JSON-RPC's escaped quotes, which is how a
+    loose version of it could match a neighbouring key that merely starts the same way.
+
+    The second payload is the one that discriminates. A pattern permitting any few
+    non-digits between the key and the number -- the first form this check had -- rejects
+    `server_version_major` only because the intervening text is long and `9` is not a
+    version. Shorten the suffix and supply a version-shaped value and it matches, so that
+    is the case asserted here as well."""
+    doctor = _module("doctor")
+    record = '{"server_version": "0.18.0"}'
+    major = '{"id":2,"result":{"content":[{"text":"{\\"server_version_major\\": \\"9\\"}"}]}}'
+    assert doctor.version_mismatch(major, record) is None
+    short = '{"id":2,"result":{"content":[{"text":"{\\"server_version_x\\":\\"1.2.3\\"}"}]}}'
+    assert doctor.version_mismatch(short, record) is None

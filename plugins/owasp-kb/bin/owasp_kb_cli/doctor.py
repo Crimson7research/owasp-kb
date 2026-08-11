@@ -129,6 +129,36 @@ def check_image_present() -> Result:
     )
 
 
+# Tolerant of the escaping: kb_info's answer arrives as a JSON-RPC line whose result
+# holds the tool's own JSON as text, so the quotes are backslashed. The rest of this
+# check reads that line by substring for the same reason -- see the comment in
+# check_server_answers about why the whole exchange is not searched.
+REPORTED_VERSION = re.compile(r'server_version\\?"?\s*:\s*\\?"?(\d+\.\d+\.\d+)')
+
+
+def version_mismatch(answer: str, record_text: str) -> tuple[str, str] | None:
+    """`(reported, expected)` when the running server's version disagrees with the
+    shipped record, or None.
+
+    None when either side is silent, and that is deliberate in both directions. A record
+    written before this field existed must not make a correctly installed plugin fail its
+    own doctor, and a server that did not answer kb_info is already reported by the
+    caller -- turning it into a second failure about versions would send a reader after
+    the wrong thing.
+    """
+    try:
+        expected = json.loads(record_text).get("server_version")
+    except json.JSONDecodeError:
+        return None
+    if not expected:
+        return None
+    found = REPORTED_VERSION.search(answer)
+    if not found:
+        return None
+    reported = found.group(1)
+    return None if reported == expected else (reported, expected)
+
+
 def check_server_answers() -> Result:
     image = pinned_image()
     if _run("docker", "image", "inspect", image).returncode != 0:
@@ -171,7 +201,28 @@ def check_server_answers() -> Result:
             remedy=f"docker run -i --rm --network none {image}",
         )
     mode = "hybrid" if "hybrid" in answer else "lexical"
-    return Result(True, f"the server answers; retrieval mode {mode}")
+    # A record that exists but cannot be read is not evidence of drift. run()'s blanket
+    # handler would otherwise turn a permissions problem into a failed server check,
+    # which points a reader at the wrong thing.
+    record = plugin_root() / "pinned-packs.json"
+    try:
+        recorded = record.read_text()
+    except OSError:
+        recorded = ""
+    drift = version_mismatch(answer, recorded)
+    if drift:
+        reported, expected = drift
+        return Result(
+            False,
+            f"the server reports version {reported}; the shipped record names {expected}",
+            remedy=f"docker pull {image}   (then restart the session)",
+            notes=(
+                "a reconnect reports success whether or not the image behind it is "
+                "current, so this comparison is the only signal that the server "
+                "answering is not the one this plugin ships",
+            ),
+        )
+    return Result(True, f"the server answers; retrieval mode {mode}, version matches")
 
 
 def check_hooks() -> Result:
