@@ -1,0 +1,43 @@
+name: release-promote
+
+# The other half of a two-step release. `release.yml` publishes the images on a tag and
+# drafts the Release; this publishes that draft when the pin pull request merges, which
+# is the moment installers actually get the new image -- the marketplace is read from
+# the default branch. Keeping the Release drafted until then means the Releases page and
+# what is installable agree, and a release that stalls with an unmerged pin reads as
+# incomplete rather than done.
+on:
+  pull_request:
+    types: [closed]
+
+# Serialised per branch. Two runs racing to publish the same release would produce one
+# confusing failure rather than two harmless successes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    # `closed` fires whether or not the request merged, and a pin request closed
+    # unmerged means the release was abandoned -- its draft must stay a draft.
+    if: >
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/pin-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the drafted release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # release.yml names the branch release/pin-<tag>, so the tag needs no
+          # rediscovery here. --repo is explicit because this job does not check out.
+          # Exact because release.yml does not set create-pull-request's branch-suffix;
+          # with a suffix the branch would be release/pin-<tag>-1 and this would strip
+          # to a tag that does not exist.
+          TAG="${BRANCH#release/pin-}"
+          gh release edit "$TAG" --draft=false --repo "$REPO"

@@ -2269,3 +2269,34 @@ def test_the_drafted_release_is_a_draft():
     _, step = _named_step("Draft the release")
     assert "--draft" in step["run"], "the release is published before delivery"
     assert "--generate-notes" in step["run"], "the release carries no notes"
+
+
+PROMOTE = Path(".github/workflows/release-promote.yml")
+
+
+def test_the_promotion_runs_only_on_a_merged_pin_request():
+    """A pin pull request closed without merging means the release was abandoned and
+    the draft must stay a draft. `pull_request: closed` fires on both, so the guard is
+    the only thing separating them."""
+    workflow = yaml.safe_load(PROMOTE.read_text())
+    # YAML 1.1 reads a bare `on:` as the boolean True, so the trigger block is not
+    # under the key it is written as.
+    triggers = workflow.get("on") or workflow[True]
+    assert triggers["pull_request"]["types"] == ["closed"]
+    condition = " ".join(workflow["jobs"]["promote"]["if"].split())
+    assert "github.event.pull_request.merged == true" in condition, (
+        "the promotion would publish a release whose pin request was closed unmerged"
+    )
+    assert "release/pin-v" in condition, (
+        "the promotion is not restricted to pin requests, so any merged pull request "
+        "would try to publish a release"
+    )
+
+
+def test_the_promotion_derives_the_tag_from_the_branch_name():
+    """release.yml names the branch release/pin-<tag>, which is what makes the tag
+    recoverable in a later run without rediscovering which release a merge belongs to."""
+    text = PROMOTE.read_text()
+    assert "release/pin-" in text and "--draft=false" in text, (
+        "the promotion does not turn the draft into a published release"
+    )
