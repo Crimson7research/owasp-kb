@@ -21,10 +21,21 @@ cheat sheet documents as bypassable via DNS pinning. Neither gap was visible fro
 inside the reasoning that produced the plan, and the session's own explanation for
 skipping this skill was that it would add "process overhead without new insight".
 
+A second case. Another session reached the correct requirement and still nearly
+shipped two defects, because the corpus cannot see the codebase. It was about to write
+a fresh URL validator while a shared guard in the same repository already covered
+schemes, hostnames and operator-configured network exceptions; and it was about to
+"fix" redirect-following by disabling redirects, where that guard already re-validated
+every hop — the disabling would have broken legitimate destinations while handling the
+attack worse. A citation proves you read the requirement. It does not prove the control
+is missing.
+
 The corpus gives you two things recall cannot: a **citable id** a reviewer can
 check, and an **enumeration** of what the fix must address. Call the tools before
 choosing the approach, not to confirm one you have already chosen -- a search run to
-validate a decision does not surface what that decision already excluded.
+validate a decision does not surface what that decision already excluded. What neither
+gives you is whether this codebase already satisfies the requirement. That comes from
+the codebase, and no citation stands in for it.
 
 ## Process
 

@@ -2056,3 +2056,25 @@ def test_the_secure_coding_process_names_the_data_flow_step():
     body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower().split())
     assert "data flow" in body, "no step asks what the value does"
     assert "where the value comes from" in body, "the sentence to write is not specified"
+
+
+def test_the_secure_coding_body_says_a_citation_is_not_precedence():
+    """A session that reached the correct requirement still nearly shipped two defects,
+    because the corpus cannot see the codebase: it was about to write a second URL
+    validator beside an existing shared guard, and to "fix" redirects by disabling them
+    where that guard re-validated every hop. Step 5 exists for that, and the body has to
+    say why -- otherwise the step reads as bureaucracy and gets skipped."""
+    text = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text()
+    start = text.index("## Why call the tools")
+    section = " ".join(text[start : text.index("\n## ", start + 1)].lower().split())
+    assert (
+        "a citation proves you read the requirement. it does not prove the control is "
+        "missing" in section
+    ), (
+        "the claim is split or wrapped in a frame that denies it; a reader who takes "
+        "the negated version keeps the assumption that a requirement id settles whether "
+        "the control exists"
+    )
+    assert "cannot see the codebase" in section, (
+        "the body does not say what the corpus structurally cannot supply"
+    )
