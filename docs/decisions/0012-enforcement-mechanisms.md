@@ -81,7 +81,11 @@ outcome; naming an outcome without one yields prose instead of the artefact.
 ### Which way each mechanism fails
 
 This is the part that does not generalise, and the part most likely to be got
-wrong by pattern-matching the last case.
+wrong by pattern-matching the last case. The table covers the fail direction of
+every hook the plugin ships, including the `UserPromptSubmit` routing hook that
+is otherwise outside this ADR's scope: a hook's fail direction is the wrong thing
+to leave unrecorded merely because the argument for its existence lives in
+another document.
 
 | Mechanism | Fails | Because |
 |---|---|---|
@@ -104,12 +108,18 @@ separate arguments that happened to land the same way.
 ### Scoping is what makes a hook shippable
 
 A hook ships to every session of everyone who installs the plugin, including
-sessions doing unrelated work. Both are keyed to the session that armed them:
-the exclusion list at `sessions/<id>/excluded`, the inventory gate at that
-session's concerns file. A session that never ran an assessment finds no file
-and every call is allowed. Interference with unrelated work is impossible
-rather than unlikely, and nothing is written into the target repository. See
-ADR [0013](0013-session-state-on-disk.md) for the state directory itself.
+sessions doing unrelated work. The two `PreToolUse` hooks are keyed to the
+session that armed them: the exclusion list at `sessions/<id>/excluded`, the
+inventory gate at that session's concerns file. A session that never ran an
+assessment finds no file and every call is allowed, so for those two,
+interference with unrelated work is impossible rather than unlikely. Nothing
+arms the `UserPromptSubmit` routing hook — it fires in any session whose prompt
+matches its vocabulary and writes its marker unconditionally — so it is scoped
+the other way: by that vocabulary match and by a once-per-session marker that
+holds it to a single reminder, rather than by having been armed. That bounds it
+instead of excluding it, which is why its fail direction is in the table above.
+None of the three writes anything into the target repository. See ADR
+[0013](0013-session-state-on-disk.md) for the state directory itself.
 
 They are written in Python, not node. Node is absent from this project's
 container, and a hook its own CI cannot exercise is an unexercised path by

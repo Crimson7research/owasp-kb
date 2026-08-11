@@ -56,9 +56,13 @@ the codebase, and no citation stands in for it.
    entirely. `url supplied by an operator, used to make a request from the server` instead
    puts `Unvalidated_Redirects_and_Forwards_Cheat_Sheet#dangerous-forward-example` at the
    top, whose `#validating-urls` section cross-references the SSRF cheat sheet's
-   URL-validation guidance. Follow those cross-references. **Do not answer from memory**
-   — recalled security advice is often a version out of date and carries no citation a
-   reviewer can check. An empty result is cheap and is itself an answer.
+   URL-validation guidance. Follow those cross-references by calling `owasp_outline` on the
+   referenced document rather than passing the inline anchor to `owasp_get`: a
+   cross-referenced anchor is not necessarily an indexed one. That link points at
+   `#application-layer`, an h5 the index does not carry, so `owasp_get` answers `unknown
+   anchor` and lists the ones it has. **Do not answer from memory** — recalled security
+   advice is often a version out of date and carries no citation a reviewer can check. An
+   empty result is cheap and is itself an answer.
 
 3. **Narrow before fetching.** Cheat sheets reach 37,000 characters. Call `owasp_outline`
    on the best-matching `doc_key`, pick the relevant anchor, then `owasp_get` that section
@@ -68,17 +72,23 @@ the codebase, and no citation stands in for it.
    implementation mistakes; ASVS states what is *required* at each level. The phrasing rule
    inverts between the packs, so do not reuse the data-flow sentence here. Mundane
    origin-and-use wording reaches the cheat sheets because their titles are topic-shaped;
-   ASVS requirement text is normative security prose, and it is reached by the words the
-   sheet you just read used — the name of the vulnerability class, the name of the control.
-   Search `pack="asvs"` with those. Measured: `url supplied by an operator, used to make a
-   request from the server` returns exactly two requirements against `pack="asvs"`, an OIDC
-   issuer-metadata check and an L3 parser-consistency requirement, and never reaches
-   `V1.3.6` at any depth the search returns — while `SSRF allowlist validate outbound
-   request destination` returns `V1.3.6` first and `V13.2.4` second. Then call
-   `owasp_related(<req_id>, rel="guidance")` to confirm the sheet you read is the one mapped
-   to that requirement. The reverse hop does not exist — passing a cheat sheet `doc_key` to
-   `owasp_related` returns no edges — so do not read that emptiness as the corpus having no
-   mapping.
+   ASVS requirement text is normative security prose, and it is reached by the register the
+   sheet you just read writes in — the name of the vulnerability class, the name of the
+   control. Search `pack="asvs"` with those. Measured: `url supplied by an operator, used to
+   make a request from the server` returns exactly two requirements against `pack="asvs"`, an
+   OIDC issuer-metadata check and an L3 parser-consistency requirement, and never reaches
+   `V1.3.6` at any depth the search returns. Words lifted from the sheet do: `SSRF allowlist
+   input validation domain name IP address URL` returns `V1.3.6` and nothing else, and a
+   paraphrase in the same register — `SSRF allowlist validate outbound request destination` —
+   returns `V1.3.6` first and `V13.2.4` second. The class and control names reach the
+   requirement about the code and stop near it, so where a configuration or deployment layer
+   is in scope, widen with more of the sheet's own phrasing: `SSRF allowlist of identified
+   and trusted applications the server may call, network layer firewall allowed routes` puts
+   `V13.2.4` first and `V1.3.6` second, where the shorter query never returned `V13.2.4` at
+   all. Then call `owasp_related(<req_id>, rel="guidance")` to confirm the sheet you read is
+   the one mapped to that requirement. The reverse hop does not exist — passing a cheat sheet
+   `doc_key` to `owasp_related` returns no edges — so do not read that emptiness as the
+   corpus having no mapping.
 
 5. **Establish precedence with the vocabulary the corpus just gave you.** Call `Grep` on
    the codebase for the control names the guidance named — allowlist, scheme, guard,

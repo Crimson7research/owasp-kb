@@ -2041,9 +2041,18 @@ def test_the_secure_coding_description_names_the_code_level_nouns_and_precedence
     described = " ".join(
         _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower().split()
     )
-    assert "checks whether the codebase already has the control" in described, (
-        "the description promises retrieval only, so an agent that reads it has no "
-        "reason to look for an existing control and designs a second one"
+    # The whole clause, not the fragment: "never checks whether the codebase already has
+    # the control" contains the fragment and promises the opposite. Mutation-proved -- a
+    # description whose closing sentence read "Never retrieves guidance and never checks
+    # whether the codebase already has the control" passed every other test in this file.
+    assert (
+        "retrieves the applicable owasp cheat sheet guidance and asvs requirements, and "
+        "checks whether the codebase already has the control, before the code is written"
+        in described
+    ), (
+        "the description does not affirmatively claim both retrieval and the precedence "
+        "check; a negating frame around either half leaves an agent with no reason to "
+        "look for an existing control, and it designs a second one"
     )
     nouns = (
         "api keys",
@@ -2107,6 +2116,17 @@ def test_the_secure_coding_process_consumes_every_tool_it_names():
     assert "state which requirements it satisfies" in section, (
         "the final step does not require naming the requirements the code satisfies, so "
         "every id and section retrieved by the steps above it is consumed by nothing"
+    )
+
+    # The defect this test's docstring cites was the ASVS step reusing the data-flow
+    # sentence, and every assertion above it survives that wording. Mutation-proved:
+    # reverting step 4 to "Search pack=\"asvs\" with the same data-flow sentence" left the
+    # whole suite green until this assertion existed.
+    assert "do not reuse the data-flow sentence" in section, (
+        "step 4 does not forbid reusing the data-flow sentence for the ASVS search; "
+        'measured, that sentence returns two unrelated requirements against pack="asvs" '
+        "-- an OIDC issuer-metadata check and an L3 parser-consistency requirement -- and "
+        "never V1.3.6, so step 5 then greps the codebase for the wrong control names"
     )
 
 
