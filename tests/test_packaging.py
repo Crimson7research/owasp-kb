@@ -2186,11 +2186,18 @@ def _release_steps() -> list[dict]:
     return workflow["jobs"]["publish"]["steps"]
 
 
-def _step_index(needle: str) -> int:
-    for position, step in enumerate(_release_steps()):
-        if needle in (step.get("run") or ""):
-            return position
-    raise AssertionError(f"no step in release.yml runs {needle!r}")
+def _named_step(name: str) -> tuple[int, dict]:
+    """The one step called `name`, and its position.
+
+    Indexed by name rather than by searching each step's `run` for a command. A
+    substring search returns the first hit anywhere in the file, so a comment
+    mentioning `docker build` -- or a build command split across a variable -- moves the
+    index off the real step, and an ordering assertion built on it passes while the
+    order is wrong. That is the failure these assertions exist to catch.
+    """
+    matches = [(i, step) for i, step in enumerate(_release_steps()) if step.get("name") == name]
+    assert len(matches) == 1, f"expected exactly one step named {name!r}, found {len(matches)}"
+    return matches[0]
 
 
 def test_the_release_writes_the_version_before_it_builds_anything():
@@ -2198,7 +2205,16 @@ def test_the_release_writes_the_version_before_it_builds_anything():
     The fix only works in one order: the version is baked in at docker build time, so
     a write that lands afterwards fixes the repository and leaves the artefact wrong --
     which is the same failure, one release later."""
-    assert _step_index("scripts/set_version.py") < _step_index("docker build"), (
+    version_at, version_step = _named_step("Write the release version")
+    build_at, build_step = _named_step("Build, smoke test, then push")
+    assert "scripts/set_version.py" in version_step["run"], (
+        "the step named for writing the version does not run the script that writes it"
+    )
+    assert "docker build" in build_step["run"], (
+        "the build step no longer builds, so this ordering assertion is comparing "
+        "against the wrong step"
+    )
+    assert version_at < build_at, (
         "release.yml writes the version after building the image, so the published "
         "image carries the previous release's number"
     )
@@ -2207,7 +2223,7 @@ def test_the_release_writes_the_version_before_it_builds_anything():
 def test_the_release_takes_the_version_from_the_tag_it_was_triggered_by():
     """A hardcoded version, or one read from the tree, reintroduces the hand step this
     removes."""
-    step = _release_steps()[_step_index("scripts/set_version.py")]
+    _, step = _named_step("Write the release version")
     assert "github.ref_name" in step["run"], (
         "the version does not come from the tag, so nothing ties the published "
         "artefact to the tag that published it"
@@ -2226,3 +2242,30 @@ def test_the_pin_request_carries_the_version_it_wrote():
             )
             return
     raise AssertionError("no step in release.yml declares add-paths")
+
+
+def test_the_release_drafts_a_release_only_after_the_images_are_pushed():
+    """A Release page created before the push would name a version whose images do not
+    exist if a smoke test then fails. The smoke test gates the push for the same
+    reason: a broken image is never published."""
+    draft_at, draft_step = _named_step("Draft the release")
+    push_at, push_step = _named_step("Build, smoke test, then push")
+    assert "docker push" in push_step["run"], (
+        "the push step no longer pushes, so this ordering assertion is comparing "
+        "against the wrong step"
+    )
+    assert "gh release create" in draft_step["run"], (
+        "the step named for drafting the release does not create one"
+    )
+    assert draft_at > push_at, (
+        "release.yml creates the GitHub Release before pushing the images, so a "
+        "failed push leaves a Release naming artefacts that were never published"
+    )
+
+
+def test_the_drafted_release_is_a_draft():
+    """Delivery is the pin pull request merging -- docs/build.md says so. A published
+    Release before that merge claims a version nobody installing the plugin can get."""
+    _, step = _named_step("Draft the release")
+    assert "--draft" in step["run"], "the release is published before delivery"
+    assert "--generate-notes" in step["run"], "the release carries no notes"
