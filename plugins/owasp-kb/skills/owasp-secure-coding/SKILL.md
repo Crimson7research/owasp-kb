@@ -46,19 +46,16 @@ the codebase, and no citation stands in for it.
    change "is security work" is the judgement that fails. A field move is a change.
 
 2. **Probe the cheat sheets with those sentences.** Call `owasp_search` with
-   `pack="cheatsheets"`, once per sentence. Cheat sheet titles and bodies are
-   topic-shaped, so mundane wording reaches them — `api key supplied by an operator,
-   stored in the database` returns `Symfony_Cheat_Sheet#sensitive-data` and
-   `REST_Security_Cheat_Sheet#api-keys`, with no security vocabulary in the query at all.
-   A noun plus its *type* reaches less: `base url for outbound http client` never
-   reaches the SSRF sheet, at any depth the search returns, and reaches the
-   unvalidated-redirect sheet only at rank 28 of 44 — past the default window entirely.
-   What surfaces early instead, at rank 7, is
-   `Ruby_on_Rails_Cheat_Sheet#redirects-and-forwards` — real redirect-validation advice,
-   but framework-specific and incidental, not the general treatment. `url supplied by an
-   operator, used to make a request from the server` instead puts
-   `Unvalidated_Redirects_and_Forwards_Cheat_Sheet#dangerous-forward-example` at the top,
-   whose `#validating-urls` section cross-references the SSRF cheat sheet's
+   `pack="cheatsheets"`, once per sentence. The rule is to phrase the probe as origin and
+   use, not as a type. Cheat sheet titles and bodies are topic-shaped, so mundane wording
+   reaches them — `api key supplied by an operator, stored in the database` returns
+   `Symfony_Cheat_Sheet#sensitive-data` and `REST_Security_Cheat_Sheet#api-keys`, with no
+   security vocabulary in the query at all. A noun plus its *type* reaches less: `base url
+   for outbound http client` never reaches the SSRF sheet, at any depth the search returns,
+   and reaches the unvalidated-redirect sheet only at rank 28 — past the default window
+   entirely. `url supplied by an operator, used to make a request from the server` instead
+   puts `Unvalidated_Redirects_and_Forwards_Cheat_Sheet#dangerous-forward-example` at the
+   top, whose `#validating-urls` section cross-references the SSRF cheat sheet's
    URL-validation guidance. Follow those cross-references. **Do not answer from memory**
    — recalled security advice is often a version out of date and carries no citation a
    reviewer can check. An empty result is cheap and is itself an answer.
@@ -67,18 +64,29 @@ the codebase, and no citation stands in for it.
    on the best-matching `doc_key`, pick the relevant anchor, then `owasp_get` that section
    only.
 
-4. **Cross to ASVS for the rule.** Cheat sheets describe implementation mistakes; ASVS
-   states what is *required* at each level. Search `pack="asvs"` with the same data-flow
-   sentence, then call `owasp_related(<req_id>, rel="guidance")` to confirm the sheet you
-   read is the one mapped to that requirement. The reverse hop does not exist — passing a
-   cheat sheet `doc_key` to `owasp_related` returns no edges — so do not read that
-   emptiness as the corpus having no mapping.
+4. **Cross to ASVS with the vocabulary the sheet just supplied.** Cheat sheets describe
+   implementation mistakes; ASVS states what is *required* at each level. The phrasing rule
+   inverts between the packs, so do not reuse the data-flow sentence here. Mundane
+   origin-and-use wording reaches the cheat sheets because their titles are topic-shaped;
+   ASVS requirement text is normative security prose, and it is reached by the words the
+   sheet you just read used — the name of the vulnerability class, the name of the control.
+   Search `pack="asvs"` with those. Measured: `url supplied by an operator, used to make a
+   request from the server` returns exactly two requirements against `pack="asvs"`, an OIDC
+   issuer-metadata check and an L3 parser-consistency requirement, and never reaches
+   `V1.3.6` at any depth the search returns — while `SSRF allowlist validate outbound
+   request destination` returns `V1.3.6` first and `V13.2.4` second. Then call
+   `owasp_related(<req_id>, rel="guidance")` to confirm the sheet you read is the one mapped
+   to that requirement. The reverse hop does not exist — passing a cheat sheet `doc_key` to
+   `owasp_related` returns no edges — so do not read that emptiness as the corpus having no
+   mapping.
 
 5. **Establish precedence with the vocabulary the corpus just gave you.** Call `Grep` on
    the codebase for the control names the guidance named — allowlist, scheme, guard,
    connect, redirect, whatever it used — and not for names you thought of before reading.
-   Then either extend the control that already exists or state why it does not fit. Do
-   not write a validator, guard or middleware of your own before this step has run.
+   If the corpus returned nothing, grep for the control names you would have expected and
+   say in your answer that those terms are yours, not the corpus's. Then either extend the
+   control that already exists or state why it does not fit. Do not write a validator, guard
+   or middleware of your own before this step has run.
 
 6. **Cite everything.** Every security claim carries its citation inline — `ASVS 5.0.0
    V6.2.1` or `Authentication_Cheat_Sheet#password-storage`. Get the exact version from
@@ -88,9 +96,12 @@ the codebase, and no citation stands in for it.
 
 ## If the knowledge base is unreachable
 
-Say so explicitly and stop. Do not fall back on recalled guidance while appearing to have
-consulted the knowledge base — that is worse than no guidance, because the citations are
-missing and nobody can tell the difference until it matters.
+Say so explicitly and make no citations. Do not fall back on recalled guidance while
+appearing to have consulted the knowledge base — that is worse than no guidance, because the
+citations are missing and nobody can tell the difference until it matters. One step survives
+the outage: step 5 is a local `Grep`, and it is the step that prevented two defects. Still
+check whether the codebase already has the control, searching for the control names you
+would expect, and say in your answer that those terms are yours and not the corpus's.
 
 ## Notes
 

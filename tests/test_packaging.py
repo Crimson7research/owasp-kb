@@ -2048,6 +2048,39 @@ def test_the_secure_coding_process_probes_before_it_greps():
     )
 
 
+def test_the_secure_coding_process_consumes_every_tool_it_names():
+    """ADR 0009 records that an instruction whose result nothing downstream consumes was
+    skipped 100% of the time. ``test_the_secure_coding_process_probes_before_it_greps``
+    guards only the probe-before-grep ordering, leaving the narrow, cross-to-ASVS and
+    write-up steps unchecked -- and the ASVS step shipped a query measured never to reach
+    the requirement the skill's own preamble cites."""
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text()
+    # Scoped to the Process section, bounded by the next `## ` heading. A whole-file read
+    # also matches the preamble and the unreachable-server section, which name several of
+    # the same tools in an order that has nothing to do with the steps.
+    start = body.index("## Process")
+    section = " ".join(body[start : body.index("\n## ", start + 1)].lower().split())
+
+    for tool in ("owasp_search", "owasp_outline", "owasp_get", "owasp_related", "kb_info"):
+        assert tool in section, (
+            f"the process never calls {tool}, so whatever it was retrieved for is "
+            "no longer being retrieved"
+        )
+
+    assert section.index("owasp_outline") < section.index("owasp_get"), (
+        "owasp_get runs before owasp_outline chose an anchor, so nothing consumes the "
+        "outline and the fetch pulls whole 37,000-character sheets"
+    )
+    assert section.index('pack="asvs"') < section.index("owasp_related"), (
+        'owasp_related runs before the pack="asvs" search produced a requirement id to '
+        "pass it, so the guidance-edge confirmation has no input"
+    )
+    assert "state which requirements it satisfies" in section, (
+        "the final step does not require naming the requirements the code satisfies, so "
+        "every id and section retrieved by the steps above it is consumed by nothing"
+    )
+
+
 def test_the_secure_coding_process_names_the_data_flow_step():
     """The step that failed was identification, not retrieval: the old step 1 asked for
     "the security topic in the code", which presumes the topic was already recognised.
