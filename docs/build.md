@@ -89,7 +89,7 @@ Both phases finish with the same finalization: `PRAGMA optimize`, then
 [docs/architecture.md](architecture.md#serving-details) for why that step is
 mandatory before the file is packaged into an image.
 
-## The three CI workflows
+## The four CI workflows
 
 - **`ci.yml`** — on every PR and push to `master`: lint, unit tests, then a
   full real build (fetch → both indexes → retrieval quality gate → both
@@ -102,7 +102,10 @@ mandatory before the file is packaged into an image.
   and builds (lite index only, as a cheap sanity check) before opening a pull
   request with the updated `sources.lock.yml` for human review. Nothing is
   ever pushed to source control unreviewed.
-- **`release.yml`** — on pushing a `v*` tag: reads the pinned versions out of
+- **`release.yml`** — on pushing a `v*` tag: derives the version from the tag and
+  writes it into `src/owasp_kb/__init__.py` before anything is built, so the image
+  reports the release it was cut from rather than whatever the last hand bump left
+  behind (ADR 0016). It then reads the pinned versions out of
   `sources.lock.yml`, builds both indexes, runs the full retrieval quality
   gate, builds both images under both tag forms (see below), smoke-tests each,
   and only pushes to GHCR if every smoke test passes — a broken image is never
@@ -113,8 +116,14 @@ mandatory before the file is packaged into an image.
   because the marketplace is read from the default branch, so master is the surface
   devs install from. The digest is only knowable after the push, which is why the
   reference the plugin ships is written by the workflow rather than by hand. The
-  record beside it names the pack versions that image was built from — see ADR 0015
-  and "What the shipped pin is checked against" below.
+  record beside it names the pack versions that image was built from, and the version
+  the image reports — see ADR 0015 and "What the shipped pin is checked against" below.
+  It also drafts the GitHub Release for the tag, left unpublished so that a release
+  whose pin request never merged does not read as delivered.
+- **`release-promote.yml`** — on a pull request closing: if it merged and its branch is
+  `release/pin-v*`, publishes the Release that `release.yml` drafted. Delivery is that
+  merge, so the Releases page and what is installable agree, and a release that stalls
+  with an unmerged pin reads as incomplete rather than done.
 
 ## Image tag scheme
 
@@ -207,11 +216,13 @@ the field reinstates the hazard silently, so the test names the tooling that wou
 have to come back with it. It was watched failing against the field before the
 field was removed.
 
-The version in `src/owasp_kb/__init__.py` is unrelated: it versions the Python
-package and the image built from it, is reported by `kb_info` as `server_version`,
-and is bumped by hand before a release tag is cut. `pyproject.toml` derives from
-it. The two numbers drift on purpose — an image is released when its content
-changes, and the plugin ships on every commit.
+The version in `src/owasp_kb/__init__.py` is unrelated: it versions the Python package
+and the image built from it, and is reported by `kb_info` as `server_version`.
+`pyproject.toml` derives from it. It is written by `release.yml` from the tag, before any
+image is built, and reaches this branch through the release pull request — see ADR
+[0016](decisions/0016-the-tag-writes-the-version.md) for why the order matters and what
+the hand bump cost at v0.17.1. The two numbers drift on purpose — an image is released
+when its content changes, and the plugin ships on every commit.
 
 ## Mapping coverage
 

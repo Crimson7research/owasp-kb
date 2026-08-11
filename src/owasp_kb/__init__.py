@@ -2,8 +2,10 @@
 
 ``__version__`` is the single version literal in this repository. ``pyproject.toml``
 derives from it and ``kb_info`` reports it so a caller can tell which build answered.
-It versions the Python package and the image built from it, and is bumped by hand
-before a release tag is cut.
+It versions the Python package and the image built from it. ``release.yml`` writes it
+from the tag before the image is built, and the release pull request carries that edit to
+the default branch -- it is not bumped by hand, because at v0.17.1 the hand bump was
+skipped and the published image reported the previous release's number. See ADR 0016.
 
 It is deliberately *not* the plugin's version. ``plugin.json`` and
 ``marketplace.json`` declare none, so Claude Code resolves the plugin version to the
