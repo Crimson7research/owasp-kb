@@ -1,14 +1,6 @@
 ---
 name: owasp-secure-coding
-description: Use when writing, reviewing, triaging, diagnosing or planning a fix to application code touching authentication, passwords, MFA, sessions, cookies, tokens, JWT, OAuth, OIDC, authorization, access control, input validation, SQL injection, command injection, LDAP injection, SSRF, XSS, XXE, IDOR, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, output encoding, deserialization, file upload, file download, cryptography, TLS, key management, secrets, logging, error handling, CSRF, CORS, security headers, GraphQL, WebSocket, WebRTC, or API endpoints. Applies while the approach is still being chosen, not only once code exists. Retrieves the applicable OWASP Cheat Sheet guidance and ASVS requirements before the code is written.
-  Use when writing or reviewing application code touching authentication,
-  passwords, MFA, sessions, cookies, tokens, JWT, OAuth, OIDC, authorization,
-  access control, input validation, SQL injection, command injection, XSS,
-  output encoding, deserialization, file upload, file download, cryptography,
-  TLS, key management, secrets, logging, error handling, CSRF, CORS, security
-  headers, GraphQL, WebSocket, WebRTC, or API endpoints. Retrieves the
-  applicable OWASP Cheat Sheet guidance and ASVS requirements before the code
-  is written.
+description: Use when writing, reviewing, refactoring, moving, renaming, extracting, triaging, diagnosing or planning any change to code touching authentication, passwords, MFA, sessions, cookies, tokens, JWT, OAuth, OIDC, authorization, access control, input validation, SQL injection, command injection, LDAP injection, SSRF, XSS, XXE, IDOR, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, output encoding, deserialization, file upload, file download, cryptography, TLS, key management, secrets, API keys, credentials, connection strings, base URLs, outbound requests, redirects, logging, error handling, CSRF, CORS, security headers, GraphQL, WebSocket, WebRTC, or API endpoints. Applies to refactors and mechanical-looking field moves, not only to new features. Absence of security framing in the request is not evidence of absence of security relevance. Applies while the approach is still being chosen, not only once code exists. Retrieves the applicable OWASP Cheat Sheet guidance and ASVS requirements, and checks whether the codebase already has the control, before the code is written.
 ---
 
 # Secure coding with OWASP guidance

@@ -1994,3 +1994,39 @@ def test_the_probe_runner_is_given_the_method_not_just_the_rule():
     _, body = _agent("owasp-probe-runner")
     assert "--resolve" in body, "the pinning mechanism must be named, not implied"
     assert "Stand up the local server first" in body
+
+
+def test_the_secure_coding_skill_claims_a_refactor():
+    """The session that skipped it classified its work by type and stopped: "it's a
+    refactor, the attack surface is unchanged". The verb list named writing,
+    reviewing, triaging, diagnosing and planning a fix, so a field move between two
+    entities matched none of them -- while the change moved a stored credential and
+    an operator-supplied outbound URL, and rewrote the validator."""
+    when = _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower()
+    for verb in ("refactor", "moving", "renaming"):
+        assert verb in when, (
+            f"the description does not claim to apply when {verb}...; work classified "
+            "by type rather than by what the code touches reads it as not applicable"
+        )
+    assert "applies to refactors and mechanical-looking field moves" in when, (
+        "the verbs appear somewhere but nothing claims the skill applies to a "
+        "refactor; the words survive a rewrite that denies the claim, which is how "
+        "a hedge added later would pass this test"
+    )
+
+
+def test_the_secure_coding_description_denies_the_framing_exemption():
+    """The stated reason for not loading it was that the issue never mentioned
+    security. That inference has to be refused on the discovery surface itself: by
+    the time the body is read the skill has already been chosen, so a refutation
+    inside the body arrives after the decision it needed to change."""
+    described = " ".join(
+        _frontmatter(SKILLS_DIR / "owasp-secure-coding" / "SKILL.md")["description"].lower().split()
+    )
+    assert (
+        "absence of security framing in the request is not evidence of absence of "
+        "security relevance" in described
+    ), (
+        "the phrase is split or hedged; an agent that reads a qualified version of "
+        "this sentence keeps the exemption it needs to have refused"
+    )
