@@ -137,3 +137,22 @@ def test_the_payload_argues_cost_rather_than_importance():
     payload = _payload().lower()
     assert "input tokens" in payload
     assert "output tokens" in payload
+
+
+def test_the_plugin_registers_the_hook_at_the_events_that_keep_it_resident():
+    """A renamed hook script that silently stops firing looks identical to a plugin
+    that was never installed, so the path is asserted to resolve.
+
+    `resume` is excluded on purpose: a resumed session still holds the injection
+    from its original start. `compact` is not -- a hook firing only at startup
+    loses its context at the first compaction of a long session, which is the whole
+    reason this is a SessionStart hook rather than a one-off note.
+    """
+    plugin = json.loads(Path("plugins/owasp-kb/.claude-plugin/plugin.json").read_text())
+    entries = plugin["hooks"]["SessionStart"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["matcher"] == "startup|clear|compact"
+    command = entry["hooks"][0]["command"]
+    assert "nudge_secure_coding.py" in command
+    assert HOOK.exists()

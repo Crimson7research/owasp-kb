@@ -1452,9 +1452,11 @@ def test_the_plugin_registers_the_inventory_gate_against_a_dispatch():
 
 
 def test_the_plugin_registers_the_security_flag_hook():
-    """A hook the manifest does not register never runs, and this is the only
-    mechanism here that fires without being chosen -- which is the point, since the
-    skill was seen and chosen against."""
+    """A hook the manifest does not register never runs, and this is one of two
+    mechanisms here that fire without being chosen -- which is the point, since the
+    skill was seen and chosen against. The other is the SessionStart hook, which has
+    no condition at all; this one is gated on the firing vocabulary and fires once
+    per session, so it is the one that can name the class in its payload."""
     hooks = json.loads(PLUGIN.read_text())["hooks"]
     entries = hooks.get("UserPromptSubmit") or []
     flagged = [e for e in entries if "flag_security_topic" in json.dumps(e)]
