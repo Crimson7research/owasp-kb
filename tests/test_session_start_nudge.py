@@ -112,3 +112,28 @@ def test_the_payload_names_every_class_the_other_hook_fires_on():
         f"flag_security_topic fires on {missing} and the SessionStart payload does "
         "not list them, so it understates what is already covered"
     )
+
+
+def test_the_payload_asks_for_both_notices():
+    """The activation notice is c7-marketplace ADR 0012's: a skill that triggered
+    and was ignored otherwise leaves the same transcript as one that never
+    triggered.
+
+    The decline notice is the half that ADR does not cover, and it exists in this
+    payload and nowhere else -- SKILL.md is unreachable to an agent that decided
+    against the skill, so an instruction placed there covers activations only.
+    Losing it to a wording edit would be silent.
+    """
+    payload = _payload()
+    assert "owasp-secure-coding" in payload
+    assert "Using owasp-secure-coding to" in payload
+    assert "Not using owasp-secure-coding:" in payload
+
+
+def test_the_payload_argues_cost_rather_than_importance():
+    """c7-marketplace ADR 0010 refuses exhortation and admits reference content on
+    economics. Rewritten as "security is important", this hook stops being
+    admissible under the decision that permitted it."""
+    payload = _payload().lower()
+    assert "input tokens" in payload
+    assert "output tokens" in payload
