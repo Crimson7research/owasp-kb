@@ -245,7 +245,8 @@ enforcement that `owasp_roster` cannot reach lives:
 plugins/owasp-kb/
   skills/     4 skills; two of them drive an assessment
   agents/     the 5 dispatched roles
-  hooks/      2 PreToolUse hooks — refuse a tool call before its output exists
+  hooks/      4 hooks — 2 PreToolUse refuse a tool call before its output exists;
+              2 more route to the skill, on a vocabulary match and at session start
   bin/        owasp-kb — report merge, doctor, sessions; runs on the host, because
               the state mount is read-only and the target repo is not mounted
   .mcp.json   the sh -c command that starts the server and pins the mount
