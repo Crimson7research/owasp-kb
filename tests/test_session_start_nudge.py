@@ -42,3 +42,25 @@ def test_it_emits_one_session_start_context_block():
     block = payload["hookSpecificOutput"]
     assert block["hookEventName"] == "SessionStart"
     assert block["additionalContext"].strip()
+
+
+def test_it_fails_open_and_never_blocks_a_session_start():
+    """A hook failing closed would break session startup over a reminder. The
+    degraded state here is exactly the behaviour the plugin had before this hook
+    existed, which is recognisable and survivable -- so any exception exits 0.
+
+    Nothing in the payload is consulted today, so garbage stdin cannot currently
+    reach the handler, and the hook emits its block regardless. This pins the
+    direction anyway: the handler is what a later edit that does consult stdin will
+    land behind.
+
+    What is pinned is the exit code, plus the rule that whatever reaches stdout is
+    parseable. Emission is deliberately not required: the contract is "exits 0 and
+    emits nothing", so an edit that makes stdin load-bearing may legitimately fall
+    silent here. Requiring the block would fail that correct behaviour and would
+    make this a test of emission rather than of direction. The exit code itself is
+    asserted by _run, with stderr, so it is not repeated here.
+    """
+    _, out = _run("not json at all {{{")
+    if out.strip():
+        assert json.loads(out)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
