@@ -5,6 +5,8 @@ description: Use when writing, reviewing, refactoring, moving, renaming, extract
 
 # Secure coding with OWASP guidance
 
+Announce first: **Using owasp-secure-coding to retrieve the applicable OWASP guidance before this change is written.**
+
 Retrieve authoritative guidance before writing or approving security-relevant code.
 
 ## Why call the tools rather than answer from recall

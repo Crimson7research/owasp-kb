@@ -1815,6 +1815,25 @@ def test_the_secure_coding_skill_claims_the_triage_moment():
         )
 
 
+def test_the_secure_coding_skill_announces_itself():
+    """The one skill that fires on its own, mid-work. The other three are gates
+    invoked deliberately for a named job, so their activation is already visible to
+    whoever asked for it -- this is the one whose non-activation is invisible.
+
+    The name in the line must be its own. A line copied from a sibling is worse than
+    no line: it reads as evidence and is not.
+
+    Not parametrised over EXPECTED_SKILLS on purpose. The other three deliberately do
+    not carry it, and a parametrised test would make adding it to them look required.
+    """
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text()
+    line = next((ln for ln in body.splitlines() if ln.startswith("Announce first:")), None)
+    assert line, "the skill leaves no visible trace when it fires"
+    assert "**Using owasp-secure-coding to " in line, (
+        f"the announcement does not name this skill: {line!r}"
+    )
+
+
 @pytest.mark.parametrize("skill", ["owasp-secure-coding", "owasp-threat-model"])
 def test_the_skill_descriptions_name_every_flagged_vulnerability(skill):
     """The hook and the skill must not drift: a class the hook flags and the skill
