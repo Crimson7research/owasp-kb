@@ -701,3 +701,22 @@ def test_a_negation_ripgrep_does_not_honour_is_denied_even_though_it_names_the_p
     negation that excludes nothing."""
     glob = f"!/home/you/src/target/{EXCLUDED}"
     assert _denied(_run(_call("Grep", pattern="session", path="docs", glob=glob), config_dir))
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full")
+def test_it_fails_open_when_stdout_cannot_be_written(config_dir):
+    """json.dump streams chunks into the stream, so a mid-write failure leaves a
+    truncated object on stdout -- worse than the nothing a fail-open hook promises,
+    because a consumer then has to parse a half-written decision. /dev/full accepts
+    the open and fails every write. Driven down the deny path, the only one that
+    writes at all."""
+    with open("/dev/full", "w") as full:
+        result = subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=json.dumps(_call("Read", file_path=EXCLUDED)),
+            stdout=full,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ, "CLAUDE_CONFIG_DIR": str(config_dir)},
+        )
+    assert result.returncode == 0, f"hook must never fail the call: {result.stderr}"

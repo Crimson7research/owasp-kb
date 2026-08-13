@@ -328,3 +328,22 @@ def test_the_denial_does_not_list_a_covered_concern(partial):
     reason = _reason(_run(_dispatch("owasp-chapter-orchestrator"), partial))
     missing = reason.split("missing:", 1)[1]
     assert "endpoints" not in missing.lower()
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full")
+def test_it_fails_open_when_stdout_cannot_be_written(partial):
+    """json.dump streams chunks into the stream, so a mid-write failure leaves a
+    truncated object on stdout -- worse than the nothing a fail-open hook promises,
+    because a consumer then has to parse a half-written decision. /dev/full accepts
+    the open and fails every write. Driven down the deny path, the only one that
+    writes at all."""
+    with open("/dev/full", "w") as full:
+        result = subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=json.dumps(_dispatch("owasp-chapter-orchestrator")),
+            stdout=full,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ, "CLAUDE_CONFIG_DIR": str(partial)},
+        )
+    assert result.returncode == 0, f"hook must never fail the call: {result.stderr}"

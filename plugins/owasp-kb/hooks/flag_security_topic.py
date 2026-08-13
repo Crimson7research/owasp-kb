@@ -119,15 +119,25 @@ def main() -> int:
     except Exception:  # noqa: BLE001 -- see FAILS OPEN above
         return 0
     if context:
-        json.dump(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": context,
+        try:
+            # Serialised in full before anything is written: json.dump streams
+            # chunks into the stream, so a mid-write failure leaves a truncated
+            # object on stdout, which is worse than the nothing this hook promises.
+            # The flush is load-bearing too -- without it CPython flushes at
+            # interpreter shutdown, outside any handler, and an unflushable buffer
+            # there sets exit status 120 whatever main() returned.
+            payload = json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": context,
+                    }
                 }
-            },
-            sys.stdout,
-        )
+            )
+            sys.stdout.write(payload)
+            sys.stdout.flush()
+        except Exception:  # noqa: BLE001 -- see FAILS OPEN above
+            return 0
     return 0
 
 
