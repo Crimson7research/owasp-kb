@@ -66,13 +66,12 @@ between. Input is the cheap side, and it is the side spent before the mistake ex
 That holds without any estimate of how likely the check is to find something. It needs \
 only that the correction cost more than the read, which it does.
 
-**What causes the rework is a fix correct in shape and short a dimension.** A worked \
-case here: an SSRF plan proposed an allowlist over domains, paths and ports and never \
-mentioned protocols -- the first dimension ASVS V1.3.6 enumerates. Correct in shape, \
-incomplete, and invisible from inside the reasoning that produced it. What the corpus \
-gives that recall cannot is that enumeration, plus a citable id a reviewer can check. \
-What it cannot give is whether this codebase already has the control -- that comes \
-from the codebase, and a citation does not stand in for it.
+**What causes the rework is a fix correct in shape and short a dimension** -- one \
+that is invisible from inside the reasoning that produced it. What the corpus gives \
+that recall cannot is the enumeration of dimensions a fix has to cover, plus a \
+citable id a reviewer can check. What it cannot give is whether this codebase \
+already has the control -- that comes from the codebase, and a citation does not \
+stand in for it.
 
 **Nothing will prompt you in the ordinary cases.** A second hook here fires on named \
 vulnerability classes -- SSRF, XSS, CSRF, XXE, IDOR, SQL injection, command injection, \
