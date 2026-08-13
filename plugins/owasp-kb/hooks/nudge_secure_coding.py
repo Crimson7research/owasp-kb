@@ -85,13 +85,9 @@ second vocabulary. There the call is yours, and unprompted.
 owasp-secure-coding to <purpose>.** When you consider it and decide against, one line \
 with the reason: **Not using owasp-secure-coding: <why>.**
 
-The second one is the one that matters. The failure recorded in this repository was \
-declined as "process overhead without new insight here", and that reasoning surfaced \
-only when someone asked about it afterwards -- long past the point of acting on it. \
-Stated at the time, it is a line the reader can interrupt and overrule. Both notices \
-exist because a skill that triggered and was ignored otherwise leaves the same \
-transcript as one that never triggered, and a decision not to check leaves no trace at \
-all."""
+The second matters more: the failure recorded here was declined as "process overhead \
+without new insight here", and that surfaced only when someone asked afterwards -- too \
+late to act on. Stated at the time, it is a line the reader can overrule."""
 
 
 def _context() -> str:
