@@ -64,3 +64,51 @@ def test_it_fails_open_and_never_blocks_a_session_start():
     _, out = _run("not json at all {{{")
     if out.strip():
         assert json.loads(out)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+
+
+def _payload() -> str:
+    """The constant itself, imported rather than re-run through the subprocess.
+
+    Loaded by path because the hook is not part of any importable package -- the
+    same reason tests/test_host_cli.py inserts plugins/owasp-kb/bin on sys.path.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("nudge_secure_coding", HOOK)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.NUDGE
+
+
+def _flagged_vulnerability_names() -> tuple[str, ...]:
+    """The hook's firing vocabulary, imported from the plugin's own package.
+
+    Not duplicated here: a second list is a second thing to forget, and the whole
+    defect this guards against was two surfaces disagreeing about which
+    vulnerability classes exist. The loader is repeated from tests/test_packaging.py
+    -- the list it returns is not.
+    """
+    path = str(Path("plugins/owasp-kb/bin").resolve())
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    from owasp_kb_cli.security_terms import VULNERABILITY_NAMES
+
+    return VULNERABILITY_NAMES
+
+
+def test_the_payload_names_every_class_the_other_hook_fires_on():
+    """The payload tells the agent where it is unassisted by naming what the other
+    hook covers. A term added to security_terms.py without updating that sentence
+    makes the payload wrong about the mechanism, silently.
+
+    Only the named-class list is compared. security_terms.py also fires on a CVE id
+    via a separate `_CVE` pattern, which is deliberately outside VULNERABILITY_NAMES
+    and outside this check: the payload names classes an agent can recognise its own
+    work in, and no finite list of CVE ids could be enumerated there.
+    """
+    payload = _payload().lower()
+    missing = [n for n in _flagged_vulnerability_names() if n.lower() not in payload]
+    assert not missing, (
+        f"flag_security_topic fires on {missing} and the SessionStart payload does "
+        "not list them, so it understates what is already covered"
+    )
