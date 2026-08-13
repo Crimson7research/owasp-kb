@@ -177,13 +177,29 @@ construction — the first draft was node and could not be tested at all.
   non-zero exit — the opposite of silence, and worse than a clean failure, because a
   consumer must now parse half a decision. Reproduced against `/dev/full` and
   against a reader that closes early, which yielded `{"hookSpecificOutput": {` and
-  exit 1. The fix is to serialise fully, then write, then flush, all inside the
-  handler; the flush matters because CPython otherwise flushes at interpreter
-  shutdown, outside any handler, where an unflushable buffer sets exit status 120
-  whatever the hook returned. Found by a code review of the fourth hook, where the
-  path is routine rather than latent — it writes ~2.2 KB at every session start —
-  and only then recognised in the three that had shipped with it. A fail direction
-  argued in prose is not the same as one the code takes.
+  exit 1. Found by a code review of the fourth hook, where the path is routine
+  rather than latent — it writes ~2.2 KB at every session start — and only then
+  recognised in the three that had shipped with it. A fail direction argued in prose
+  is not the same as one the code takes.
+
+- **The first fix for that was wrong, and only CI could tell.** Serialising fully and
+  then writing and flushing inside the handler looks sufficient and is not: a failed
+  flush leaves the payload in `sys.stdout`'s buffer, and CPython flushes it again at
+  interpreter shutdown, outside every handler, where the second failure sets exit
+  status 120 whatever the hook returned. So the hook still failed closed, one layer
+  further out. The working fix never touches `sys.stdout` — it writes through
+  `os.fdopen(os.dup(1), "wb")`, so nothing is buffered there and the shutdown flush
+  has nothing to retry.
+
+  What makes this worth an entry rather than a commit message is where it was
+  caught. The three regression tests were green in this project's devcontainer six
+  times over, because Python 3.13.14 there does not reproduce the shutdown flush at
+  all; the identical tests failed on the first `act` run and would have failed on a
+  billed runner, as they do on CI's 3.13.15 and on 3.14. **The container is not a
+  faithful oracle for a test about interpreter shutdown**, and a hook test that
+  passes locally is evidence about the container, not about the hook. Where a test
+  turns on interpreter or libc behaviour, the runner image is the oracle and running
+  CI locally is what makes that affordable.
 
 - **Prose still carries everything that is not an invariant**, and both skills
   are past 500 lines. An instruction nobody reaches is worth no more than one

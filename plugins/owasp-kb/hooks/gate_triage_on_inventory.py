@@ -229,8 +229,14 @@ def main() -> int:
                     }
                 }
             )
-            sys.stdout.write(payload)
-            sys.stdout.flush()
+            # Written through a duplicate of fd 1, never through sys.stdout. A failed
+            # write leaves the payload sitting in sys.stdout's buffer, and CPython
+            # flushes that again at interpreter shutdown -- outside any handler, which
+            # sets exit status 120 whatever main() returned. Nothing is ever buffered on
+            # sys.stdout, so that retry has nothing left to fail on. Measured: the
+            # sys.stdout form exits 120 on CI and on Python 3.14; this form exits 0.
+            with os.fdopen(os.dup(1), "wb") as out:
+                out.write(payload.encode())
         except Exception:  # noqa: BLE001 -- see FAILS OPEN above
             return 0
     return 0

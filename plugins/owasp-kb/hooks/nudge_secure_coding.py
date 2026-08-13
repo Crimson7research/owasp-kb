@@ -52,6 +52,7 @@ unexercised path by construction.
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 NUDGE = """`owasp-kb` is installed: the OWASP corpus (ASVS 5.0.0, Cheat Sheet Series) \
@@ -105,10 +106,7 @@ def main() -> int:
     try:
         # Serialised in full before anything is written: json.dump streams chunks
         # into the stream, so a mid-write failure leaves a truncated object on
-        # stdout, which is worse than the nothing this hook promises. The flush is
-        # load-bearing too -- without it CPython flushes at interpreter shutdown,
-        # outside any handler, and an unflushable buffer there sets exit status 120
-        # whatever main() returned.
+        # stdout, which is worse than the nothing this hook promises.
         payload = json.dumps(
             {
                 "hookSpecificOutput": {
@@ -117,8 +115,14 @@ def main() -> int:
                 }
             }
         )
-        sys.stdout.write(payload)
-        sys.stdout.flush()
+        # Written through a duplicate of fd 1, never through sys.stdout. A failed
+        # write leaves the payload sitting in sys.stdout's buffer, and CPython
+        # flushes that again at interpreter shutdown -- outside any handler, which
+        # sets exit status 120 whatever main() returned. Nothing is ever buffered on
+        # sys.stdout, so that retry has nothing left to fail on. Measured: the
+        # sys.stdout form exits 120 on CI and on Python 3.14; this form exits 0.
+        with os.fdopen(os.dup(1), "wb") as out:
+            out.write(payload.encode())
     except Exception:  # noqa: BLE001 -- see FAILS OPEN above
         return 0
     return 0
