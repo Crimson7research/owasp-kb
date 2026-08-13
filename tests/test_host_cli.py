@@ -700,3 +700,22 @@ def test_the_server_check_does_not_offer_to_pull_a_digest(monkeypatch, tmp_path)
     tag = doctor.check_server_answers()
     assert not tag.ok
     assert "docker pull ghcr.io/o/owasp-kb:full" in tag.remedy
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full")
+def test_the_hook_fails_open_when_stdout_cannot_be_written(tmp_path):
+    """json.dump streams chunks into the stream, so a mid-write failure leaves a
+    truncated object on stdout -- worse than the nothing this hook promises. A fresh
+    session id keeps the once-per-session marker from suppressing the emit, so the
+    write path is actually reached. /dev/full fails every write."""
+    payload = {"session_id": "s-unwritable", "prompt": "investigate the SSRF report"}
+    with open("/dev/full", "w") as full:
+        result = subprocess.run(
+            [sys.executable, str(HOOK)],
+            input=json.dumps(payload),
+            stdout=full,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ, "CLAUDE_CONFIG_DIR": str(tmp_path)},
+        )
+    assert result.returncode == 0, f"hook must never fail the call: {result.stderr}"

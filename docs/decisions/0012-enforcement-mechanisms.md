@@ -17,8 +17,10 @@ fixed with a different mechanism. Nothing wrote down which mechanism suits
 which job, so the next person meets three unexplained precedents.
 
 All three mechanisms below are about enforcing invariants; the
-`UserPromptSubmit` routing hook added later is a discovery mechanism instead,
-whose case is recorded in [docs/discoverability.md](../discoverability.md).
+`UserPromptSubmit` routing hook and the `SessionStart` hook added later are
+discovery mechanisms instead, whose case is recorded in
+[docs/discoverability.md](../discoverability.md) and, for the second of them, in
+ADR [0017](0017-a-session-start-hook-argues-the-token-ledger.md).
 
 | Failure | Visible at assembly? | Fixed with |
 |---|---|---|
@@ -82,8 +84,8 @@ outcome; naming an outcome without one yields prose instead of the artefact.
 
 This is the part that does not generalise, and the part most likely to be got
 wrong by pattern-matching the last case. The table covers the fail direction of
-every hook the plugin ships, including the `UserPromptSubmit` routing hook that
-is otherwise outside this ADR's scope: a hook's fail direction is the wrong thing
+every hook the plugin ships, including the two discovery hooks that are
+otherwise outside this ADR's scope: a hook's fail direction is the wrong thing
 to leave unrecorded merely because the argument for its existence lives in
 another document.
 
@@ -93,6 +95,7 @@ another document.
 | `gate_triage_on_inventory` | **open** | An over-refusal stops the assessment outright. There is no cheaper downstream gate, but a halt is worse than the hole it guards. |
 | `findings.jsonl` loading | **closed** | A missing file read as an empty set produces a roster reporting every requirement as `INSUFFICIENT EVIDENCE` — which reads as an assessment result, not as a missing file. |
 | `flag_security_topic` | **open** | It guards a reminder, so an open failure degrades to exactly the behaviour before the hook existed, which is recognisable and survivable. |
+| `nudge_secure_coding` | **open** | It runs at session start, so failing closed would break session startup over a reminder. The degraded state is the behaviour the plugin had before it existed. |
 
 The rule underneath: **fail open when the degraded state is recognisable as
 degraded, and fail closed when it is indistinguishable from a legitimate
@@ -101,8 +104,8 @@ entirely wrong, and nothing downstream can tell. An unarmed exclusion hook
 yields the behaviour the project had a week earlier, with another gate still
 standing.
 
-Note that all three hooks fail open and the reasoning differs for each. Three
-mechanisms agreeing on a direction is not a pattern to copy — it is three
+Note that all four hooks fail open and the reasoning differs for each. Four
+mechanisms agreeing on a direction is not a pattern to copy — it is four
 separate arguments that happened to land the same way.
 
 ### Scoping is what makes a hook shippable
@@ -118,7 +121,17 @@ matches its vocabulary and writes its marker unconditionally — so it is scoped
 the other way: by that vocabulary match and by a once-per-session marker that
 holds it to a single reminder, rather than by having been armed. That bounds it
 instead of excluding it, which is why its fail direction is in the table above.
-None of the three writes anything into the target repository. See ADR
+
+The `SessionStart` hook added later is not scoped at all. Nothing arms it, no
+vocabulary gates it, and it fires in every session of everyone who installs the
+plugin. Its only bound is that it is short. That is a real departure from the rule
+this section states, and it is a consequence of injecting reference content rather
+than a discovered fact — there is no condition to key it to. ADR
+[0017](0017-a-session-start-hook-argues-the-token-ledger.md) records it as a known
+weakness rather than a solved one. If it proves to be wallpaper, the fix is a
+condition, not shorter wording.
+
+None of the four writes anything into the target repository. See ADR
 [0013](0013-session-state-on-disk.md) for the state directory itself.
 
 They are written in Python, not node. Node is absent from this project's
@@ -156,6 +169,37 @@ construction — the first draft was node and could not be tested at all.
   marks every open heading above it. Where a hook's refusal blocks the main
   workflow, the cost of a false positive is total, and the rule needs a real
   artefact to test against before it ships.
+
+- **A hook that fails open can still fail closed on the way out.** Every hook here
+  documents silence on error, and all four emitted their decision with
+  `json.dump(obj, sys.stdout)`, which streams chunks into the stream as it
+  serialises. A write failing partway leaves a truncated object on stdout and a
+  non-zero exit — the opposite of silence, and worse than a clean failure, because a
+  consumer must now parse half a decision. Reproduced against `/dev/full` and
+  against a reader that closes early, which yielded `{"hookSpecificOutput": {` and
+  exit 1. Found by a code review of the fourth hook, where the path is routine
+  rather than latent — it writes ~2.2 KB at every session start — and only then
+  recognised in the three that had shipped with it. A fail direction argued in prose
+  is not the same as one the code takes.
+
+- **The first fix for that was wrong, and only CI could tell.** Serialising fully and
+  then writing and flushing inside the handler looks sufficient and is not: a failed
+  flush leaves the payload in `sys.stdout`'s buffer, and CPython flushes it again at
+  interpreter shutdown, outside every handler, where the second failure sets exit
+  status 120 whatever the hook returned. So the hook still failed closed, one layer
+  further out. The working fix never touches `sys.stdout` — it writes through
+  `os.fdopen(os.dup(1), "wb")`, so nothing is buffered there and the shutdown flush
+  has nothing to retry.
+
+  What makes this worth an entry rather than a commit message is where it was
+  caught. The three regression tests were green in this project's devcontainer six
+  times over, because Python 3.13.14 there does not reproduce the shutdown flush at
+  all; the identical tests failed on the first `act` run and would have failed on a
+  billed runner, as they do on CI's 3.13.15 and on 3.14. **The container is not a
+  faithful oracle for a test about interpreter shutdown**, and a hook test that
+  passes locally is evidence about the container, not about the hook. Where a test
+  turns on interpreter or libc behaviour, the runner image is the oracle and running
+  CI locally is what makes that affordable.
 
 - **Prose still carries everything that is not an invariant**, and both skills
   are past 500 lines. An instruction nobody reaches is worth no more than one

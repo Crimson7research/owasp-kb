@@ -18,9 +18,9 @@ the agent just answers confidently from memory instead.
 ## The layered response
 
 No single layer below is sufficient by itself; each catches what the others
-miss, at a different point in an agent's decision process. A fifth mechanism, a
-`UserPromptSubmit` hook, backstops all four where they have been observed
-failing; see *Claude Code hooks* under what was rejected.
+miss, at a different point in an agent's decision process. Two further mechanisms,
+a `UserPromptSubmit` hook and a `SessionStart` hook, backstop all four where they
+have been observed failing; see *Claude Code hooks* under what was rejected.
 
 **1. Trigger-worded tool descriptions.** Every tool description in
 `server/tools.py` is written as an explicit list of topics an agent might be
@@ -101,7 +101,7 @@ before a prompt is even in play.
   solution (trigger-worded descriptions and skill bodies) that is identically
   effective everywhere the four layers above are honored by the client.
 
-  **The plugin has since gained three hooks, and this rejection now stands only for
+  **The plugin has since gained four hooks, and this rejection now stands only for
   the primary discovery layer.** Two enforce assessment invariants no tool
   description could — refusing a read of an excluded prior assessment, and refusing
   triage over an incomplete inventory. The cross-agent objection does not apply to
@@ -117,7 +117,15 @@ before a prompt is even in play.
   work identically in Codex and OpenCode. A hook backstops them where they have been
   observed failing. See ADR
   [0012](decisions/0012-enforcement-mechanisms.md) for the two invariant-enforcing
-  hooks; the case for this one is in *The anti-goal, observed* below.
+  hooks; the case for this one is in *The anti-goal, observed* below. The fourth,
+  `nudge_secure_coding.py`, is a `SessionStart` hook covering the hole the third one
+  leaves by design: that one fires only on named vulnerability classes or a CVE id,
+  and `security_terms.py` deliberately excludes the ordinary vocabulary most
+  security-relevant work arrives in. It argues the token ledger rather than naming
+  the skill, and it asks the agent to state the decision either way — used, or
+  declined with a reason — because a decline is otherwise invisible until someone
+  asks afterwards. See ADR
+  [0017](decisions/0017-a-session-start-hook-argues-the-token-ledger.md).
 
 ## The anti-goal
 

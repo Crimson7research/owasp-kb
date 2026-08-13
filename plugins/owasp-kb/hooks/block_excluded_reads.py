@@ -622,16 +622,32 @@ def main() -> int:
     except Exception:  # noqa: BLE001 -- see FAILS OPEN above
         reason = None
     if reason:
-        json.dump(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": reason,
+        try:
+            # Serialised in full before anything is written: json.dump streams
+            # chunks into the stream, so a mid-write failure leaves a truncated
+            # decision on stdout, which is worse than the nothing this hook
+            # promises. The flush is load-bearing too -- without it CPython flushes
+            # at interpreter shutdown, outside any handler, and an unflushable
+            # buffer there sets exit status 120 whatever main() returned.
+            payload = json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": reason,
+                    }
                 }
-            },
-            sys.stdout,
-        )
+            )
+            # Written through a duplicate of fd 1, never through sys.stdout. A failed
+            # write leaves the payload sitting in sys.stdout's buffer, and CPython
+            # flushes that again at interpreter shutdown -- outside any handler, which
+            # sets exit status 120 whatever main() returned. Nothing is ever buffered on
+            # sys.stdout, so that retry has nothing left to fail on. Measured: the
+            # sys.stdout form exits 120 on CI and on Python 3.14; this form exits 0.
+            with os.fdopen(os.dup(1), "wb") as out:
+                out.write(payload.encode())
+        except Exception:  # noqa: BLE001 -- see FAILS OPEN above
+            return 0
     return 0
 
 

@@ -1452,9 +1452,11 @@ def test_the_plugin_registers_the_inventory_gate_against_a_dispatch():
 
 
 def test_the_plugin_registers_the_security_flag_hook():
-    """A hook the manifest does not register never runs, and this is the only
-    mechanism here that fires without being chosen -- which is the point, since the
-    skill was seen and chosen against."""
+    """A hook the manifest does not register never runs, and this is one of two
+    mechanisms here that fire without being chosen -- which is the point, since the
+    skill was seen and chosen against. The other is the SessionStart hook, which has
+    no condition at all; this one is gated on the firing vocabulary and fires once
+    per session, so it is the one that can name the class in its payload."""
     hooks = json.loads(PLUGIN.read_text())["hooks"]
     entries = hooks.get("UserPromptSubmit") or []
     flagged = [e for e in entries if "flag_security_topic" in json.dumps(e)]
@@ -1811,6 +1813,25 @@ def test_the_secure_coding_skill_claims_the_triage_moment():
             f"the description does not claim to apply when {moment}...; an agent "
             "choosing an approach reads it as not yet applicable"
         )
+
+
+def test_the_secure_coding_skill_announces_itself():
+    """The one skill that fires on its own, mid-work. The other three are gates
+    invoked deliberately for a named job, so their activation is already visible to
+    whoever asked for it -- this is the one whose non-activation is invisible.
+
+    The name in the line must be its own. A line copied from a sibling is worse than
+    no line: it reads as evidence and is not.
+
+    Not parametrised over EXPECTED_SKILLS on purpose. The other three deliberately do
+    not carry it, and a parametrised test would make adding it to them look required.
+    """
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text()
+    line = next((ln for ln in body.splitlines() if ln.startswith("Announce first:")), None)
+    assert line, "the skill leaves no visible trace when it fires"
+    assert "**Using owasp-secure-coding to " in line, (
+        f"the announcement does not name this skill: {line!r}"
+    )
 
 
 @pytest.mark.parametrize("skill", ["owasp-secure-coding", "owasp-threat-model"])
