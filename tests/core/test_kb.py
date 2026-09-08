@@ -366,8 +366,28 @@ def test_checklist_returns_a_levelless_pack_when_no_level_is_asked_for(kb):
     assert rows[0].level is None
 
 
+def test_levelless_pack_level_filter_is_empty_not_everything_at_the_sql_level(kb):
+    """Pins the measurement the refusal message rests on, so the rationale can't
+    drift from the behaviour again. Under sqlite:
+
+        CAST(NULL AS INTEGER) <= 2  -> NULL   (row filtered OUT)
+        CAST('' AS INTEGER) <= 2    -> 1      (row filtered IN)
+
+    So an unguarded level filter on the NULL design that shipped returns [],
+    never every row -- "every row" was true only of the empty-string sentinel
+    that was rejected in favour of NULL.
+    """
+    _levelless_pack(kb._conn)
+    pid = kb._conn.execute("SELECT id FROM packs WHERE name = 'levelless'").fetchone()[0]
+    sql = "SELECT COUNT(*) FROM requirements WHERE pack_id = ? AND CAST(level AS INTEGER) <= ?"
+    assert kb._conn.execute(sql, (pid, 2)).fetchone()[0] == 0
+
+    kb._conn.execute("UPDATE requirements SET level = '' WHERE pack_id = ?", (pid,))
+    assert kb._conn.execute(sql, (pid, 2)).fetchone()[0] == 1
+
+
 def test_checklist_refuses_a_level_for_a_levelless_pack(kb):
-    """Silently returning everything is the failure mode: it looks like a
+    """Silently returning an empty list is the failure mode: it looks like a
     filtered answer and is not one."""
     _levelless_pack(kb._conn)
     with pytest.raises(ValueError, match="no levels"):

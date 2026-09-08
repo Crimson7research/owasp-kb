@@ -269,8 +269,11 @@ class Kb:
         if self._has_levels(pack):
             return
         raise ValueError(
-            f"pack {pack!r} defines no levels, so filtering by one would return every "
-            "row while looking like a filtered answer. Omit level and level_exact."
+            f"pack {pack!r} defines no levels, so filtering by one would return an "
+            "empty list, not a filtered one -- an agent reads [] as 'nothing in this "
+            "pack meets that level', which is a different and far more dangerous "
+            "claim than 'this pack has no levels'. Same reasoning Kb.search documents "
+            "for raising LookupError instead of returning []. Omit level and level_exact."
         )
 
     def checklist(
