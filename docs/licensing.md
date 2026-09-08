@@ -7,20 +7,21 @@ deliverable, a fork you plan to publish), read the full texts in
 [LICENSE](../LICENSE) and the per-pack texts under [licenses/](../licenses/)
 yourself, or ask a lawyer.
 
-## Three of the four upstream repos are CC-BY-SA-4.0
+## The packs licensed CC-BY-SA-4.0
 
-Three of the four projects this repository ingests content from:
+The packs pinned in [`sources.lock.yml`](../sources.lock.yml) under a
+CC-BY-SA-4.0 license:
 
 - [OWASP/ASVS](https://github.com/OWASP/ASVS)
 - [OWASP/CheatSheetSeries](https://github.com/OWASP/CheatSheetSeries)
 - [OWASP/masvs](https://github.com/OWASP/masvs)
 
-all license their content **CC-BY-SA-4.0** ("Attribution-ShareAlike"),
+each license their content **CC-BY-SA-4.0** ("Attribution-ShareAlike"),
 verified directly via the GitHub licence API on each repository rather than
-assumed from an OWASP-wide default. None of the three projects' content is
-MIT, Apache, or public domain — anything derived from any of them carries the
-same license forward, by the terms of ShareAlike, whether or not that
-derivation is obvious.
+assumed from an OWASP-wide default. None of their content is MIT, Apache, or
+public domain — anything derived from any of them carries the same license
+forward, by the terms of ShareAlike, whether or not that derivation is
+obvious.
 
 ## Why redistribution and adaptation both apply here
 
@@ -54,8 +55,9 @@ Two separate CC-BY-SA-4.0 obligations are in play, not one:
 
 ## The code/data split
 
-Five licenses cover five disjoint things in this repository, one per pack
-(four) plus the code, and none of them covers another:
+This repository carries one license file per pack, plus the project's own
+code, and none of them covers another — though three of the pack files are
+copies of the same CC-BY-SA-4.0 text, not five disjoint texts:
 
 - **[LICENSE](../LICENSE) (MIT)** covers this project's own source code only:
   the ingest pipeline (`ingest/`), the domain model and retrieval logic
@@ -68,15 +70,17 @@ Five licenses cover five disjoint things in this repository, one per pack
   images, or in any redistribution of either.
 - **[LICENSE-OWASP-CHEATSHEET](../licenses/LICENSE-OWASP-CHEATSHEET)
   (CC-BY-SA-4.0)** covers the Cheat Sheet Series and its portion of the index,
-  on the same terms. It is a copy of the file above, because both projects
-  chose the same license; they are pinned separately in `sources.lock.yml` and
-  either could be relicensed without the other, which is why the same text
-  exists as more than one file.
+  on the same terms. It holds the same text as the file above, because both
+  projects chose the same license; they are pinned separately in
+  `sources.lock.yml` and any one of them could be relicensed without the
+  others, which is why the same text exists as more than one file.
 - **[LICENSE-OWASP-MASVS](../licenses/LICENSE-OWASP-MASVS) (CC-BY-SA-4.0)**
   covers the OWASP Mobile Application Security Verification Standard (MASVS)
-  and its portion of the index, on the same terms. It too is a copy of the
-  same text, for the same reason: MASVS is pinned separately in
-  `sources.lock.yml` and could be relicensed independently of the other two.
+  content as pinned in `sources.lock.yml`, on the same terms — no MASVS
+  content reaches the index yet, so this text is in place ahead of the ingest
+  work that will need it. It too holds the same text as the other two, for
+  the same reason: MASVS is pinned separately and could be relicensed
+  independently of them.
 - **[LICENSE-CWE](../licenses/LICENSE-CWE)** covers MITRE's CWE terms of use,
   under which the CWE pack's content is used — see
   [below](#cwe-is-mitres-under-its-own-terms).
@@ -91,11 +95,12 @@ without reading this document.
 Anyone redistributing an `owasp-kb` image, or the index file it bakes in,
 should at minimum:
 
-1. **Preserve attribution** to all four upstream projects — name them, link to
-   their repositories, and state each one's license, which is not the same for
-   all four (CC-BY-SA-4.0 for the three OWASP projects, MITRE's own terms for
-   CWE) — this repository's [NOTICE](../licenses/NOTICE) file is one way to
-   satisfy this and can be carried forward as-is.
+1. **Preserve attribution** to every upstream project pinned in
+   [`sources.lock.yml`](../sources.lock.yml) — name them, link to their
+   repositories, and state each one's license, which is not the same for all
+   of them (CC-BY-SA-4.0 for the OWASP projects, MITRE's own terms for CWE) —
+   this repository's [NOTICE](../licenses/NOTICE) file is one way to satisfy
+   this and can be carried forward as-is.
 2. **Carry the CC-BY-SA-4.0 license forward** for the content and the index
    specifically (not necessarily for any of your own original code built
    around it) — a straightforward reading is to keep the license text of every
@@ -110,8 +115,8 @@ should at minimum:
 
 ## CWE is MITRE's, under its own terms
 
-The CWE pack carries MITRE's Common Weakness Enumeration, pinned to a numbered
-release. Its terms are permissive and explicit:
+The CWE pack carries MITRE's [Common Weakness Enumeration](https://cwe.mitre.org/),
+pinned to a numbered release. Its terms are permissive and explicit:
 
 > CWE™ is free to use by any organization or individual for any research,
 > development, and/or commercial purposes, per these CWE Terms of Use.
@@ -134,8 +139,8 @@ The project name leads with "owasp" only because that is what most of the conten
 is — the Application Security Verification Standard, the Cheat Sheet Series, and
 the Mobile Application Security Verification Standard, all OWASP Foundation
 projects — not because of any relationship with the Foundation itself. Since the
-CWE pack, the name is also **incomplete** as a description: one of the four packs
-is MITRE's, and the name says nothing about it.
+CWE pack, the name is also **incomplete** as a description: one of the packs
+pinned in `sources.lock.yml` is MITRE's, and the name says nothing about it.
 `kb_info` reports every pack's `license` and `source_url` for that reason, so a
 citation's upstream is always recoverable from the server rather than inferred from
 the repository's name. This matters specifically because the naming choice could

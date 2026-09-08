@@ -21,8 +21,10 @@ def test_lock_parses_all_four_packs():
 def test_masvs_pins_a_release_and_its_machine_readable_asset():
     """The YAML asset is the only ingestable form: the pdf and epub are not.
 
-    version comes from here and never from the document -- the repo-root copy of
-    OWASP_MASVS.yaml carries the placeholder `metadata.version: vx.x.x`.
+    version is pinned here and never read from the document, so a citation's
+    version cannot shift on a re-fetch. The release asset stamps
+    `metadata.version: v2.1.0` -- the `v` prefix means it is not string-equal
+    to the `2.1.0` pinned above; strip it before comparing the two.
     """
     masvs = load_lock(LOCK).packs["masvs"]
     assert masvs.type == "checklist"

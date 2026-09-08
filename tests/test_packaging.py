@@ -893,40 +893,6 @@ def test_the_repo_carries_a_cwe_license_text():
 MIN_LICENCE_BYTES = 500
 
 
-def test_the_cc_by_sa_texts_are_identical():
-    """ASVS, the Cheat Sheet Series and MASVS are all CC-BY-SA-4.0, so each
-    pack's licence file is a copy of one 20 KB text. Multiple copies of the
-    same legal text is the shape that drifts: one gets updated and the
-    repository then makes different claims about the same licence, silently.
-
-    Derived from the lock rather than from a fixed list of files: a pack
-    later added under CC-BY-SA-4.0 whose licence file is never reconciled
-    with the others falls outside this guard until it is included here too.
-
-    Bytes, not text -- a line-ending change is drift. Non-emptiness is asserted
-    first because empty files are also identical, and that is the way this
-    assertion passes while proving nothing.
-
-    If this ever fails, reconcile the files. Deleting the test is not the
-    fix; if the upstreams have genuinely relicensed apart, that is the news and
-    sources.lock.yml should say so before these files do."""
-    cc_by_sa_paths = [
-        PACK_LICENCE_FILES[name]
-        for name, pack in sorted(_lock_packs().items())
-        if pack["license"] == "CC-BY-SA-4.0"
-    ]
-    assert len(cc_by_sa_paths) > 1, "fewer than two CC-BY-SA-4.0 packs -- nothing to compare"
-    first_path, *rest_paths = cc_by_sa_paths
-    first_text = first_path.read_bytes()
-    assert len(first_text) > MIN_LICENCE_BYTES, f"{first_path} is a stub, not a licence"
-    for path in rest_paths:
-        text = path.read_bytes()
-        assert text == first_text, (
-            f"{first_path} and {path} have drifted apart; both are CC-BY-SA-4.0 "
-            "and must be the same text"
-        )
-
-
 LOCK_FILE = Path("sources.lock.yml")
 
 
@@ -951,6 +917,45 @@ LICENCE_TEXT_MARKERS = {
 }
 
 
+def test_the_cc_by_sa_texts_are_identical():
+    """ASVS, the Cheat Sheet Series and MASVS are all CC-BY-SA-4.0, so each
+    pack's licence file is a copy of one 20 KB text. Multiple copies of the
+    same legal text is the shape that drifts: one gets updated and the
+    repository then makes different claims about the same licence, silently.
+
+    Derived from the lock rather than from a fixed list of files: a pack in
+    the lock under CC-BY-SA-4.0 with no PACK_LICENCE_FILES entry fails here,
+    naming the pack and what to add, rather than being silently skipped or
+    raising a bare KeyError.
+
+    Bytes, not text -- a line-ending change is drift. Non-emptiness is asserted
+    first because empty files are also identical, and that is the way this
+    assertion passes while proving nothing.
+
+    If this ever fails, reconcile the files. Deleting the test is not the
+    fix; if the upstreams have genuinely relicensed apart, that is the news and
+    sources.lock.yml should say so before these files do."""
+    cc_by_sa_paths = []
+    for name, pack in sorted(_lock_packs().items()):
+        if pack["license"] != "CC-BY-SA-4.0":
+            continue
+        assert name in PACK_LICENCE_FILES, (
+            f"pack {name!r} is CC-BY-SA-4.0 but has no PACK_LICENCE_FILES "
+            "entry; add one pointing at its licence text"
+        )
+        cc_by_sa_paths.append(PACK_LICENCE_FILES[name])
+    assert len(cc_by_sa_paths) > 1, "fewer than two CC-BY-SA-4.0 packs -- nothing to compare"
+    first_path, *rest_paths = cc_by_sa_paths
+    first_text = first_path.read_bytes()
+    assert len(first_text) > MIN_LICENCE_BYTES, f"{first_path} is a stub, not a licence"
+    for path in rest_paths:
+        text = path.read_bytes()
+        assert text == first_text, (
+            f"{first_path} and {path} have drifted apart; both are CC-BY-SA-4.0 "
+            "and must be the same text"
+        )
+
+
 def test_every_pack_in_the_lock_has_its_own_licence_text():
     """sources.lock.yml declares a licence per pack. Until this branch the files
     did not: one CC-BY-SA-4.0 text covered two packs, so a redistributor could
@@ -961,20 +966,35 @@ def test_every_pack_in_the_lock_has_its_own_licence_text():
     a fourth pack added without a licence text fails here, and so does a licence
     text left behind for a pack that has been dropped.
 
-    The set-equality and size checks alone are structural: they pass on a
-    mapping with the right keys pointing at real, non-stub files even if a
-    pack's file is transposed with a different pack's. Mutating
-    PACK_LICENCE_FILES["cwe"] to point at the ASVS text -- real, well over the
-    stub threshold, just the wrong pack's terms -- passed both checks above
-    silently. So each mapped file's text is also checked against the SPDX id
-    the lock declares for its pack: the file has to identify itself as the
-    licence it claims to be, not just exist and be large enough. This cannot
-    tell asvs and cheatsheets apart from one another -- both are CC-BY-SA-4.0
-    and, per the identity test above, byte-identical, so a transposition
-    between those two specifically leaves no content difference to detect."""
+    Key equality alone is not enough: two different pack names can be mapped
+    onto the same PACK_LICENCE_FILES value, and `set(PACK_LICENCE_FILES) ==
+    set(packs)` does not notice, because it only compares keys. Reproduced:
+    aliasing one pack's key onto another pack's licence file, with NOTICE
+    updated to match, left this whole test module green. So the mapped values
+    are also asserted distinct, independently of what they contain -- each
+    pack needs its own file, because they are pinned separately and either
+    could be relicensed without the other.
+
+    The set-equality, distinctness and size checks alone are still structural:
+    they pass on a mapping with the right keys pointing at real, non-stub,
+    distinct files even if a pack's file is transposed with a different
+    pack's. Mutating PACK_LICENCE_FILES["cwe"] to point at a copy of the ASVS
+    text saved under its own filename -- real, distinct from every other
+    value, well over the stub threshold, just the wrong pack's terms --
+    passes all three checks above silently. So each mapped file's text is
+    also checked against the SPDX id the lock declares for its pack: the file
+    has to identify itself as the licence it claims to be, not just exist, be
+    large enough, and be unique. This cannot tell asvs and cheatsheets apart
+    from one another -- both are CC-BY-SA-4.0 and, per the identity test
+    above, byte-identical, so a transposition between those two specifically
+    leaves no content difference to detect."""
     packs = _lock_packs()
     assert set(PACK_LICENCE_FILES) == set(packs), (
         f"licence files cover {sorted(PACK_LICENCE_FILES)}, the lock has {sorted(packs)}"
+    )
+    assert len(set(PACK_LICENCE_FILES.values())) == len(PACK_LICENCE_FILES), (
+        "two packs share one licence file; each pack needs its own, because they "
+        "are pinned separately and either could be relicensed without the other"
     )
     for name, path in sorted(PACK_LICENCE_FILES.items()):
         assert path.is_file(), f"pack {name!r}: {path} does not exist"
@@ -1341,6 +1361,24 @@ def test_notice_attributes_every_pack_in_the_lock():
             f"pack {name!r}: expected exactly one NOTICE attribution entry "
             f"pointing at {marker}, found {len(matched)}"
         )
+
+
+def test_licensing_doc_names_every_pack_in_the_lock():
+    """docs/licensing.md hand-counted the packs in prose ("three of the four
+    upstream repos", "four upstream projects", "(four)", "all four upstream
+    projects", "one of the four packs"). A fifth pack added to the lock
+    without touching this file leaves those counts wrong, and worse, leaves
+    the pack entirely unmentioned to a reader deciding how they may use or
+    redistribute it.
+
+    Coverage, not the English count words, is the property pinned here: every
+    pack in the lock must be named somewhere in the doc. Reuses
+    _upstream_marker, the same derivation NOTICE's coverage test above uses,
+    so a pack that satisfies that guard is held to the same standard here."""
+    text = Path("docs/licensing.md").read_text()
+    for name, pack in sorted(_lock_packs().items()):
+        marker = _upstream_marker(name, pack)
+        assert marker in text, f"pack {name!r}: docs/licensing.md never mentions {marker}"
 
 
 def test_notice_states_each_packs_licence_on_that_packs_own_entry():
