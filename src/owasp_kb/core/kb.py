@@ -51,6 +51,22 @@ CATALOGUE_RELS = (CATALOGUE_CHILD_REL, "cwe_peer", "cwe_member")
 MAX_ANCESTOR_DEPTH = 20
 
 
+def _id_candidates(id: str) -> list[str]:
+    """A requirement id, plus the section and chapter ids it rolls up to.
+
+    Shared by ``related`` (which resolves edges through all three forms) and
+    ``requirement_pack`` (which resolves the owning pack through the same
+    forms) so the two agree on what "this id" means without saying so twice.
+    """
+    candidates = [id]
+    parts = id.split(".")
+    if len(parts) == 3:
+        candidates.append(f"{parts[0]}.{parts[1]}")
+    if len(parts) >= 2:
+        candidates.append(parts[0])
+    return candidates
+
+
 @dataclass(frozen=True)
 class LinkCoverage:
     """How much of the requirement set a relationship reaches.
@@ -417,12 +433,7 @@ class Kb:
         Without this roll-up the highest-value query in the system -- "which
         cheat sheet explains how to satisfy this requirement" -- returns nothing.
         """
-        candidates = [id]
-        parts = id.split(".")
-        if len(parts) == 3:
-            candidates.append(f"{parts[0]}.{parts[1]}")
-        if len(parts) >= 2:
-            candidates.append(parts[0])
+        candidates = _id_candidates(id)
 
         placeholders = ",".join("?" * len(candidates))
         sql = f"SELECT rel, to_kind, to_id, source FROM links WHERE from_id IN ({placeholders})"
@@ -436,6 +447,58 @@ class Kb:
             RelatedEdge(rel=r["rel"], to_kind=r["to_kind"], to_id=r["to_id"], source=r["source"])
             for r in rows
         ]
+
+    def requirement_pack(self, id: str) -> str | None:
+        """Which pack owns a requirement, section or chapter id -- None if the
+        id resolves in no pack at all.
+
+        Used to tell two reasons an empty ``related()`` apart: a requirement
+        whose pack ships links but this particular id has none yet (an upstream
+        coverage gap), versus a requirement whose whole pack ships no links at
+        all (a structural gap -- see ``pack_ships_links``). Both read as ``[]``
+        from ``related()`` alone; this is how a caller tells them apart without
+        guessing from the shape of the id.
+        """
+        candidates = _id_candidates(id)
+        placeholders = ",".join("?" * len(candidates))
+        row = self._conn.execute(
+            f"""
+            SELECT p.name AS name
+              FROM requirements r JOIN packs p ON p.id = r.pack_id
+             WHERE r.req_id IN ({placeholders})
+                OR r.section_id IN ({placeholders})
+                OR r.chapter_id IN ({placeholders})
+             LIMIT 1
+            """,
+            candidates * 3,
+        ).fetchone()
+        return row["name"] if row is not None else None
+
+    def pack_ships_links(self, pack: str) -> bool:
+        """Whether any requirement of this pack is reachable from a links row.
+
+        MASVS ships zero rows in ``links`` at all, by design -- it carries no
+        upstream mapping for this project to author or go stale. That is
+        different from an ASVS requirement with no edge for some relationship,
+        which is this project's own coverage gap against mappings that do
+        exist upstream. Asked of the data, not a hardcoded pack name, so a pack
+        that later gains its own links stops reporting a structural gap with no
+        code change here.
+        """
+        row = self._conn.execute(
+            """
+            SELECT 1
+              FROM requirements r JOIN packs p ON p.id = r.pack_id
+             WHERE p.name = ?
+               AND EXISTS (
+                 SELECT 1 FROM links x
+                  WHERE x.from_id IN (r.req_id, r.section_id, r.chapter_id)
+               )
+             LIMIT 1
+            """,
+            (pack,),
+        ).fetchone()
+        return row is not None
 
     # -- catalogue packs -------------------------------------------------
 

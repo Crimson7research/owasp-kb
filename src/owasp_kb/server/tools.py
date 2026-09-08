@@ -448,22 +448,36 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             ],
         }
         if not edges:
-            # An empty list must not read as "no CWE applies". Upstream mappings
-            # predate ASVS 5.0.0, so absence is frequently our gap rather than a
-            # statement about the requirement.
-            coverage = {c.rel: c for c in kb.info().link_coverage}
-            gaps = [
-                f"{r} covers {coverage[r].requirements}/{coverage[r].total_requirements} "
-                f"requirements ({coverage[r].share:.0%})"
-                for r in (PARTIAL_COVERAGE_RELS if rel is None else [rel])
-                if r in coverage and coverage[r].share < 1.0
-            ]
-            if gaps:
+            # An empty list must not read as "no CWE applies" -- but *why* it is
+            # empty differs by pack. A pack whose own requirement ships no edge
+            # here yet its pack ships links elsewhere (ASVS) is our own coverage
+            # gap against upstream mappings that predate ASVS 5.0.0. A pack that
+            # ships no links at all (MASVS, by design -- it carries no upstream
+            # mapping for this project to author) has nothing missing to find;
+            # telling that requirement the ASVS story would name the wrong
+            # reason, exactly as kb_info's docstring distinguishes the two.
+            pack = kb.requirement_pack(id)
+            if pack is not None and not kb.pack_ships_links(pack):
                 response["note"] = (
-                    f"No edges found for {id}. Coverage is partial because the upstream "
-                    f"mappings predate ASVS 5.0.0: {'; '.join(gaps)}. Absence of an edge "
-                    "is NOT evidence that no such mapping exists for this requirement."
+                    f"No edges found for {id}. {pack!r} ships no mapping of its own at "
+                    "all -- this is a structural gap, not upstream staleness: there is no "
+                    "edge to be missing here, so absence is not evidence of a gap in this "
+                    "project's coverage."
                 )
+            else:
+                coverage = {c.rel: c for c in kb.info().link_coverage}
+                gaps = [
+                    f"{r} covers {coverage[r].requirements}/{coverage[r].total_requirements} "
+                    f"requirements ({coverage[r].share:.0%})"
+                    for r in (PARTIAL_COVERAGE_RELS if rel is None else [rel])
+                    if r in coverage and coverage[r].share < 1.0
+                ]
+                if gaps:
+                    response["note"] = (
+                        f"No edges found for {id}. Coverage is partial because the upstream "
+                        f"mappings predate ASVS 5.0.0: {'; '.join(gaps)}. Absence of an edge "
+                        "is NOT evidence that no such mapping exists for this requirement."
+                    )
         return response
 
     def cwe_get(entry_id: str) -> dict:

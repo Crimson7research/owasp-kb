@@ -495,6 +495,38 @@ def test_related_with_edges_carries_no_note(tools):
     assert "note" not in result
 
 
+def test_related_empty_result_for_a_masvs_id_does_not_claim_upstream_staleness(tmp_path):
+    """MASVS ships zero rows in ``links`` at all, by design: there is no
+    upstream mapping for this project to author, so no such mapping can have
+    gone stale. An agent told "coverage is partial because the upstream
+    mappings predate ASVS 5.0.0" for a MASVS id is being given the ASVS
+    explanation for a MASVS fact -- the gap here is structural, not staleness.
+
+    Built on its own Kb, independent of the shared ``tools`` fixture, which
+    does not ingest MASVS."""
+    conn = connect(tmp_path / "kb.sqlite")
+    create_schema(conn)
+    ingest_asvs(
+        conn, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0"
+    )
+    ingest_masvs(conn, "tests/fixtures/masvs_sample.yaml", version="2.1.0", license="CC-BY-SA-4.0")
+    ingest_guidance_links(conn, "tests/fixtures/IndexASVS_sample.md")
+    ingest_cwe_links(
+        conn,
+        "tests/fixtures/cwe_mapping_sample.json",
+        be_to_release_path="tests/fixtures/mapping_be_to_500_sample.yml",
+    )
+    ingest_supersedes_links(conn, "tests/fixtures/mapping_v5_to_v4_sample.yml")
+    ingest_nist_links(conn, "tests/fixtures/nist_sample.md")
+    tools = {t.__name__: t for t in build_tools(Kb(conn))}
+    result = tools["owasp_related"]("MASVS-STORAGE-1")
+    assert result["edges"] == []
+    note = result["note"].lower()
+    assert "predate asvs 5.0.0" not in note
+    assert "structural" in note
+    assert "masvs" in note
+
+
 # -- cwe_get ----------------------------------------------------------
 
 
