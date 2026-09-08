@@ -125,10 +125,9 @@ docker login ghcr.io          # a GitHub PAT with the read:packages scope
 /plugin install owasp-kb
 ```
 
-That registers the MCP server and installs four skills, five agents and two
-hooks. The server runs `ghcr.io/crimson7research/owasp-kb` pinned by digest, so
-the first start pulls the image (~700 MB for `full`) and later starts use the
-local copy.
+That registers the MCP server and installs four skills, five agents and five hooks.
+The server runs `ghcr.io/crimson7research/owasp-kb` pinned by digest, so the first
+start pulls the image (~700 MB for `full`) and later starts use the local copy.
 
 Check the whole chain — plugin, pin, registry access, server, hooks, state
 directory, SSH — with:

@@ -252,8 +252,9 @@ enforcement that `owasp_roster` cannot reach lives:
 plugins/owasp-kb/
   skills/     4 skills; two of them drive an assessment
   agents/     the 5 dispatched roles
-  hooks/      4 hooks — 2 PreToolUse refuse a tool call before its output exists;
-              2 more route to the skill, on a vocabulary match and at session start
+  hooks/      5 hooks — 2 PreToolUse refuse a tool call before its output exists;
+              2 route to the skill, on a vocabulary match and at session start;
+              1 states where the host CLI is, since it is not on PATH
   scripts/    owasp-kb — report merge, doctor, sessions; runs on the host, because
               the state mount is read-only and the target repo is not mounted.
               Off PATH deliberately (ADR 0018); invoked by absolute path
