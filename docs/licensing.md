@@ -7,19 +7,20 @@ deliverable, a fork you plan to publish), read the full texts in
 [LICENSE](../LICENSE) and the per-pack texts under [licenses/](../licenses/)
 yourself, or ask a lawyer.
 
-## Both upstream repos are CC-BY-SA-4.0
+## Three of the four upstream repos are CC-BY-SA-4.0
 
-Two of the three projects this repository ingests content from:
+Three of the four projects this repository ingests content from:
 
 - [OWASP/ASVS](https://github.com/OWASP/ASVS)
 - [OWASP/CheatSheetSeries](https://github.com/OWASP/CheatSheetSeries)
+- [OWASP/masvs](https://github.com/OWASP/masvs)
 
-both license their content **CC-BY-SA-4.0** ("Attribution-ShareAlike"),
+all license their content **CC-BY-SA-4.0** ("Attribution-ShareAlike"),
 verified directly via the GitHub licence API on each repository rather than
-assumed from an OWASP-wide default. Neither project's content is MIT, Apache,
-or public domain — anything derived from either carries the same license
-forward, by the terms of ShareAlike, whether or not that derivation is
-obvious.
+assumed from an OWASP-wide default. None of the three projects' content is
+MIT, Apache, or public domain — anything derived from any of them carries the
+same license forward, by the terms of ShareAlike, whether or not that
+derivation is obvious.
 
 ## Why redistribution and adaptation both apply here
 
@@ -53,8 +54,8 @@ Two separate CC-BY-SA-4.0 obligations are in play, not one:
 
 ## The code/data split
 
-Four licenses cover four disjoint things in this repository, one per pack plus
-the code, and none of them covers another:
+Five licenses cover five disjoint things in this repository, one per pack
+(four) plus the code, and none of them covers another:
 
 - **[LICENSE](../LICENSE) (MIT)** covers this project's own source code only:
   the ingest pipeline (`ingest/`), the domain model and retrieval logic
@@ -69,8 +70,13 @@ the code, and none of them covers another:
   (CC-BY-SA-4.0)** covers the Cheat Sheet Series and its portion of the index,
   on the same terms. It is a copy of the file above, because both projects
   chose the same license; they are pinned separately in `sources.lock.yml` and
-  either could be relicensed without the other, which is why there are two
-  files and not one.
+  either could be relicensed without the other, which is why the same text
+  exists as more than one file.
+- **[LICENSE-OWASP-MASVS](../licenses/LICENSE-OWASP-MASVS) (CC-BY-SA-4.0)**
+  covers the OWASP Mobile Application Security Verification Standard (MASVS)
+  and its portion of the index, on the same terms. It too is a copy of the
+  same text, for the same reason: MASVS is pinned separately in
+  `sources.lock.yml` and could be relicensed independently of the other two.
 - **[LICENSE-CWE](../licenses/LICENSE-CWE)** covers MITRE's CWE terms of use,
   under which the CWE pack's content is used — see
   [below](#cwe-is-mitres-under-its-own-terms).
@@ -85,9 +91,9 @@ without reading this document.
 Anyone redistributing an `owasp-kb` image, or the index file it bakes in,
 should at minimum:
 
-1. **Preserve attribution** to all three upstream projects — name them, link to
+1. **Preserve attribution** to all four upstream projects — name them, link to
    their repositories, and state each one's license, which is not the same for
-   all three (CC-BY-SA-4.0 for the two OWASP projects, MITRE's own terms for
+   all four (CC-BY-SA-4.0 for the three OWASP projects, MITRE's own terms for
    CWE) — this repository's [NOTICE](../licenses/NOTICE) file is one way to
    satisfy this and can be carried forward as-is.
 2. **Carry the CC-BY-SA-4.0 license forward** for the content and the index
@@ -125,10 +131,11 @@ not because it shares an upstream.
 OWASP® is a registered trademark of the OWASP Foundation. This project is
 **not affiliated with, endorsed by, or sponsored by** the OWASP Foundation.
 The project name leads with "owasp" only because that is what most of the content
-is — the Application Security Verification Standard and the Cheat Sheet Series,
-both OWASP Foundation projects — not because of any relationship with the
-Foundation itself. Since the CWE pack, the name is also **incomplete** as a
-description: one of the three packs is MITRE's, and the name says nothing about it.
+is — the Application Security Verification Standard, the Cheat Sheet Series, and
+the Mobile Application Security Verification Standard, all OWASP Foundation
+projects — not because of any relationship with the Foundation itself. Since the
+CWE pack, the name is also **incomplete** as a description: one of the four packs
+is MITRE's, and the name says nothing about it.
 `kb_info` reports every pack's `license` and `source_url` for that reason, so a
 citation's upstream is always recoverable from the server rather than inferred from
 the repository's name. This matters specifically because the naming choice could

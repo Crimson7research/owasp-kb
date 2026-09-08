@@ -14,9 +14,9 @@ its requirements to CWE ids, and the project name does not describe it.
 ## Third-party content
 
 This project packages, and its built container images bake in, content from
-three upstream projects. They do NOT share an upstream or a license. Two
+four upstream projects. They do NOT share an upstream or a license. Three
 are OWASP Foundation projects licensed CC-BY-SA-4.0, verified via the GitHub
-licence API on each upstream repository; the third is MITRE's, under MITRE's
+licence API on each upstream repository; the fourth is MITRE's, under MITRE's
 own terms of use:
 
 - OWASP Application Security Verification Standard (ASVS)
@@ -27,6 +27,10 @@ own terms of use:
   https://github.com/OWASP/CheatSheetSeries
   License: CC-BY-SA-4.0 (see LICENSE-OWASP-CHEATSHEET for the full text)
 
+- OWASP Mobile Application Security Verification Standard (MASVS)
+  https://github.com/OWASP/masvs
+  License: CC-BY-SA-4.0 (see LICENSE-OWASP-MASVS for the full text)
+
 - Common Weakness Enumeration (CWE) — The MITRE Corporation (not OWASP)
   https://cwe.mitre.org/
   License: LicenseRef-CWE-TOU (see LICENSE-CWE for the full terms)
@@ -36,12 +40,13 @@ SQLite index built from it — chunked, cross-linked, and re-served through the
 MCP tools — is an adaptation under the Creative Commons framework.
 
 The index is a COMPOSITE of differently-licensed content, and no single
-license covers all of it. The portions derived from ASVS and the Cheat Sheet
-Series remain CC-BY-SA-4.0 in their own right as an adaptation; each carries
-its own copy of that license, LICENSE-OWASP-ASVS and LICENSE-OWASP-CHEATSHEET.
-The two files hold the same text because the two projects chose the same
-license, not because they are one work: they are pinned separately and either
-could be relicensed without the other. The portion derived from the CWE
+license covers all of it. The portions derived from ASVS, the Cheat Sheet
+Series and MASVS remain CC-BY-SA-4.0 in their own right as an adaptation; each
+carries its own copy of that license, LICENSE-OWASP-ASVS,
+LICENSE-OWASP-CHEATSHEET and LICENSE-OWASP-MASVS. The files hold the same text
+because the three projects chose the same license, not because they are one
+work: they are pinned separately and any one of them could be relicensed
+without the others. The portion derived from the CWE
 catalogue is governed by MITRE's CWE Terms of Use; see LICENSE-CWE for that
 text, which must accompany redistribution. Each image's OCI labels state
 the same split (`org.opencontainers.image.licenses="MIT AND CC-BY-SA-4.0 AND

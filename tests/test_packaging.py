@@ -892,31 +892,39 @@ def test_the_repo_carries_a_cwe_license_text():
 # file exists" while carrying no terms at all.
 MIN_LICENCE_BYTES = 500
 
-CC_BY_SA_TEXTS = (
-    Path("licenses/LICENSE-OWASP-ASVS"),
-    Path("licenses/LICENSE-OWASP-CHEATSHEET"),
-)
 
+def test_the_cc_by_sa_texts_are_identical():
+    """ASVS, the Cheat Sheet Series and MASVS are all CC-BY-SA-4.0, so each
+    pack's licence file is a copy of one 20 KB text. Multiple copies of the
+    same legal text is the shape that drifts: one gets updated and the
+    repository then makes different claims about the same licence, silently.
 
-def test_the_two_cc_by_sa_texts_are_identical():
-    """ASVS and the Cheat Sheet Series are both CC-BY-SA-4.0, so each pack's
-    licence file is a copy of one 20 KB text. Two copies of legal text is the
-    shape that drifts: one gets updated and the repository then makes two
-    different claims about the same licence, silently.
+    Derived from the lock rather than from a fixed list of files: a pack
+    later added under CC-BY-SA-4.0 whose licence file is never reconciled
+    with the others falls outside this guard until it is included here too.
 
     Bytes, not text -- a line-ending change is drift. Non-emptiness is asserted
-    first because two empty files are also identical, and that is the way this
+    first because empty files are also identical, and that is the way this
     assertion passes while proving nothing.
 
-    If this ever fails, reconcile the two files. Deleting the test is not the
+    If this ever fails, reconcile the files. Deleting the test is not the
     fix; if the upstreams have genuinely relicensed apart, that is the news and
     sources.lock.yml should say so before these files do."""
-    asvs, cheatsheets = (path.read_bytes() for path in CC_BY_SA_TEXTS)
-    assert len(asvs) > MIN_LICENCE_BYTES, f"{CC_BY_SA_TEXTS[0]} is a stub, not a licence"
-    assert asvs == cheatsheets, (
-        f"{CC_BY_SA_TEXTS[0]} and {CC_BY_SA_TEXTS[1]} have drifted apart; both "
-        "are CC-BY-SA-4.0 and must be the same text"
-    )
+    cc_by_sa_paths = [
+        PACK_LICENCE_FILES[name]
+        for name, pack in sorted(_lock_packs().items())
+        if pack["license"] == "CC-BY-SA-4.0"
+    ]
+    assert len(cc_by_sa_paths) > 1, "fewer than two CC-BY-SA-4.0 packs -- nothing to compare"
+    first_path, *rest_paths = cc_by_sa_paths
+    first_text = first_path.read_bytes()
+    assert len(first_text) > MIN_LICENCE_BYTES, f"{first_path} is a stub, not a licence"
+    for path in rest_paths:
+        text = path.read_bytes()
+        assert text == first_text, (
+            f"{first_path} and {path} have drifted apart; both are CC-BY-SA-4.0 "
+            "and must be the same text"
+        )
 
 
 LOCK_FILE = Path("sources.lock.yml")
@@ -930,6 +938,7 @@ PACK_LICENCE_FILES = {
     "asvs": Path("licenses/LICENSE-OWASP-ASVS"),
     "cheatsheets": Path("licenses/LICENSE-OWASP-CHEATSHEET"),
     "cwe": Path("licenses/LICENSE-CWE"),
+    "masvs": Path("licenses/LICENSE-OWASP-MASVS"),
 }
 
 # What a licence's own text says about itself, so a pack's file can be checked
