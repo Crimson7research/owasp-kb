@@ -51,9 +51,37 @@ CATALOGUE_RELS = (CATALOGUE_CHILD_REL, "cwe_peer", "cwe_member")
 MAX_ANCESTOR_DEPTH = 20
 
 
+def _id_candidates(id: str) -> list[str]:
+    """A requirement id, plus the section and chapter ids it rolls up to.
+
+    Shared by ``related`` (which resolves edges through all three forms) and
+    ``requirement_pack`` (which resolves the owning pack through the same
+    forms) so the two agree on what "this id" means without saying so twice.
+    """
+    candidates = [id]
+    parts = id.split(".")
+    if len(parts) == 3:
+        candidates.append(f"{parts[0]}.{parts[1]}")
+    if len(parts) >= 2:
+        candidates.append(parts[0])
+    return candidates
+
+
 @dataclass(frozen=True)
 class LinkCoverage:
     """How much of the requirement set a relationship reaches.
+
+    ``total_requirements`` is scoped to the pack(s) the relationship's edges
+    actually anchor to, not to every requirement in the index. All four
+    requirement-anchored relationships (guidance, cwe, nist, supersedes) are
+    ASVS-keyed and ship no edge that could ever match a MASVS id, so with both
+    packs loaded the honest denominator is ASVS's own size, not ASVS+MASVS --
+    counting every pack would report a shortfall MASVS's presence could not
+    possibly close, for every relationship, forever. This is the per-pack fix
+    ``integrity.run_checks`` already applies to requirement counts, carried over
+    to coverage: whichever pack(s) a relationship's from_id namespace resolves
+    into is the population it could cover, and only that population is a
+    meaningful denominator.
 
     ``requirements`` and ``total_requirements`` are None for a relationship that
     does not start at a requirement at all -- the CWE graph connects catalogue
@@ -133,42 +161,58 @@ class Kb:
         not decide this: guidance is keyed on 'asvs_section' and is still
         reachable by 332 requirements, while the CWE graph is keyed on 'cwe' and
         is reachable by none.
+
+        The denominator is the size of the pack(s) that own the requirements a
+        relationship actually reached -- not every requirement in the index. A
+        second checklist pack (MASVS) ships no links rows at all, so a rel like
+        guidance can only ever match ASVS ids; counting MASVS's rows into the
+        denominator would report a shortfall MASVS's presence could not possibly
+        close. Requirements carry their pack in ``pack_id``, so the packs a
+        relationship anchors to are read off the matched rows themselves rather
+        than assumed to be "asvs" -- a rel that one day gains MASVS edges too
+        would widen its own denominator with no code change here.
         """
-        total = self._conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0]
-        rows = self._conn.execute(
-            """
-            SELECT l.rel AS rel,
-                   COUNT(*) AS edges,
-                   (SELECT COUNT(*) FROM requirements r
-                      WHERE EXISTS (
-                        SELECT 1 FROM links x
-                         WHERE x.rel = l.rel
-                           AND x.from_id IN (
-                                 r.req_id,
-                                 r.section_id,
-                                 r.chapter_id
-                               )
-                      )) AS reqs,
-                   EXISTS (
-                     SELECT 1 FROM links y
-                      JOIN requirements r2
-                        ON y.from_id IN (r2.req_id, r2.section_id, r2.chapter_id)
-                     WHERE y.rel = l.rel
-                   ) AS anchored
-              FROM links l
-             GROUP BY l.rel
-             ORDER BY l.rel
-            """
-        ).fetchall()
-        return [
-            LinkCoverage(
-                rel=r["rel"],
-                edges=r["edges"],
-                requirements=r["reqs"] if r["anchored"] else None,
-                total_requirements=total if r["anchored"] else None,
+        rels = [r[0] for r in self._conn.execute("SELECT DISTINCT rel FROM links")]
+        coverage = []
+        for rel in sorted(rels):
+            edges = self._conn.execute(
+                "SELECT COUNT(*) FROM links WHERE rel = ?", (rel,)
+            ).fetchone()[0]
+            # Requirements this rel actually reaches, grouped by the pack they
+            # belong to. An empty result is exactly "not anchored to any
+            # requirement" -- see the docstring above -- and is what
+            # distinguishes the CWE graph (rel='cwe_child' etc, always empty
+            # here) from a requirement-scoped rel that happens to resolve
+            # nothing (which cannot happen today, but is not assumed away).
+            matched = self._conn.execute(
+                """
+                SELECT r.pack_id AS pack_id, COUNT(*) AS n
+                  FROM requirements r
+                 WHERE EXISTS (
+                   SELECT 1 FROM links x
+                    WHERE x.rel = ?
+                      AND x.from_id IN (r.req_id, r.section_id, r.chapter_id)
+                 )
+                 GROUP BY r.pack_id
+                """,
+                (rel,),
+            ).fetchall()
+            if not matched:
+                coverage.append(
+                    LinkCoverage(rel=rel, edges=edges, requirements=None, total_requirements=None)
+                )
+                continue
+            reqs = sum(row["n"] for row in matched)
+            anchored_pack_ids = [row["pack_id"] for row in matched]
+            placeholders = ",".join("?" * len(anchored_pack_ids))
+            total = self._conn.execute(
+                f"SELECT COUNT(*) FROM requirements WHERE pack_id IN ({placeholders})",
+                anchored_pack_ids,
+            ).fetchone()[0]
+            coverage.append(
+                LinkCoverage(rel=rel, edges=edges, requirements=reqs, total_requirements=total)
             )
-            for r in rows
-        ]
+        return coverage
 
     # -- search ----------------------------------------------------------
 
@@ -194,12 +238,37 @@ class Kb:
             self._reject_level_for_levelless_pack(pack)
         hits = self._retriever.search(query, pack=pack, level=level, limit=limit)
         if not hits:
-            searched = pack or ", ".join(self._pack_names())
-            raise LookupError(
-                f"no match for {query!r} in packs [{searched}]. This means the query found "
-                "nothing, NOT that no security requirements apply. Try different wording."
-            )
+            raise LookupError(self._no_match_message(query, pack=pack, level=level))
         return hits
+
+    def _no_match_message(self, query: str, *, pack: str | None, level: str | None) -> str:
+        """Name only the packs a failed search actually searched.
+
+        A ``level`` filter with no ``pack`` structurally excludes every
+        level-less pack -- SQL drops a NULL level -- so naming it among the
+        "searched" packs licenses exactly the false inference the module
+        docstring warns [] would: it reads as "MASVS has nothing on this",
+        when MASVS was never queried at all. Naming a single ``pack`` has no
+        such ambiguity, since that pack was rejected already if it has no
+        levels and a level was asked for.
+        """
+        if pack is not None:
+            searched = [pack]
+            excluded: list[str] = []
+        else:
+            names = self._pack_names()
+            excluded = [p for p in names if level is not None and not self._has_levels(p)]
+            searched = [p for p in names if p not in excluded]
+        note = ""
+        if excluded:
+            note = (
+                f" level={level!r} excludes {', '.join(excluded)} (no levels defined), so "
+                "despite being loaded it was NOT actually searched."
+            )
+        return (
+            f"no match for {query!r} in packs [{', '.join(searched)}].{note} This means the "
+            "query found nothing, NOT that no security requirements apply. Try different wording."
+        )
 
     # -- corpus navigation -----------------------------------------------
 
@@ -266,6 +335,12 @@ class Kb:
         return bool(row[0])
 
     def _reject_level_for_levelless_pack(self, pack: str) -> None:
+        # Existence first: _has_levels' JOIN matches nothing for an unknown pack
+        # name exactly as it does for a real, levelless one, so without this an
+        # unknown pack was asserted to exist and merely lack levels -- get_pack
+        # raises KeyError naming the available packs instead, matching how
+        # Kb.checklist already handles this by calling get_pack first.
+        get_pack(self._conn, pack)
         if self._has_levels(pack):
             return
         raise ValueError(
@@ -358,12 +433,7 @@ class Kb:
         Without this roll-up the highest-value query in the system -- "which
         cheat sheet explains how to satisfy this requirement" -- returns nothing.
         """
-        candidates = [id]
-        parts = id.split(".")
-        if len(parts) == 3:
-            candidates.append(f"{parts[0]}.{parts[1]}")
-        if len(parts) >= 2:
-            candidates.append(parts[0])
+        candidates = _id_candidates(id)
 
         placeholders = ",".join("?" * len(candidates))
         sql = f"SELECT rel, to_kind, to_id, source FROM links WHERE from_id IN ({placeholders})"
@@ -377,6 +447,58 @@ class Kb:
             RelatedEdge(rel=r["rel"], to_kind=r["to_kind"], to_id=r["to_id"], source=r["source"])
             for r in rows
         ]
+
+    def requirement_pack(self, id: str) -> str | None:
+        """Which pack owns a requirement, section or chapter id -- None if the
+        id resolves in no pack at all.
+
+        Used to tell two reasons an empty ``related()`` apart: a requirement
+        whose pack ships links but this particular id has none yet (an upstream
+        coverage gap), versus a requirement whose whole pack ships no links at
+        all (a structural gap -- see ``pack_ships_links``). Both read as ``[]``
+        from ``related()`` alone; this is how a caller tells them apart without
+        guessing from the shape of the id.
+        """
+        candidates = _id_candidates(id)
+        placeholders = ",".join("?" * len(candidates))
+        row = self._conn.execute(
+            f"""
+            SELECT p.name AS name
+              FROM requirements r JOIN packs p ON p.id = r.pack_id
+             WHERE r.req_id IN ({placeholders})
+                OR r.section_id IN ({placeholders})
+                OR r.chapter_id IN ({placeholders})
+             LIMIT 1
+            """,
+            candidates * 3,
+        ).fetchone()
+        return row["name"] if row is not None else None
+
+    def pack_ships_links(self, pack: str) -> bool:
+        """Whether any requirement of this pack is reachable from a links row.
+
+        MASVS ships zero rows in ``links`` at all, by design -- it carries no
+        upstream mapping for this project to author or go stale. That is
+        different from an ASVS requirement with no edge for some relationship,
+        which is this project's own coverage gap against mappings that do
+        exist upstream. Asked of the data, not a hardcoded pack name, so a pack
+        that later gains its own links stops reporting a structural gap with no
+        code change here.
+        """
+        row = self._conn.execute(
+            """
+            SELECT 1
+              FROM requirements r JOIN packs p ON p.id = r.pack_id
+             WHERE p.name = ?
+               AND EXISTS (
+                 SELECT 1 FROM links x
+                  WHERE x.from_id IN (r.req_id, r.section_id, r.chapter_id)
+               )
+             LIMIT 1
+            """,
+            (pack,),
+        ).fetchone()
+        return row is not None
 
     # -- catalogue packs -------------------------------------------------
 

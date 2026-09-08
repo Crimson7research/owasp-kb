@@ -103,17 +103,36 @@ TOOL_TRIGGER_TOPICS = (
     "WebRTC",
     "API security",
     "secure design review",
+    # Added when MASVS 2.1.0 shipped as a second checklist pack: every discovery
+    # surface still read as if the corpus were ASVS-and-cheat-sheets-only, so an
+    # agent triaging a mobile question had no reason to call owasp_search at
+    # all -- the same bug class the SSRF batch above was fixed for, this time
+    # for an entire pack rather than one vulnerability class. Platform names are
+    # included because that is what a mobile question actually contains, not a
+    # MASVS term.
+    "Android",
+    "iOS",
+    "React Native",
+    "Flutter",
+    "keystore",
+    "biometric authentication",
+    "screenshot leakage",
+    "backup leakage",
+    "deep link",
+    "IPC",
+    "reverse engineering resilience",
+    "root detection",
 )
 
 _TOPICS = ", ".join(TOOL_TRIGGER_TOPICS)
 
 SEARCH_DESCRIPTION = (
-    "Search authoritative OWASP security guidance (ASVS requirements and Cheat "
-    f"Sheets). Call this BEFORE answering anything involving: {_TOPICS}. "
+    "Search authoritative OWASP security guidance (ASVS and MASVS requirements "
+    f"and Cheat Sheets). Call this BEFORE answering anything involving: {_TOPICS}. "
     "Do not answer from memory - return citable requirement IDs.\n\n"
     "Args:\n"
     "    query: Natural-language description of the security topic.\n"
-    "    pack: Restrict to one pack, e.g. 'asvs' or 'cheatsheets'.\n"
+    "    pack: Restrict to one pack, e.g. 'asvs', 'masvs' or 'cheatsheets'.\n"
     "    level: ASVS level '1', '2' or '3'. Applies to ASVS requirements only --\n"
     "        naming a pack with no levels (e.g. 'masvs') together with a level\n"
     "        is refused. Omitting pack, a level filter excludes level-less\n"
@@ -218,9 +237,14 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         the active retrieval mode. Call this first if you are unsure what content
         is available, or when you need exact version strings for citations.
 
-        Also reports per-relationship link coverage: cwe and nist are
-        partial because the upstream mappings predate ASVS 5.0.0, so a missing
-        edge is not evidence that none exists.
+        Also reports per-relationship link coverage, scoped to the pack(s) each
+        relationship's edges actually anchor to rather than to every pack
+        loaded. Within that scope, cwe and nist are partial because the
+        upstream mappings predate ASVS 5.0.0, so a missing edge is not evidence
+        that none exists. A pack with no mapping of its own at all -- MASVS
+        ships no links -- is outside every relationship's scope entirely; that
+        is a structural gap, not a staleness one, and it is not what the
+        cwe/nist percentages below describe.
 
         Coverage is reported only for relationships that start at a requirement.
         cwe_child, cwe_peer and cwe_member connect catalogue entries to each
@@ -424,22 +448,36 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
             ],
         }
         if not edges:
-            # An empty list must not read as "no CWE applies". Upstream mappings
-            # predate ASVS 5.0.0, so absence is frequently our gap rather than a
-            # statement about the requirement.
-            coverage = {c.rel: c for c in kb.info().link_coverage}
-            gaps = [
-                f"{r} covers {coverage[r].requirements}/{coverage[r].total_requirements} "
-                f"requirements ({coverage[r].share:.0%})"
-                for r in (PARTIAL_COVERAGE_RELS if rel is None else [rel])
-                if r in coverage and coverage[r].share < 1.0
-            ]
-            if gaps:
+            # An empty list must not read as "no CWE applies" -- but *why* it is
+            # empty differs by pack. A pack whose own requirement ships no edge
+            # here yet its pack ships links elsewhere (ASVS) is our own coverage
+            # gap against upstream mappings that predate ASVS 5.0.0. A pack that
+            # ships no links at all (MASVS, by design -- it carries no upstream
+            # mapping for this project to author) has nothing missing to find;
+            # telling that requirement the ASVS story would name the wrong
+            # reason, exactly as kb_info's docstring distinguishes the two.
+            pack = kb.requirement_pack(id)
+            if pack is not None and not kb.pack_ships_links(pack):
                 response["note"] = (
-                    f"No edges found for {id}. Coverage is partial because the upstream "
-                    f"mappings predate ASVS 5.0.0: {'; '.join(gaps)}. Absence of an edge "
-                    "is NOT evidence that no such mapping exists for this requirement."
+                    f"No edges found for {id}. {pack!r} ships no mapping of its own at "
+                    "all -- this is a structural gap, not upstream staleness: there is no "
+                    "edge to be missing here, so absence is not evidence of a gap in this "
+                    "project's coverage."
                 )
+            else:
+                coverage = {c.rel: c for c in kb.info().link_coverage}
+                gaps = [
+                    f"{r} covers {coverage[r].requirements}/{coverage[r].total_requirements} "
+                    f"requirements ({coverage[r].share:.0%})"
+                    for r in (PARTIAL_COVERAGE_RELS if rel is None else [rel])
+                    if r in coverage and coverage[r].share < 1.0
+                ]
+                if gaps:
+                    response["note"] = (
+                        f"No edges found for {id}. Coverage is partial because the upstream "
+                        f"mappings predate ASVS 5.0.0: {'; '.join(gaps)}. Absence of an edge "
+                        "is NOT evidence that no such mapping exists for this requirement."
+                    )
         return response
 
     def cwe_get(entry_id: str) -> dict:

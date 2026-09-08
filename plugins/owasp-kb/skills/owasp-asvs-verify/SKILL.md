@@ -3,9 +3,12 @@ name: owasp-asvs-verify
 description: >
   Use when performing a security assessment, penetration test, code audit,
   security review, or verification of an application against the OWASP
-  Application Security Verification Standard. Walks ASVS requirements by
-  chapter and level, records pass/fail/not-applicable per requirement id with
-  evidence, and maps findings to ASVS ids and CWE identifiers.
+  Application Security Verification Standard, including an Android, iOS,
+  React Native or Flutter mobile app whose server endpoints ASVS covers even
+  though its device-side code is MASVS's scope, not ASVS's. Walks ASVS
+  requirements by chapter and level, records pass/fail/not-applicable per
+  requirement id with evidence, and maps findings to ASVS ids and CWE
+  identifiers.
 ---
 
 # ASVS verification pass
@@ -35,7 +38,9 @@ so it is visible and disputable rather than silent.
    **Before promising a MASVS-scoped pass, check `kb_info` for whether `masvs` is among the
    packs the running server holds.** If it is absent, the image predates the pack — say so
    in the report header, alongside the other stated assumptions, rather than silently
-   scoping the mobile side out as though it were never in scope.
+   scoping the mobile side out as though it were never in scope. Substituting an ASVS
+   requirement for the missing MASVS one is not permitted either — an absent pack is a
+   deployment state to report, not a license to verify device code against a web-scoped id.
 
 2. **Target level** — levels are cumulative:
 

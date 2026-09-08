@@ -4,7 +4,9 @@ description: >
   Use when producing an OWASP ASVS compliance report, gap analysis, security
   requirements baseline, control matrix, or evidence matrix for an application
   at a target ASVS level, including when asked what is needed to reach ASVS L1,
-  L2 or L3.
+  L2 or L3, or when the application is an Android, iOS, React Native or
+  Flutter mobile app whose server endpoints ASVS covers even though its
+  device-side code is MASVS's scope, not ASVS's.
 ---
 
 # ASVS gap report
@@ -35,7 +37,9 @@ assumption in the report header** so it is visible and disputable rather than si
    **Before promising a MASVS-scoped pass, check `kb_info` for whether `masvs` is among the
    packs the running server holds.** If it is absent, the image predates the pack — say so
    in the report header, alongside the other stated assumptions, rather than silently
-   scoping the mobile side out as though it were never in scope.
+   scoping the mobile side out as though it were never in scope. Substituting an ASVS
+   requirement for the missing MASVS one is not permitted either — an absent pack is a
+   deployment state to report, not a license to verify device code against a web-scoped id.
 
 2. **Target level** — levels are cumulative:
 
