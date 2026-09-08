@@ -40,6 +40,12 @@ def sources(tmp_path):
     )
     (asvs / "nist.md").write_text((FIXTURES / "nist_sample.md").read_text(encoding="utf-8"))
 
+    masvs = tmp_path / "masvs"
+    masvs.mkdir()
+    (masvs / "OWASP_MASVS.yaml").write_text(
+        (FIXTURES / "masvs_sample.yaml").read_text(encoding="utf-8")
+    )
+
     cs = tmp_path / "cheatsheets"
     (cs / "cheatsheets").mkdir(parents=True)
     for name in (
@@ -62,7 +68,7 @@ def sources(tmp_path):
 
 def _build(sources, out, **kw):
     kw.setdefault("lock_path", "sources.lock.yml")
-    kw.setdefault("expected_requirements", 3)
+    kw.setdefault("expected_requirements", {"asvs": 3, "masvs": 4})
     kw.setdefault("with_vectors", False)
     kw.setdefault("check_edge_floors", False)
     return build_index(sources, out, **kw)
@@ -73,6 +79,9 @@ def test_build_creates_a_queryable_index(sources, tmp_path):
     report = _build(sources, out)
     assert out.exists()
     assert report.requirements == 3
+    # tests/fixtures/masvs_sample.yaml holds 2 groups of 2 controls each -- 4
+    # controls total, counted from the fixture rather than hardcoded from memory.
+    assert report.masvs_requirements == 4
     assert report.cheatsheet_documents == 3
     assert report.integrity_failures == []
 
@@ -144,7 +153,9 @@ def test_the_catalogue_makes_the_mapping_check_enforceable(sources, tmp_path):
     from owasp_kb.core.integrity import run_checks
 
     conn = connect(out)
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(
+        conn, expected_requirements={"asvs": 3, "masvs": 4}, check_edge_floors=False
+    )
     assert any("CWE-99999" in f for f in failures), failures
 
 
@@ -171,13 +182,15 @@ def test_build_finalizes_the_index_for_readonly_serving(sources, tmp_path):
     _build(sources, out)
     assert not is_wal_index(out)
     served = connect(out, read_only=True)
-    assert served.execute("SELECT COUNT(*) FROM requirements").fetchone()[0] == 3
+    # 3 ASVS + 4 MASVS: this counts every checklist pack's rows, not one pack's
+    # report field, so it grew the moment MASVS was wired into the build.
+    assert served.execute("SELECT COUNT(*) FROM requirements").fetchone()[0] == 7
 
 
 def test_build_raises_when_integrity_fails_and_removes_the_file(sources, tmp_path):
     out = tmp_path / "kb.sqlite"
     with pytest.raises(RuntimeError, match="integrity"):
-        _build(sources, out, expected_requirements=345)
+        _build(sources, out, expected_requirements={"asvs": 345, "masvs": 4})
     assert not out.exists(), "a failing build must not leave a partial index behind"
 
 
@@ -218,7 +231,9 @@ def test_main_returns_nonzero_when_a_pack_is_rejected(sources, tmp_path):
             "--out",
             str(out),
             "--expected-requirements",
-            "3",
+            "asvs=3",
+            "--expected-requirements",
+            "masvs=4",
             "--no-edge-floors",
         ]
     )
@@ -256,7 +271,9 @@ def test_main_returns_zero_on_success(sources, tmp_path):
             "--out",
             str(out),
             "--expected-requirements",
-            "3",
+            "asvs=3",
+            "--expected-requirements",
+            "masvs=4",
             "--no-edge-floors",
         ]
     )
@@ -275,9 +292,32 @@ def test_main_returns_nonzero_when_integrity_fails(sources, tmp_path):
             "--out",
             str(out),
             "--expected-requirements",
-            "999",
+            "asvs=999",
+            "--expected-requirements",
+            "masvs=4",
             "--no-edge-floors",
         ]
     )
     assert rc != 0
+    assert not out.exists()
+
+
+def test_main_rejects_a_malformed_expected_requirements_pair(sources, tmp_path):
+    """PACK=COUNT is the contract; a value with no '=' or a non-integer count
+    must be caught before a build is ever attempted, not surfaced as a traceback."""
+    from owasp_kb.ingest import build as build_mod
+
+    out = tmp_path / "malformed.sqlite"
+    rc = build_mod.main(
+        [
+            "--sources",
+            str(sources),
+            "--out",
+            str(out),
+            "--expected-requirements",
+            "345",
+            "--no-edge-floors",
+        ]
+    )
+    assert rc == 1
     assert not out.exists()

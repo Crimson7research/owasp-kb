@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 
 EXPECTED_REL_TYPES = {"guidance", "cwe", "supersedes", "nist"}
 
@@ -64,19 +65,50 @@ MIN_EDGES_PER_REL = {
 def run_checks(
     conn: sqlite3.Connection,
     *,
-    expected_requirements: int,
+    expected_requirements: Mapping[str, int],
     check_edge_floors: bool = True,
 ) -> list[str]:
     """Return human-readable failures. Empty means the index is sound.
+
+    ``expected_requirements`` is keyed by pack name rather than a single global
+    total. With more than one checklist pack a total is meaningless -- ASVS and
+    MASVS summed pass whether both packs are complete or one of them is short by
+    exactly what the other is long, and a single number cannot tell which pack
+    a shortfall came from. Counting per pack instead makes each pack's ingest
+    accountable for its own rows.
+
+    A checklist pack present in the database but absent from this mapping is
+    itself a failure, not something silently skipped: an ingest that inserts
+    zero rows for a newly wired pack would otherwise ship with nothing counting
+    it, which is the defect class this project keeps hitting. Every pack the
+    build ingests must be declared here, in ``build.EXPECTED_REQUIREMENTS``.
 
     ``check_edge_floors`` exists so small fixture databases can assert the
     structural checks without meeting production-scale edge counts.
     """
     failures: list[str] = []
 
-    actual = conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0]
-    if actual != expected_requirements:
-        failures.append(f"requirement count is {actual}, expected {expected_requirements}")
+    # LEFT JOIN so a checklist pack with zero requirement rows counts as 0
+    # rather than vanishing from the result -- an ingest that silently inserts
+    # nothing must still be compared against its expected count.
+    pack_counts = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT p.name, COUNT(r.id) FROM packs p"
+            " LEFT JOIN requirements r ON r.pack_id = p.id"
+            " WHERE p.type = 'checklist'"
+            " GROUP BY p.id"
+        )
+    }
+    for name, expected in sorted(expected_requirements.items()):
+        actual = pack_counts.get(name, 0)
+        if actual != expected:
+            failures.append(f"{name!r} requirement count is {actual}, expected {expected}")
+    for name in sorted(pack_counts.keys() - expected_requirements.keys()):
+        failures.append(
+            f"checklist pack {name!r} has no expected requirement count declared; "
+            "add one to build.EXPECTED_REQUIREMENTS so a shortfall fails the build"
+        )
 
     empty = conn.execute("SELECT COUNT(*) FROM chunks WHERE TRIM(text) = ''").fetchone()[0]
     if empty:
