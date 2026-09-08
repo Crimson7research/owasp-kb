@@ -1,9 +1,10 @@
 {
-  "image": "ghcr.io/crimson7research/owasp-kb@sha256:08555ad1669d437e8df24b7beb918680b54c72daa80b2923a536f197272e653e",
+  "image": "ghcr.io/crimson7research/owasp-kb@sha256:d0843e52dd67d420010fdba7ec41c57f7275280bae7227a28923c16c156b2ada",
   "packs": {
     "asvs": "5.0.0",
     "cheatsheets": "20260805",
-    "cwe": "4.20"
+    "cwe": "4.20",
+    "masvs": "2.1.0"
   },
-  "server_version": "0.19.0"
+  "server_version": "0.20.0"
 }
