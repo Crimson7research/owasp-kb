@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-TOOL = Path("plugins/owasp-kb/bin/owasp-kb")
+TOOL = Path("plugins/owasp-kb/scripts/owasp-kb")
 
 
 def _sections(config_dir: Path, session: str, names: list[str]) -> Path:

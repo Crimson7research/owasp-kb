@@ -1910,7 +1910,7 @@ def test_the_doctor_check_names_are_the_ones_the_cli_registers():
     """Guard on the test below, which reads the docs against DOCTOR_CHECK_NAMES. If
     that set drifts from the CLI, the docs check passes while describing checks
     that do not exist -- documentation asserted against documentation."""
-    text = Path("plugins/owasp-kb/bin/owasp_kb_cli/doctor.py").read_text()
+    text = Path("plugins/owasp-kb/scripts/owasp_kb_cli/doctor.py").read_text()
     registry = text[text.index("CHECKS: list[") : text.index("def run(")]
     registered = set(re.findall(r'\("(\w+)", check_', registry))
     assert registered == DOCTOR_CHECK_NAMES, (
@@ -1944,7 +1944,7 @@ def _flagged_vulnerability_names() -> tuple[str, ...]:
     defect this guards against was two surfaces disagreeing about which
     vulnerability classes exist.
     """
-    path = str(Path("plugins/owasp-kb/bin").resolve())
+    path = str(Path("plugins/owasp-kb/scripts").resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
     from owasp_kb_cli.security_terms import VULNERABILITY_NAMES
@@ -2747,4 +2747,23 @@ def test_the_pin_branch_name_is_a_contract_between_the_two_workflows():
         f"the promotion only runs for branches starting {guard.group(1)!r} but the pin "
         f"branch starts {branch.group(1)!r}, so the job is skipped and the draft never "
         "publishes -- silently, because a skipped job is not a failed one"
+    )
+
+
+def test_no_plugin_ships_a_bin_directory():
+    """Claude Code appends `<plugin_root>/bin` to PATH for every installed plugin,
+    unconditionally and with nothing in plugin.json declaring it -- which is the
+    objection: a hosted plugin's executables reach PATH without ever appearing on
+    the admin approval surface, so organization sync rejects the plugin outright
+    (c7-marketplace #30, its ADR 0019, our ADR 0018).
+
+    The directory is the defect, not its contents. An empty bin/ is still appended
+    to PATH, so this does not look inside.
+    """
+    offenders = sorted(str(p) for p in Path("plugins").glob("*/bin") if p.is_dir())
+    assert not offenders, (
+        f"{offenders} ship a bin/ directory, which a claude.ai-hosted plugin may not "
+        f"do -- it reaches PATH without appearing on the admin approval surface. Move "
+        f"the tools to scripts/ and invoke them by the absolute path the SessionStart "
+        f"hook states (ADR 0018)."
     )

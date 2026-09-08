@@ -4,7 +4,7 @@ The CLI runs on the host rather than as an MCP tool: the server's state mount is
 read-only and the target repository is not mounted at all, so nothing inside the
 container can write a report or clear a session.
 
-`plugins/owasp-kb/bin` is put on the path and the package imported normally, rather
+`plugins/owasp-kb/scripts` is put on the path and the package imported normally, rather
 than loading each module by file path. The modules import each other as
 `from owasp_kb_cli.state import ...`, and loading a submodule by path without its
 parent package registered breaks that import -- so a path-loading helper would test
@@ -22,12 +22,12 @@ from pathlib import Path
 
 import pytest
 
-BIN = Path("plugins/owasp-kb/bin")
+SCRIPTS = Path("plugins/owasp-kb/scripts")
 HOOK = Path("plugins/owasp-kb/hooks/flag_security_topic.py")
 
 
 def _module(name: str):
-    path = str(BIN.resolve())
+    path = str(SCRIPTS.resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
     return importlib.import_module(f"owasp_kb_cli.{name}")

@@ -70,7 +70,7 @@ def _payload() -> str:
     """The constant itself, imported rather than re-run through the subprocess.
 
     Loaded by path because the hook is not part of any importable package -- the
-    same reason tests/test_host_cli.py inserts plugins/owasp-kb/bin on sys.path.
+    same reason tests/test_host_cli.py inserts plugins/owasp-kb/scripts on sys.path.
     """
     import importlib.util
 
@@ -88,7 +88,7 @@ def _flagged_vulnerability_names() -> tuple[str, ...]:
     vulnerability classes exist. The loader is repeated from tests/test_packaging.py
     -- the list it returns is not.
     """
-    path = str(Path("plugins/owasp-kb/bin").resolve())
+    path = str(Path("plugins/owasp-kb/scripts").resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
     from owasp_kb_cli.security_terms import VULNERABILITY_NAMES

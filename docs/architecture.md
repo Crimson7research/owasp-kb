@@ -254,8 +254,9 @@ plugins/owasp-kb/
   agents/     the 5 dispatched roles
   hooks/      4 hooks — 2 PreToolUse refuse a tool call before its output exists;
               2 more route to the skill, on a vocabulary match and at session start
-  bin/        owasp-kb — report merge, doctor, sessions; runs on the host, because
-              the state mount is read-only and the target repo is not mounted
+  scripts/    owasp-kb — report merge, doctor, sessions; runs on the host, because
+              the state mount is read-only and the target repo is not mounted.
+              Off PATH deliberately (ADR 0018); invoked by absolute path
   .mcp.json   the sh -c command that starts the server and pins the mount
 ```
 
