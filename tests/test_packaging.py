@@ -1782,35 +1782,110 @@ def test_ci_ignores_only_paths_no_test_reads():
         )
 
 
-EXPECTED_RUNNER = "ubuntu-latest"
+# Two sizes. Probed rather than reasoned about -- `runs-on` is inert until a job is
+# scheduled, so none of this is readable off a workflow. Run 34226678579, branch
+# probe/blacksmith-sizing, one commit, four runners in one matrix, timing the step
+# that holds all but ninety seconds of the build job:
+#
+#     runner           `Build both indexes`    whole job
+#     ubuntu-latest            1297s              1364s
+#     blacksmith-2vcpu          364s               430s
+#     blacksmith-4vcpu          325s               368s
+#     blacksmith-8vcpu          226s               267s
+#
+# The first row is why the move is worth making at all: the smallest Blacksmith
+# runner is 3.6x quicker than the GitHub-hosted one on that step at a lower
+# per-minute rate, so every row below it is both cheaper and faster than the status
+# quo. It was measured rather than remembered because a private repository's
+# standard runner is the 2-core SKU, and reasoning from GitHub's published specs to
+# this job's wall clock is the step that would have gone wrong unnoticed.
+#
+# Read the last three rows as a scaling curve and it is a poor one: 4 vCPU buys
+# 1.12x for twice the per-minute price, 8 buys 1.61x for four times it. That was
+# not the expectation going in
+# was near-linear -- the step embeds every chunk in batches of 64 through an ONNX
+# BERT forward pass, and Embedder builds its InferenceSession with default
+# SessionOptions, so ONNX Runtime's intra-op thread count is the core count. The
+# threads were there and did not pay. At this batch and model size the pass is
+# bound by memory bandwidth.
+#
+# So RUNNER_BUILD is a deliberate exception rather than what the curve argues for,
+# and it is recorded here because nobody would infer it: this repository is built
+# rarely, so the difference between 1.12x and cost-optimal is a few cents a month,
+# and the wall clock is worth more than that to whoever is waiting. Every size here
+# is still far cheaper and faster than the GitHub-hosted baseline the move
+# replaced. What would be wrong is reading RUNNER_BUILD as evidence that the build
+# scales with cores -- it does not, and raising it further buys proportionally
+# less each time.
+RUNNER_SMALL = "blacksmith-2vcpu-ubuntu-2404"
+RUNNER_BUILD = "blacksmith-4vcpu-ubuntu-2404"
+
+# Every job in .github/workflows/. A job absent from here fails rather than
+# defaulting: `promote` was added to the repository after the previous version of
+# this test was written, and its `len(seen) >= 4` guard counted that job without
+# ever checking it.
+#
+# The reason each job has the size it has is the comment beside it, so changing one
+# means answering its comment.
+EXPECTED_RUNNERS = {
+    # Lint and the unit suite. 41-46s observed, single-threaded: no pytest-xdist in
+    # [dev] and no `-n` in addopts, so a second core has nothing to do.
+    ("ci.yml", "test"): RUNNER_SMALL,
+    # The index build -- the job the table above was measured on, and the only work
+    # in this repository that uses a second core at all.
+    ("ci.yml", "build"): RUNNER_BUILD,
+    # Fetches the lock's sources and builds the *lite* index -- no `--with-vectors`,
+    # so it never embeds anything. 32-44s observed, and network-bound at that.
+    # Deliberately not RUNNER_BUILD despite the name: there is no embedding here to
+    # spend cores on.
+    ("refresh.yml", "refresh"): RUNNER_SMALL,
+    # The same index build as ci's, plus the push.
+    ("release.yml", "publish"): RUNNER_BUILD,
+    # One `gh release edit` call. It does not even check out.
+    ("release-promote.yml", "promote"): RUNNER_SMALL,
+}
 
 
-def test_every_job_runs_on_the_same_deliberately_chosen_runner():
+def test_every_job_runs_on_the_size_it_was_chosen_for():
     """Where CI runs is a choice, and a job that drifts off it still passes -- it
     just runs somewhere nobody decided on, and nothing reports that. This assertion
     is the only available signal, whichever runner is chosen.
 
-    It was `arc-runner-set` for one day. The org's self-hosted pool turned out to be
-    exhausted by other repositories: with six concurrent full builds queued, the
-    ~25-minute `build` job stopped starting at all and the queue had to be cancelled
-    by hand. Four jobs came back to `ubuntu-latest`. Issue #12 has the reasoning for
-    the move and this reversal; the pool being shared, not the mechanism, is what
-    made it fail.
+    It was `arc-runner-set` for one day, then `ubuntu-latest` again: the org's ARC
+    pool is shared and was exhausted by other repositories, so the ~25-minute
+    `build` job stopped starting at all and the queue had to be cancelled by hand.
+    The mechanism was never the problem, which is why the third answer is a
+    different provider rather than a return to hosted runners. Issue #12 carries
+    all three rounds.
 
-    Checked per job rather than as a whole-file substring search: the workflows hold
-    four jobs across three files, and a search cannot tell whether one of them was
-    missed."""
-    seen = []
+    Checked as a mapping in both directions rather than as one expected value: a
+    job on disk that nothing chose a size for, and a size chosen for a job that no
+    longer exists, are both failures. The previous version had neither check, and
+    a job it had never heard of satisfied it by making the count up."""
+    on_disk = {}
     for path in sorted(Path(".github/workflows").glob("*.yml")):
         workflow = yaml.safe_load(path.read_text())
         for name, job in workflow["jobs"].items():
-            seen.append(f"{path.name}:{name}")
-            assert job["runs-on"] == EXPECTED_RUNNER, (
-                f"{path.name}:{name} runs on {job['runs-on']!r}"
-            )
+            on_disk[(path.name, name)] = job["runs-on"]
+
     # Without this the test passes on a glob that matched nothing, which is exactly
     # how it behaves if the workflows are moved or renamed.
-    assert len(seen) >= 4, f"found only {seen}; expected at least the four known jobs"
+    assert on_disk, "found no jobs under .github/workflows/"
+
+    unchosen = sorted(on_disk.keys() - EXPECTED_RUNNERS.keys())
+    assert not unchosen, (
+        f"{unchosen} run somewhere nobody chose; add each to EXPECTED_RUNNERS with "
+        "the reason for its size"
+    )
+    departed = sorted(EXPECTED_RUNNERS.keys() - on_disk.keys())
+    assert not departed, f"{departed} no longer exist; EXPECTED_RUNNERS is stale"
+
+    wrong = {
+        f"{f}:{j}": (on_disk[(f, j)], expected)
+        for (f, j), expected in EXPECTED_RUNNERS.items()
+        if on_disk[(f, j)] != expected
+    }
+    assert not wrong, f"runs-on disagrees with the chosen size (found, expected): {wrong}"
 
 
 # The names in owasp_kb_cli.doctor.CHECKS. Duplicated here rather than imported:
