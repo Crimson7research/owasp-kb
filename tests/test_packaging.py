@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import sys
@@ -1420,16 +1421,53 @@ def test_notice_does_not_claim_one_licence_covers_the_whole_index():
     )
 
 
-def test_the_image_tag_records_every_packs_version():
+def _pinned_tag_module():
+    """Loaded by path, like the other scripts/ tooling tests: scripts/ is not on
+    the import path under bare `pytest`, which is what CI runs."""
+    spec = importlib.util.spec_from_file_location("pinned_tag", Path("scripts/pinned_tag.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_every_locked_pack_has_a_tag_prefix_and_is_named_in_the_tag():
     """asvs$(V)-cs$(DATE) named two of three packs, so a CWE bump produced an
     indistinguishable tag for a different index. The immutable tag is the whole
     basis of the reproducible-citation promise, and cwe_get means CWE ids are
-    now part of what it promises."""
+    part of what it promises -- MASVS's own gets no less.
+
+    Both sides derived from the lock and the script rather than hardcoded: a
+    hardcoded expected tag string would be the same defect one layer up, passing
+    right up until the next pack is added and nobody updates the literal here."""
+    module = _pinned_tag_module()
+    packs = _lock_packs()
+    missing = sorted(set(packs) - set(module.PREFIXES))
+    assert not missing, (
+        f"{missing} has no tag prefix in scripts/pinned_tag.py -- a version bump "
+        "for that pack would ship under an unchanged tag"
+    )
+    tag = module.pinned_tag(packs)
+    for name, pack in packs.items():
+        expected = f"{module.PREFIXES[name]}{pack['version']}"
+        assert expected in tag, f"the tag {tag!r} does not name pack {name!r} ({expected!r})"
+
+
+HAND_COMPOSED_TAG = re.compile(r"asvs\$")
+
+
+def test_neither_release_caller_composes_the_tag_by_hand():
+    """The Makefile and release.yml each used to concatenate `asvs$(...)-cs$(...)`
+    themselves, kept in step only by a comment asking a human to update both --
+    which is exactly how the MASVS pack shipped without joining the tag. Both must
+    now call the one script that derives it, and neither may fall back to composing
+    a tag literal, or this regresses to the same defect under a different name."""
     makefile = Path("Makefile").read_text()
     release = Path(".github/workflows/release.yml").read_text()
-    assert "CWE_VERSION" in makefile, "the Makefile does not read the CWE version"
     for text, name in ((makefile, "Makefile"), (release, "release.yml")):
-        assert "-cwe" in text, f"{name} builds a tag that does not name the CWE pack"
+        assert "scripts/pinned_tag.py" in text, f"{name} does not call scripts/pinned_tag.py"
+        assert not HAND_COMPOSED_TAG.search(text), (
+            f"{name} still composes the tag by hand instead of calling the script"
+        )
 
 
 @pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
