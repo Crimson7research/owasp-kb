@@ -1018,11 +1018,15 @@ def _dockerfile_targets(text: str) -> dict[str, str]:
     return blocks
 
 
-EXPECTED_LICENSE_NAMES = {
+# Derived from PACK_LICENCE_FILES (itself asserted equal to the lock's pack set
+# by test_every_pack_in_the_lock_has_its_own_licence_text), unioned with the
+# project's own two files. Not a fixed list of names: a hardcoded set is
+# exactly what let the masvs pack be added to the lock, given its own licence
+# file, and attributed in NOTICE, while the image still shipped without it --
+# with this test green the whole time, because the hardcoded set never grew
+# a fourth name to catch the missing COPY.
+EXPECTED_LICENSE_NAMES = {path.name for path in PACK_LICENCE_FILES.values()} | {
     "LICENSE",
-    "LICENSE-OWASP-ASVS",
-    "LICENSE-OWASP-CHEATSHEET",
-    "LICENSE-CWE",
     "NOTICE",
 }
 EXPECTED_LICENSES_LABEL = "MIT AND CC-BY-SA-4.0 AND LicenseRef-CWE-TOU"
