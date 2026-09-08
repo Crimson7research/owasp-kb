@@ -1,16 +1,17 @@
 # Knowledge base packs
 
 A **pack** is one ingested knowledge base. The server has no hardcoded notion of
-"ASVS", "Cheat Sheets" or "CWE" beyond the three rows currently in the `packs`
-table — everything else is generic over the pack contract below.
+"ASVS", "Cheat Sheets", "CWE" or "MASVS" beyond the four rows currently in the
+`packs` table — everything else is generic over the pack contract below.
 
-**Two of the three packs are OWASP's and one is not.** `asvs` and `cheatsheets`
-come from the OWASP Foundation; `cwe` is MITRE's Common Weakness Enumeration, and
-it is a pack because ASVS maps its requirements to CWE ids, so an agent holding a
-CWE id needs somewhere to check it. Nothing in the contract below is
-OWASP-specific, and a reader should not infer from the repository's name that
-everything it serves is OWASP's — `kb_info` reports each pack's `license` and
-`source_url` for exactly that reason. See [docs/licensing.md](licensing.md).
+**Three of the four packs are OWASP's and one is not.** `asvs`, `cheatsheets` and
+`masvs` come from the OWASP Foundation; `cwe` is MITRE's Common Weakness
+Enumeration, and it is a pack because ASVS maps its requirements to CWE ids, so
+an agent holding a CWE id needs somewhere to check it. Nothing in the contract
+below is OWASP-specific, and a reader should not infer from the repository's
+name that everything it serves is OWASP's — `kb_info` reports each pack's
+`license` and `source_url` for exactly that reason. See
+[docs/licensing.md](licensing.md).
 
 Adding a new pack should not require a server change, and for a pack shaped like
 one that already exists it does not. CWE was the first that needed new tools
@@ -31,8 +32,8 @@ packs (id, name UNIQUE, type CHECK IN ('checklist','corpus','catalogue'), versio
 All fields except `commit_sha` are required for every pack:
 
 - **`name`** — the string every tool's `pack` argument matches against
-  (`"asvs"`, `"cheatsheets"`, `"cwe"`). Stable forever once shipped, since it
-  appears in citations.
+  (`"asvs"`, `"cheatsheets"`, `"cwe"`, `"masvs"`). Stable forever once shipped,
+  since it appears in citations.
 - **`type`** — `checklist`, `corpus` or `catalogue`, validated by
   `registry.upsert_pack` before the row is written; an unknown type raises rather
   than silently storing garbage.
@@ -56,7 +57,7 @@ exactly one `chunks` row via `chunk_id`, and a `catalogue` pack to
 
 | Type | Structure | Tools that apply | Current pack |
 |---|---|---|---|
-| `checklist` | Enumerable, leveled items (requirements) | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_checklist`, `owasp_related` | `asvs` |
+| `checklist` | Enumerable items (requirements); levels are optional, not part of the type | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_checklist`, `owasp_related` | `asvs`, `masvs` |
 | `corpus` | Document collection, headings only | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_related` | `cheatsheets` |
 | `catalogue` | Keyed entries and a relationship graph | `owasp_search`, `owasp_outline`, `owasp_get`, `cwe_get`, `cwe_search`, `cwe_related` | `cwe` |
 
@@ -138,6 +139,79 @@ satisfied the contract and was still not fully queryable, because a relationship
 graph has no reachable surface in a heading-and-anchor API. Expect a genuinely new
 *shape* to need new tools; expect a new pack of an existing shape not to.
 
+## The MASVS pack
+
+`masvs` (`sources.lock.yml`, release-pinned to `v2.1.0`) ingests 8 groups holding
+24 controls from the release's `OWASP_MASVS.yaml`. It is `checklist`-typed, like
+`asvs`, and reached by the same tools — but its shape and ASVS's diverge in
+several ways worth recording, because each is a decision, not an accident of
+the source format.
+
+**Two-tier, and the group fills both columns.** ASVS is chapter → section →
+requirement; MASVS 2.x is group → control, one tier shallower. `ingest_masvs`
+(`ingest/packs/masvs.py`) writes the group id and title into both
+`chapter_id`/`chapter_name` and `section_id`/`section_name`, so
+`owasp_checklist(pack="masvs")` returns each chapter holding exactly one
+section. The alternative — inventing a synthetic middle tier — would assert
+structure the standard does not have, for the sole benefit of matching ASVS's
+shape; the two-tier response is honest about what MASVS actually is.
+
+**No levels, and the refusal that follows from it.** `requirements.level` is
+`NULL` for every MASVS row: v1's L1/L2/R disappeared in the 2.x rewrite, and the
+levels that replaced them (MAS profiles) live on MASTG tests, not on MASVS
+controls. `requirements.level` is nullable to make room for exactly this case,
+and both `Kb.checklist` and `Kb.search` refuse a `level`/`level_exact` filter
+against a pack whose rows carry none (`Kb._reject_level_for_levelless_pack`),
+rather than running the filter and returning `[]`. `[]` reads as "nothing in
+this pack meets that level," which is a different and more dangerous claim
+than "this pack has no levels" — the same reasoning `Kb.search` already
+applies when it raises `LookupError` instead of returning an empty list for a
+query that matched nothing. An empty-string sentinel was considered and rejected on a measured
+comparison, not a hunch: SQLite's `CAST('' AS INTEGER)` is `0`, and `0 <= 2` is
+true, so a level='2' filter would have silently passed every row rather than
+none — the *opposite* failure from `[]`, and a quieter one, since the response
+looks exactly like a correctly filtered result. `NULL` is the one representation
+neither comparison accepts, so it's the one that fails loud. `owasp_checklist`
+carries this through to its response shape: a level-less requirement omits the
+`"L"` key entirely rather than emitting `"L": null`, because a null in a tool
+response is a value an agent has to interpret and there is nothing here to
+interpret.
+
+**Ordering is data, not a parsed id.** `requirements.ord` — a per-pack,
+dense-from-0 ordinal, `UNIQUE (pack_id, ord)` — is the sole thing
+`Kb.checklist` orders by (`ORDER BY ord`, `core/kb.py`). It replaced an
+expression that parsed ASVS id syntax (`SUBSTR(chapter_id, 2)`, the dot in
+`section_id`) directly in SQL, which evaluated to `0` for every row of any pack
+whose ids are not shaped `V<n>.<n>.<n>` — MASVS ids are `MASVS-STORAGE-1`, so
+that expression would have left the second checklist pack ordered by whatever
+the table scan happened to yield. Each ingest module now assigns its own dense
+ordinal as it inserts rows, so ordering is a property of the data every pack
+writes, not of a query that only ever understood one pack's id grammar.
+
+**Group-description chunks, and no requirement row.** Each group's own
+description prose — the paragraph explaining what the category covers, which no
+individual control's one-line statement does — is inserted as one or more
+`chunks` rows with no corresponding `requirements` row, retrievable by
+`owasp_search` or `owasp_get` but absent from `owasp_checklist`'s enumeration
+and from any requirement count. It cites as `MASVS-STORAGE#masvs-storage` —
+`doc_key#anchor`, the same shape as a Cheat Sheet Series citation — because
+nothing about it is a requirement to verify; it is context for the controls
+that follow. `MASVS-PRIVACY`'s overview sits close enough to the embedder's
+512-token window that it measurably crosses it at `v2.1.0`, so long overviews
+are split on paragraph boundaries via `chunking.split_prose` — the same
+primitive `chunk_markdown` uses internally, applied directly here because this
+prose has no heading structure for `chunk_markdown` to walk.
+
+**No links.** The pack ships zero `links` rows: MASVS carries no upstream
+mapping of its own, and this project does not author mappings it did not
+receive from upstream data (the same principle the CWE pack's entry above
+states for `ChildOf`/`PeerOf`). A `MASVS → MASTG` "how do I implement this"
+edge, the mobile equivalent of ASVS's `guidance` link into the Cheat Sheet
+Series, is tracked separately as issue #61 — MASTG's v1 tests carry a
+`masvs_v2_id` in their front matter and can be joined directly, but its v2
+atomic tests carry no MASVS id at all, only a `weakness: MASWE-nnnn`, so
+reaching those requires the MASWE mapping as the bridge.
+
 ## Deliberate omissions
 
 Two notes before the list, because the list used to carry an unstated assumption.
@@ -159,15 +233,19 @@ could resolve the id, so it was recalled from training data and asserted, which 
 the one failure mode this whole project exists to remove. A mapping to a catalogue
 you do not hold is a citation you cannot check.
 
+**MASVS was in this list and is no longer, because it is now built — and the
+entry being removed was wrong on its own terms, not just stale.** It described
+MASVS as "`checklist`-shaped, much like ASVS", and both halves undersold the
+difference: MASVS is two-tier (a group fills both the chapter and the section),
+not ASVS's three, and it carries no levels at all, where ASVS has three. See
+[the MASVS pack](#the-masvs-pack) above for what actually shipped.
+
 The following OWASP projects are **not** packs, on purpose — not oversights:
 
 - **WSTG** (Web Security Testing Guide) — a testing methodology, not a
   requirement or reference corpus; a different shape of content than either
   existing pack, better served by its own design than forced into `checklist`
   or `corpus`.
-- **MASVS** (Mobile Application Security Verification Standard) — genuinely
-  in-scope for a future pack (it is `checklist`-shaped, much like ASVS), just
-  not built yet.
 - **Top Ten** — a summary of categories ASVS and the Cheat Sheets already
   cover in far more actionable detail; adding it risks an agent citing
   "A03:2021" instead of the specific requirement or cheat sheet section that

@@ -25,7 +25,7 @@ one against a knowledge base that is *not* shaped like this one.
 Ten properties. Every one of them is a fact about the content, not a preference
 of this project's.
 
-**Two of the three packs are OWASP's; the third is not.** ASVS and the Cheat
+**Three of the four packs are OWASP's; one is not.** ASVS, MASVS and the Cheat
 Sheet Series are OWASP Foundation projects. The CWE catalogue is MITRE's — CWE
 is **not an OWASP project**, and it sits in this server because ASVS maps its
 requirements to CWE ids, not because it shares an upstream. That mapping is why
@@ -33,9 +33,9 @@ an agent ends up holding a CWE id it cannot check: it reaches only 204 of 345
 requirements, and in one real assessment 42 of 95 cited ids came from nowhere in
 this index at all. See [docs/licensing.md](licensing.md) for CWE's own terms.
 
-Its properties differ from the two OWASP corpora in ways that happen to make the
-argument below stronger rather than weaker. CWE publishes **numbered releases**
-(`4.20`) rather than a moving branch, so property 2 holds more cleanly for it
+Its properties differ from the other three OWASP packs in ways that happen to
+make the argument below stronger rather than weaker. CWE publishes **numbered
+releases** (`4.20`) rather than a moving branch, so property 2 holds more cleanly for it
 than for the Cheat Sheet Series, which needs a commit SHA. It is **keyed**: 1,391
 entries — 969 Weaknesses and 422 Categories — each addressable by the id a
 finding actually cites, which is why `cwe_get` can treat an unknown id as an error
@@ -53,12 +53,13 @@ and change detection entirely. The build must call `finalize_for_readonly()`
 the file is packaged, or serving fails loudly.
 
 **2. Pinned to an exact upstream release.**
-`sources.lock.yml` pins ASVS to a release tag and rejects `latest` — the
-rolling bleeding-edge build — pins the Cheat Sheet Series to a 40-character
-commit SHA, and pins CWE to a numbered release (`4.20`). Every document carries a
-`source_url` that pins the commit, so a citation resolves to the exact indexed
-text rather than to a moving branch. Every upstream publishes numbered releases
-with machine-readable assets; no scraping, no PDF parsing.
+`sources.lock.yml` pins ASVS and MASVS each to a release tag and rejects
+`latest` — the rolling bleeding-edge build — pins the Cheat Sheet Series to a
+40-character commit SHA, and pins CWE to a numbered release (`4.20`). Every
+document carries a `source_url` that pins the commit, so a citation resolves
+to the exact indexed text rather than to a moving branch. Every upstream
+publishes numbered releases with machine-readable assets; no scraping, no
+PDF parsing.
 
 **3. Small — small enough that the database engine is not the interesting
 problem.**
@@ -72,10 +73,21 @@ ASVS standard would fit in a context window, which is why the MCP server earns i
 place through filtering, citation stability and cross-linking rather than through
 compression.
 
+These figures predate MASVS and are not re-measured here: `data/` is absent from
+this checkout and the build job is not locally runnable, so the post-MASVS totals
+are unmeasured rather than estimated. What is known from the ingest code without
+building is the shape of the addition, not its size in bytes or vectors: 24
+requirement chunks, one per control, plus one or more chunks per group's own
+overview prose (8 groups, more than one only where `split_prose` divides an
+oversized overview — measured in `ingest/packs/masvs.py` to happen for
+`MASVS-PRIVACY` at `v2.1.0`).
+
 The CWE pack roughly doubled every one of those figures and changed none of the
 conclusions below. It moved the corpus from ~345× below the threshold where an ANN
 index starts to matter to ~205× below it — a change of degree inside an argument
-that has two orders of magnitude of headroom.
+that has two orders of magnitude of headroom. MASVS's 24 requirements plus a
+handful of overview chunks add far less: nothing here indicates a similar move
+between the two thresholds.
 
 **4. It does not change at runtime; freshness is a build concern.**
 There is no runtime fetch path in the server at all. A baked image is exactly
@@ -120,12 +132,14 @@ because the enumerable set is bounded: 345 rows, 140,698 characters unfiltered
 before grouping, 103,134 after.
 
 **9. Three structurally different content shapes, all stable.**
-`checklist` (enumerable, leveled requirement sets), `corpus` (documents navigated
-by heading) and `catalogue` (keyed entries navigated by a relationship graph). No
-schema or server code names "ASVS", "cheat sheets" or "CWE" — they are three rows
-in a `packs` table, distinguished from any future pack only by the `type` that row
-carries. The third type is a partial vindication of the generic registry and worth
-reading as such: no tool that predates CWE needed changing, and no existing `Kb`
+`checklist` (enumerable requirement sets; levels are a property some carry, not
+part of the type — ASVS does, MASVS does not), `corpus` (documents navigated by
+heading) and `catalogue` (keyed entries navigated by a relationship graph). No
+schema or server code names "ASVS", "cheat sheets", "CWE" or "MASVS" — they are
+four rows in a `packs` table, distinguished from any future pack only by the
+`type` that row carries. The third type is a partial vindication of the generic
+registry and worth reading as such: no tool that predates CWE needed changing,
+and no existing `Kb`
 method did either. But the pack did need three *new* tools (`cwe_get`,
 `cwe_search`, `cwe_related`) and two new `Kb` methods, because a graph is not
 queryable through a heading API. ADR 0005's "adding a pack needs no server change"
@@ -272,10 +286,12 @@ measured. There is nothing for an ANN index to do.
 
 (One honest wrinkle: ADR 0002 says "~2,400 chunks", which was the pre-merge
 snapshot the retrieval benchmarks ran against. The shipped index at 512-token
-chunks held **2,894** before the CWE pack and holds **4,869** with it. All three
-figures are 200–400× below the 10⁶ threshold, so the conclusion is unaffected, but
-the ADR's figure is a snapshot, not the shipped count — and now two packs behind
-rather than one.)
+chunks held **2,894** before the CWE pack and **4,869** with it, before MASVS;
+MASVS's contribution is unmeasured here (see property 3). Whatever it is, all
+these figures stay orders of magnitude below the 10⁶ threshold, so the
+conclusion is unaffected — but the ADR's figure is a snapshot, not the shipped
+count, and it is now three packs behind rather than two: the original merge,
+then CWE, then MASVS.)
 
 The reversal is what makes ADR 0002 credible. A record that only stated the
 conclusion — "we chose SQLite, it is small and fast" — would be indisputable
