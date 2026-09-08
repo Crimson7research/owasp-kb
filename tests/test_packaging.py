@@ -2579,6 +2579,7 @@ def test_the_docs_count_the_hooks_the_plugin_ships():
     deliberately not here -- it says "two PreToolUse hooks", which is a per-event
     count and correct, and asserting a total against it would fail a true sentence.
     """
+
     def flattened(path: str) -> str:
         """Whitespace-normalised, so a markdown line wrap between "five" and
         "hooks" does not read as a missing count. The wrap is not the defect this

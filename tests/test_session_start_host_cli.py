@@ -64,8 +64,7 @@ def test_the_note_says_the_tools_are_not_on_path_and_shows_the_invocation():
     note = _context()
     assert "not on PATH" in note
     assert f"python3 {SCRIPTS.resolve()}/owasp-kb" in note, (
-        "the note never shows the actual invocation, so the path is left as an "
-        "exercise"
+        "the note never shows the actual invocation, so the path is left as an exercise"
     )
 
 
