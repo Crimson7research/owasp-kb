@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from owasp_kb.core.db import connect
@@ -13,6 +15,10 @@ FIXTURE = "tests/fixtures/masvs_sample.yaml"
 # several tests above, and a group added there for this purpose would force
 # every one of those to change for a concern they do not otherwise care about.
 LONG_OVERVIEW_FIXTURE = "tests/fixtures/masvs_long_overview.yaml"
+
+# Written by fetch.fetch_release_pack per sources.lock.yml's masvs.assets --
+# not present in this checkout. Every test below skips without it.
+REAL_ASSET = Path("data/masvs/OWASP_MASVS.yaml")
 
 
 @pytest.fixture
@@ -180,3 +186,101 @@ def test_a_source_with_no_controls_is_rejected(conn, tmp_path):
     empty.write_text("metadata:\n  title: x\ngroups: []\n", encoding="utf-8")
     with pytest.raises(ValueError, match="no controls"):
         ingest_masvs(conn, empty, version="2.1.0", license="CC-BY-SA-4.0")
+
+
+# --- against the real release, not the fixture ------------------------------
+#
+# Everything above exercises masvs_sample.yaml (2 groups, 4 controls) or the
+# purpose-built long-overview fixture. Neither can tell us whether the shape
+# build.EXPECTED_REQUIREMENTS bakes in for masvs -- 24 -- still matches the
+# pinned v2.1.0 release, since a fixture is carved by hand and cannot drift on
+# its own. These run only once data/masvs/OWASP_MASVS.yaml exists, which is
+# the ci build job's fetch step, not this suite's default run.
+#
+# Deliberately not pinned here: the per-pack ordinals being dense, zero-based
+# and gapless. test_schema.test_pack_ordinals_are_dense_zero_based_and_gapless
+# already covers ingest_masvs on the fixture, and denseness falls straight out
+# of ingest_masvs's `ordinal += 1` running once per control encountered in
+# document order -- it has no dependency on what the document's ids or text
+# actually are, unlike the group-id order and level-nullability claims below,
+# which are genuine facts about the v2.1.0 document that only the real asset
+# can confirm. A real-corpus copy of the ordinal test would exercise the same
+# code path as the fixture one for no additional coverage.
+
+
+@pytest.mark.realdata
+def test_the_real_release_matches_the_shape_the_build_expects(conn):
+    """Pins OWASP_MASVS.yaml v2.1.0 at the shape ``build.EXPECTED_REQUIREMENTS``
+    already bets the build on: 8 groups, 24 controls, no levels.
+
+    ``EXPECTED_REQUIREMENTS`` gates the *build* on the count already -- a
+    build with 23 or 25 masvs requirements fails integrity checks. This test's
+    job is to fail earlier and more legibly than that: naming the group-id
+    list and the level claim, not just a mismatched integer, so the next
+    reader knows what changed rather than just that something did.
+
+    A red result here means one of a small number of things, not "we broke
+    it": either upstream shipped a MASVS revision under the same v2.1.0 tag
+    that this repository has not re-pinned (the count or the group list
+    moved), or ingest_masvs itself regressed (the level assertion fails, or
+    the count is right but the group order is not). The fixture cannot
+    distinguish these because it only ever carries 2 of the 8 real groups.
+
+    Levels are asserted at exactly zero, not merely "some may be null": MASVS
+    v2 dropped v1's L1/L2/R entirely, and the whole level-nullability column
+    design in the requirements schema rests on that being true of the actual
+    document, not just of the two-control sample carved from it.
+    """
+    if not REAL_ASSET.exists():
+        pytest.skip(f"no MASVS release asset at {REAL_ASSET}; run the fetch step first")
+    assert ingest_masvs(conn, REAL_ASSET, version="2.1.0", license="CC-BY-SA-4.0") == 24
+    assert conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0] == 8
+
+    levelled = conn.execute("SELECT COUNT(*) FROM requirements WHERE level IS NOT NULL").fetchone()[
+        0
+    ]
+    assert levelled == 0, (
+        f"{levelled} requirement(s) carry a non-null level; MASVS v2 dropped L1/L2/R, "
+        "so a non-zero count here means either upstream reintroduced levels or "
+        "ingest_masvs stopped forcing level to NULL"
+    )
+
+    group_ids = [r[0] for r in conn.execute("SELECT doc_key FROM docs ORDER BY id")]
+    assert group_ids == [
+        "MASVS-STORAGE",
+        "MASVS-CRYPTO",
+        "MASVS-AUTH",
+        "MASVS-NETWORK",
+        "MASVS-PLATFORM",
+        "MASVS-CODE",
+        "MASVS-RESILIENCE",
+        "MASVS-PRIVACY",
+    ]
+
+
+@pytest.mark.realdata
+def test_no_chunk_from_the_real_release_exceeds_the_embedder_window(conn):
+    """Measured on the pinned v2.1.0 asset: MASVS-PRIVACY's group overview is
+    the corpus's worst case at ~493 estimated tokens against the 512-token
+    ``EMBEDDER_MAX_TOKENS`` window -- 3.7% headroom -- and it does not
+    currently split, because 493 < 512.
+
+    ``estimate_tokens`` is the ``len(text) // 4`` proxy from ``core.chunking``,
+    not the embedder's real tokenizer; the two can disagree, in either
+    direction, on prose dense with punctuation or URLs, and closing that gap
+    is #62, not this test's. This test pins the proxy's verdict on the actual
+    release text, which is the only thing ``split_prose`` itself decides on.
+
+    A red result means upstream added enough prose to some group's
+    description -- MASVS-PRIVACY first, at 3.7% headroom, but not necessarily
+    only it -- to push the estimate over 512, and whatever produced that chunk
+    needs to actually split it. Passing today is expected and correct; passing
+    forever is not guaranteed, which is the point of asserting it against the
+    real document instead of only against masvs_long_overview.yaml's
+    deliberately-oversized fixture text.
+    """
+    if not REAL_ASSET.exists():
+        pytest.skip(f"no MASVS release asset at {REAL_ASSET}; run the fetch step first")
+    ingest_masvs(conn, REAL_ASSET, version="2.1.0", license="CC-BY-SA-4.0")
+    biggest = conn.execute("SELECT MAX(token_est) FROM chunks").fetchone()[0]
+    assert biggest <= EMBEDDER_MAX_TOKENS, f"largest chunk {biggest} exceeds the embedder window"
