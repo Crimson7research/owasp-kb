@@ -341,6 +341,31 @@ def test_grouped_response_preserves_requirement_order(tools):
     assert [r["id"] for r in _flat(result)] == ["V1.1.1", "V6.2.1", "V6.2.2"]
 
 
+def test_checklist_omits_the_level_key_for_a_levelless_requirement():
+    """`"L": null` in a tool response is noise an agent has to interpret."""
+    from owasp_kb.core.models import RequirementRow
+    from owasp_kb.server.tools import _grouped
+
+    grouped = _grouped(
+        [
+            RequirementRow(
+                req_id="MASVS-STORAGE-1",
+                chapter_id="MASVS-STORAGE",
+                chapter_name="Storage",
+                section_id="MASVS-STORAGE",
+                section_name="Storage",
+                text="The app securely stores sensitive data.",
+                level=None,
+            )
+        ]
+    )
+    requirement = grouped[0]["sections"][0]["requirements"][0]
+    assert requirement == {
+        "id": "MASVS-STORAGE-1",
+        "text": "The app securely stores sensitive data.",
+    }
+
+
 def test_checklist_note_names_the_chapters_and_the_expected_total(tools, monkeypatch):
     """The note must be actionable: an agent needs a completion condition it can
     check, not just a warning that the response is big."""

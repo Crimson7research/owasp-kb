@@ -105,3 +105,18 @@ def test_chunk_and_row_types_construct():
         level="2",
     )
     assert row.level == "2"
+
+
+def test_a_requirement_row_may_carry_no_level():
+    """MASVS 2.x has no levels; the row type must say so rather than forcing a
+    sentinel that a numeric filter would then treat as level 0."""
+    row = RequirementRow(
+        req_id="MASVS-STORAGE-1",
+        chapter_id="MASVS-STORAGE",
+        chapter_name="Storage",
+        section_id="MASVS-STORAGE",
+        section_name="Storage",
+        text="The app securely stores sensitive data.",
+        level=None,
+    )
+    assert row.level is None

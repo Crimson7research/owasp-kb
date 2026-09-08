@@ -323,6 +323,69 @@ def test_checklist_returns_the_bare_requirement_text(kb):
     assert "Authentication >" not in row.text
 
 
+def _levelless_pack(conn):
+    """A minimal checklist pack whose rows carry no level, inserted directly.
+
+    Written by hand rather than through an ingest so the refusal is tested
+    against the shape, not against one pack's parser.
+    """
+    conn.execute(
+        "INSERT INTO packs (name, type, version, source_url, license, fetched_at)"
+        " VALUES ('levelless', 'checklist', '1.0', 'https://example.invalid',"
+        " 'CC-BY-SA-4.0', '2026-01-01T00:00:00+00:00')"
+    )
+    pid = conn.execute("SELECT id FROM packs WHERE name = 'levelless'").fetchone()[0]
+    doc = conn.execute(
+        "INSERT INTO docs (pack_id, doc_key, title, source_url)"
+        " VALUES (?, 'GROUP-A', 'GROUP-A: Group A', 'https://example.invalid')",
+        (pid,),
+    ).lastrowid
+    sec = conn.execute(
+        "INSERT INTO sections (doc_id, anchor, heading_path, ord, depth)"
+        " VALUES (?, 'group-a', 'Group A', 0, 2)",
+        (doc,),
+    ).lastrowid
+    chunk = conn.execute(
+        "INSERT INTO chunks (section_id, text, token_est) VALUES (?, 'Group A: a control', 5)",
+        (sec,),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO requirements (pack_id, req_id, chapter_id, chapter_name, section_id,"
+        " section_name, text, level, ord, chunk_id)"
+        " VALUES (?, 'GROUP-A-1', 'GROUP-A', 'Group A', 'GROUP-A', 'Group A',"
+        " 'a control', NULL, 0, ?)",
+        (pid, chunk),
+    )
+    conn.commit()
+
+
+def test_checklist_returns_a_levelless_pack_when_no_level_is_asked_for(kb):
+    _levelless_pack(kb._conn)
+    rows = kb.checklist("levelless")
+    assert [r.req_id for r in rows] == ["GROUP-A-1"]
+    assert rows[0].level is None
+
+
+def test_checklist_refuses_a_level_for_a_levelless_pack(kb):
+    """Silently returning everything is the failure mode: it looks like a
+    filtered answer and is not one."""
+    _levelless_pack(kb._conn)
+    with pytest.raises(ValueError, match="no levels"):
+        kb.checklist("levelless", level="2")
+
+
+def test_checklist_refuses_level_exact_for_a_levelless_pack(kb):
+    _levelless_pack(kb._conn)
+    with pytest.raises(ValueError, match="no levels"):
+        kb.checklist("levelless", level_exact="2")
+
+
+def test_search_refuses_a_level_for_a_levelless_pack(kb):
+    _levelless_pack(kb._conn)
+    with pytest.raises(ValueError, match="no levels"):
+        kb.search("control", pack="levelless", level="2")
+
+
 # -- related ----------------------------------------------------------
 
 

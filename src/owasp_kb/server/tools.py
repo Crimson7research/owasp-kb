@@ -159,8 +159,13 @@ def _grouped(rows) -> list[dict]:
                 {
                     "id": section_id,
                     "name": section_rows[0].section_name,
+                    # "L" is omitted rather than null for a pack without levels:
+                    # a null in a tool response is a value an agent has to
+                    # interpret, and there is nothing here to interpret.
                     "requirements": [
-                        {"id": r.req_id, "L": r.level, "text": r.text} for r in section_rows
+                        {"id": r.req_id, "text": r.text}
+                        | ({"L": r.level} if r.level is not None else {})
+                        for r in section_rows
                     ],
                 }
             )

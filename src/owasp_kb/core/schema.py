@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS requirements (
     section_id    TEXT NOT NULL,
     section_name  TEXT NOT NULL,
     text          TEXT NOT NULL,
-    level         TEXT NOT NULL,
+    level         TEXT,
     ord           INTEGER NOT NULL,
     chunk_id      INTEGER REFERENCES chunks(id),
     UNIQUE (pack_id, req_id)

@@ -185,7 +185,13 @@ class Kb:
         Raises LookupError on no match rather than returning an empty list: an
         agent reads ``[]`` as "no requirements apply", which is a different and
         far more dangerous claim than "nothing matched".
+
+        A ``level`` filter with no ``pack`` excludes level-less packs by
+        construction -- asking for L2 is asking ASVS. Naming a level-less pack
+        *and* a level is refused instead, because that call can only be a mistake.
         """
+        if level is not None and pack is not None:
+            self._reject_level_for_levelless_pack(pack)
         hits = self._retriever.search(query, pack=pack, level=level, limit=limit)
         if not hits:
             searched = pack or ", ".join(self._pack_names())
@@ -246,6 +252,27 @@ class Kb:
 
     # -- checklist packs -------------------------------------------------
 
+    def _has_levels(self, pack: str) -> bool:
+        """Whether any of this pack's requirements carry a level.
+
+        Asked of the data, not of a list of pack names: a hardcoded list is a
+        second place to update when a pack is added, and the one that gets missed.
+        """
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM requirements r JOIN packs p ON p.id = r.pack_id"
+            " WHERE p.name = ? AND r.level IS NOT NULL",
+            (pack,),
+        ).fetchone()
+        return bool(row[0])
+
+    def _reject_level_for_levelless_pack(self, pack: str) -> None:
+        if self._has_levels(pack):
+            return
+        raise ValueError(
+            f"pack {pack!r} defines no levels, so filtering by one would return every "
+            "row while looking like a filtered answer. Omit level and level_exact."
+        )
+
     def checklist(
         self,
         pack: str,
@@ -278,6 +305,8 @@ class Kb:
                 f"pack {pack!r} is of type {meta.type!r}; owasp_checklist only applies to "
                 "checklist packs. Use owasp_search or owasp_outline for corpus packs."
             )
+        if level is not None or level_exact is not None:
+            self._reject_level_for_levelless_pack(pack)
         sql = (
             "SELECT req_id, chapter_id, chapter_name, section_id, section_name, text, level"
             " FROM requirements WHERE pack_id = ?"
