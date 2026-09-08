@@ -719,3 +719,35 @@ def test_the_hook_fails_open_when_stdout_cannot_be_written(tmp_path):
             env={**os.environ, "CLAUDE_CONFIG_DIR": str(tmp_path)},
         )
     assert result.returncode == 0, f"hook must never fail the call: {result.stderr}"
+
+
+def test_plugin_root_resolves_to_the_plugin_directory_from_the_real_layout(monkeypatch):
+    """Pins the depth, which no other test does.
+
+    doctor.plugin_root() walks three parents up from
+    scripts/owasp_kb_cli/doctor.py. That was correct under bin/ and is correct
+    under scripts/, so the move needed no edit -- which is exactly why this is
+    worth pinning: the next move of this package changes the arithmetic and
+    nothing else would notice. A wrong answer here is not a crash. It is doctor
+    reporting on a different install than the one running, which is the one
+    question a stale install makes unanswerable.
+    """
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    doctor = _module("doctor")
+    assert doctor.plugin_root() == SCRIPTS.parent.resolve()
+    assert (doctor.plugin_root() / ".claude-plugin" / "plugin.json").is_file(), (
+        "plugin_root() resolved somewhere with no plugin manifest in it"
+    )
+
+
+def test_the_entry_point_puts_its_own_directory_on_the_import_path():
+    """The package sits beside the entry point, and scripts/ is not on sys.path --
+    it never was on the import path, only on PATH, and it is not on that any more
+    either. The insert is what makes `from owasp_kb_cli import ...` resolve, so a
+    move that broke it would fail at import with no other test to catch it.
+    """
+    source = (SCRIPTS / "owasp-kb").read_text()
+    assert "sys.path.insert(0, str(Path(__file__).resolve().parent))" in source, (
+        "the entry point no longer inserts its own directory, so the package "
+        "beside it is unimportable"
+    )

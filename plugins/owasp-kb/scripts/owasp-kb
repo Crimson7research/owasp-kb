@@ -19,7 +19,8 @@ import sys
 from pathlib import Path
 
 # The plugin directory is copied wholesale on install, so the package beside this
-# script is always present -- but bin/ is not on the import path.
+# script is always present -- but scripts/ is not on the import path. It is not on
+# PATH either, deliberately (ADR 0018); this insert is only about imports.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from owasp_kb_cli import doctor, report, sessions  # noqa: E402

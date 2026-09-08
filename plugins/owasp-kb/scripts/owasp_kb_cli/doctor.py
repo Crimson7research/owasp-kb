@@ -38,10 +38,10 @@ class Result:
 def plugin_root() -> Path:
     """The installed plugin directory this CLI is running from.
 
-    CLAUDE_PLUGIN_ROOT when the harness sets it, otherwise the parent of bin/. It
-    is reported rather than assumed: "am I looking at the installed copy or the
-    repository" is the question a stale install makes unanswerable, and every other
-    check reads its inputs from here.
+    CLAUDE_PLUGIN_ROOT when the harness sets it, otherwise the parent of
+    scripts/. It is reported rather than assumed: "am I looking at the installed
+    copy or the repository" is the question a stale install makes unanswerable,
+    and every other check reads its inputs from here.
     """
     if root := os.environ.get("CLAUDE_PLUGIN_ROOT"):
         return Path(root)
