@@ -107,6 +107,20 @@ def test_chunk_and_row_types_construct():
     assert row.level == "2"
 
 
+def test_a_masvs_control_cites_with_the_standard_name_and_version():
+    hit = SearchHit(
+        pack="masvs",
+        pack_version="2.1.0",
+        req_id="MASVS-STORAGE-1",
+        doc_key=None,
+        anchor=None,
+        heading_path="Storage",
+        text="t",
+        score=0.0,
+    )
+    assert hit.citation == "MASVS 2.1.0 MASVS-STORAGE-1"
+
+
 def test_a_requirement_row_may_carry_no_level():
     """MASVS 2.x has no levels; the row type must say so rather than forcing a
     sentinel that a numeric filter would then treat as level 0."""
