@@ -5,6 +5,8 @@ import pytest
 from owasp_kb.core.db import connect, finalize_for_readonly, is_wal_index
 from owasp_kb.core.registry import PACK_TYPES
 from owasp_kb.core.schema import create_schema
+from owasp_kb.ingest.packs.asvs import ingest_asvs
+from owasp_kb.ingest.packs.masvs import ingest_masvs
 
 EXPECTED_TABLES = {
     "packs",
@@ -239,6 +241,56 @@ def test_requirements_carry_an_ordinal(tmp_path):
         row["name"]: row for row in conn.execute("PRAGMA table_info(requirements)").fetchall()
     }
     assert columns["ord"]["notnull"] == 1
+
+
+def test_requirements_ord_is_unique_per_pack(tmp_path):
+    """Not-null alone lets an ingest bind the same value (e.g. 0) to every row,
+    which satisfies the column and reduces ``ORDER BY ord`` to table-scan order
+    -- the exact bug this branch's refactor removed from kb.py. UNIQUE(pack_id,
+    ord) is what actually forecloses that."""
+    conn = connect(tmp_path / "kb.sqlite")
+    create_schema(conn)
+    conn.execute("INSERT INTO packs (name, type, version) VALUES ('p', 'checklist', '1')")
+    conn.execute(
+        "INSERT INTO requirements (pack_id, req_id, chapter_id, chapter_name, section_id,"
+        " section_name, text, ord) VALUES (1, 'r1', 'c', 'C', 's', 'S', 't', 0)"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO requirements (pack_id, req_id, chapter_id, chapter_name, section_id,"
+            " section_name, text, ord) VALUES (1, 'r2', 'c', 'C', 's', 'S', 't', 0)"
+        )
+
+
+# Every checklist pack's ordinals must be dense, zero-based and unique -- that is
+# what makes ``ORDER BY ord`` (Kb.checklist) and the bare groupby it feeds
+# (_grouped in server/tools.py) both correct. A future third checklist pack
+# should add itself here rather than inventing a separate ordinal test.
+_PACK_INGESTS = [
+    pytest.param(
+        ingest_asvs,
+        "tests/fixtures/asvs_sample.flat.json",
+        {"version": "5.0.0", "license": "CC-BY-SA-4.0"},
+        id="asvs",
+    ),
+    pytest.param(
+        ingest_masvs,
+        "tests/fixtures/masvs_sample.yaml",
+        {"version": "2.1.0", "license": "CC-BY-SA-4.0"},
+        id="masvs",
+    ),
+]
+
+
+@pytest.mark.parametrize("ingest, fixture, kwargs", _PACK_INGESTS)
+def test_pack_ordinals_are_dense_zero_based_and_gapless(tmp_path, ingest, fixture, kwargs):
+    conn = connect(tmp_path / "kb.sqlite")
+    create_schema(conn)
+    count = ingest(conn, fixture, **kwargs)
+    ords = [r[0] for r in conn.execute("SELECT ord FROM requirements ORDER BY ord")]
+    assert ords == list(range(count)), (
+        "ordinals must be exactly range(count): dense, zero-based, no gaps, no duplicates"
+    )
 
 
 def test_catalogue_entries_is_indexed_by_kind():

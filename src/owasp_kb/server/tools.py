@@ -146,8 +146,18 @@ def _grouped(rows) -> list[dict]:
 
     Measured 27% smaller on the full 345-requirement enumeration with no row
     dropped -- completeness is the point of this tool, so the saving comes from
-    removing repetition, never from omitting content. Kb.checklist already
-    returns rows in chapter -> section -> requirement order, so no pre-sort.
+    removing repetition, never from omitting content.
+
+    No pre-sort: this relies on rows already arriving with each chapter's rows
+    contiguous and each section's rows contiguous within it, which is exactly
+    what a bare groupby needs and nothing else guarantees -- groupby does not
+    merge non-adjacent runs of the same key, it emits a second block for them.
+    Kb.checklist supplies that contiguity by returning rows ``ORDER BY ord``,
+    and ``ord`` is a per-pack column each ingest assigns (see the comment on
+    ``requirements.ord`` in schema.py), not a property of the query itself. So
+    the invariant this function depends on lives in every pack's ingest: if a
+    future pack's ordinals ever interleaved two chapters, this would silently
+    emit a duplicate chapter (or section) block instead of raising.
     """
     chapters = []
     for chapter_id, chapter_rows in itertools.groupby(rows, key=lambda r: r.chapter_id):

@@ -72,9 +72,21 @@ CREATE TABLE IF NOT EXISTS requirements (
     section_name  TEXT NOT NULL,
     text          TEXT NOT NULL,
     level         TEXT,
+    -- Per-pack display order: a dense, zero-based ordinal assigned by that
+    -- pack's own ingest, in the order the pack's own source defines (its own
+    -- chapter/section/requirement sequence, not a re-sort by req_id). It is
+    -- the sole thing Kb.checklist's ORDER BY reads, and the sole thing
+    -- _grouped's chapter/section groupby relies on being contiguous.
+    -- It is data, not a parse of the id, because the old ORDER BY read ASVS id
+    -- syntax (SUBSTR(chapter_id, 2) and friends) and evaluated to 0 for any
+    -- other id shape -- silently reducing a second pack's order to whatever a
+    -- table scan produced. UNIQUE (pack_id, ord) below exists so an ingest
+    -- that bound the same ordinal (e.g. a constant 0) for every row fails the
+    -- insert instead of quietly reintroducing that bug.
     ord           INTEGER NOT NULL,
     chunk_id      INTEGER REFERENCES chunks(id),
-    UNIQUE (pack_id, req_id)
+    UNIQUE (pack_id, req_id),
+    UNIQUE (pack_id, ord)
 );
 CREATE INDEX IF NOT EXISTS idx_req_chapter ON requirements(pack_id, chapter_id);
 CREATE INDEX IF NOT EXISTS idx_req_level ON requirements(pack_id, level);

@@ -24,7 +24,18 @@ def _sort_key(req: dict) -> tuple[int, int, int]:
     V6.2.1 -> (6, 2, 1). Derived from req_id rather than from chapter_id and
     section_id so all three segments come from one string and cannot disagree.
     """
-    chapter, section, number = req["req_id"].lstrip("V").split(".")
+    req_id = req["req_id"]
+    # removeprefix, not lstrip: lstrip strips characters, not a prefix, and
+    # would silently accept "VVV1.1.1". Every real ASVS id (345 of 345 in the
+    # 5.0.0 release) is single-"V"-prefixed, so this states that intent rather
+    # than changing behaviour.
+    parts = req_id.removeprefix("V").split(".")
+    if len(parts) != 3:
+        raise ValueError(
+            f"requirement {req_id!r} does not match the expected V<chapter>.<section>.<number> "
+            "id shape; cannot compute its sort key"
+        )
+    chapter, section, number = parts
     return int(chapter), int(section), int(number)
 
 

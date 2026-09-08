@@ -131,8 +131,10 @@ chunks        (id, section_id -> sections, text, token_est)
 chunks_fts    FTS5 virtual table, external-content over chunks, porter+unicode61
 chunks_vec    vec0 virtual table (full builds only): chunk_id -> FLOAT[384]
 requirements  (id, pack_id -> packs, req_id, chapter_id, chapter_name,
-               section_id, section_name, text, level, chunk_id -> chunks;
-               UNIQUE(pack_id, req_id))
+               section_id, section_name, text, level, ord, chunk_id -> chunks;
+               ord is a per-pack, zero-based display ordinal assigned by that
+               pack's own ingest -- the sole thing Kb.checklist orders by;
+               UNIQUE(pack_id, req_id), UNIQUE(pack_id, ord))
 catalogue_entries
               (id, pack_id -> packs, entry_id, kind, name, abstraction, status,
                description, extended_description, chunk_id -> chunks;
