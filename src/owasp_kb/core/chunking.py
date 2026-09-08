@@ -111,6 +111,19 @@ def _split_oversized(body: str, max_tokens: int) -> list[str]:
     return [p for p in parts if p] or [body.strip()]
 
 
+def split_prose(text: str, *, max_tokens: int = DEFAULT_MAX_TOKENS) -> list[str]:
+    """Split prose that has no heading structure into parts under ``max_tokens``.
+
+    For content that is not markdown -- a MASVS group's overview paragraph, for
+    instance -- so ``chunk_markdown``'s heading walk does not apply, but the
+    result still has to fit the embedder's window. Delegates to the same
+    paragraph splitter ``chunk_markdown`` uses for an oversized section: split
+    on blank lines, never inside a fence, and a single block too large to split
+    is returned whole rather than cut mid-sentence.
+    """
+    return _split_oversized(text, max_tokens)
+
+
 def chunk_markdown(text: str, *, title: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> list[Chunk]:
     """Split a markdown document at H2/H3 into chunks carrying their heading path."""
     sections: list[tuple[int, str, list[str]]] = [(1, title, [])]

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from owasp_kb.core.chunking import estimate_tokens, slugify
+from owasp_kb.core.chunking import estimate_tokens, slugify, split_prose
 from owasp_kb.core.registry import Pack, pack_id, upsert_pack
 
 PACK_NAME = "masvs"
@@ -98,17 +98,24 @@ def ingest_masvs(
             ).lastrowid
         )
 
-        # The group's own prose, as a chunk with no requirement row. It answers
-        # "what does this category cover", which no control statement does, and
-        # HIT_SQL left-joins requirements so it is retrievable as
-        # MASVS-STORAGE#masvs-storage.
+        # The group's own prose, as one or more chunks with no requirement row.
+        # It answers "what does this category cover", which no control
+        # statement does, and the retrieval query left-joins requirements so
+        # every part is retrievable as MASVS-STORAGE#masvs-storage. Some
+        # groups' prose (MASVS-PRIVACY, at v2.1.0) sits close enough to the
+        # embedder's window that it can cross it once measured with a real
+        # tokenizer rather than the char/4 proxy, so it is split on paragraph
+        # boundaries like any oversized markdown section -- split_prose is the
+        # same primitive chunk_markdown uses, applied here because this prose
+        # has no heading structure for chunk_markdown to walk.
         overview = (group.get("description") or "").strip()
         if overview:
             text = f"{title}\n{overview}"
-            conn.execute(
-                "INSERT INTO chunks (section_id, text, token_est) VALUES (?, ?, ?)",
-                (section_id, text, estimate_tokens(text)),
-            )
+            for part in split_prose(text):
+                conn.execute(
+                    "INSERT INTO chunks (section_id, text, token_est) VALUES (?, ?, ?)",
+                    (section_id, part, estimate_tokens(part)),
+                )
 
         for control in group.get("controls") or []:
             statement = control["statement"].strip()

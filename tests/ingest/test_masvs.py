@@ -1,11 +1,18 @@
 import pytest
 
 from owasp_kb.core.db import connect
+from owasp_kb.core.integrity import EMBEDDER_MAX_TOKENS
 from owasp_kb.core.registry import get_pack
 from owasp_kb.core.schema import create_schema
 from owasp_kb.ingest.packs.masvs import ingest_masvs
 
 FIXTURE = "tests/fixtures/masvs_sample.yaml"
+
+# A second, small fixture rather than a group added to FIXTURE: FIXTURE's counts
+# (4 controls, 2 docs, a hard-coded ordinal list) are asserted on directly by
+# several tests above, and a group added there for this purpose would force
+# every one of those to change for a concern they do not otherwise care about.
+LONG_OVERVIEW_FIXTURE = "tests/fixtures/masvs_long_overview.yaml"
 
 
 @pytest.fixture
@@ -93,17 +100,22 @@ def test_each_control_gets_a_searchable_chunk(conn):
 
 def test_the_group_description_is_retrievable_and_has_no_requirement(conn):
     """'What does this category cover' is a real question, and the group prose is
-    the only thing that answers it."""
+    the only thing that answers it.
+
+    Uses fetchall, not fetchone: a group whose overview is long enough to need
+    splitting produces more than one such chunk, and a fetchone here would
+    silently pass by matching whichever row SQLite happens to return first
+    even if the substring only survives in a part that got dropped."""
     _ingest(conn)
-    row = conn.execute(
+    rows = conn.execute(
         "SELECT c.id, c.text FROM chunks c"
         " JOIN sections s ON s.id = c.section_id"
         " JOIN docs d ON d.id = s.doc_id"
         " WHERE d.doc_key = 'MASVS-STORAGE'"
         " AND c.id NOT IN (SELECT chunk_id FROM requirements)"
-    ).fetchone()
-    assert row is not None
-    assert "stored locally" in row["text"]
+    ).fetchall()
+    assert rows
+    assert any("stored locally" in row["text"] for row in rows)
 
 
 def test_the_section_anchor_keeps_the_hyphen(conn):
@@ -118,6 +130,47 @@ def test_re_ingest_does_not_duplicate(conn):
     _ingest(conn)
     assert conn.execute("SELECT COUNT(*) FROM requirements").fetchone()[0] == 4
     assert conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0] == 2
+
+
+def test_a_long_group_overview_splits_and_stays_inside_the_embedder_window(conn):
+    """MASVS-PRIVACY's real v2.1.0 prose measures ~493 estimated tokens against
+    the 512-token window -- within 4%, on a char/4 proxy a real BPE tokenizer
+    can easily exceed on prose full of punctuation and URLs. This fixture's
+    overview is built deliberately longer than that, as a worst case: five
+    paragraphs totalling ~625 estimated tokens, so there is something to
+    actually split rather than a value that merely happens to fit.
+    """
+    ingest_masvs(conn, LONG_OVERVIEW_FIXTURE, version="2.1.0", license="CC-BY-SA-4.0")
+    overview_rows = conn.execute(
+        "SELECT c.token_est FROM chunks c"
+        " JOIN sections s ON s.id = c.section_id"
+        " JOIN docs d ON d.id = s.doc_id"
+        " WHERE d.doc_key = 'MASVS-PRIVACY'"
+        " AND c.id NOT IN (SELECT chunk_id FROM requirements)"
+    ).fetchall()
+    assert len(overview_rows) > 1, "the long overview did not split"
+    all_rows = conn.execute("SELECT token_est FROM chunks").fetchall()
+    assert all(row["token_est"] <= EMBEDDER_MAX_TOKENS for row in all_rows), [
+        row["token_est"] for row in all_rows
+    ]
+
+
+def test_every_overview_part_cites_through_the_group_anchor(conn):
+    """The citation is doc_key#anchor. A future change to how the overview is
+    split must not silently move it: every part still lives in the group's one
+    section, and that section's anchor is still slugify(group_id) --
+    MASVS-PRIVACY#masvs-privacy, not something split-specific."""
+    ingest_masvs(conn, LONG_OVERVIEW_FIXTURE, version="2.1.0", license="CC-BY-SA-4.0")
+    rows = conn.execute(
+        "SELECT s.anchor, d.doc_key FROM chunks c"
+        " JOIN sections s ON s.id = c.section_id"
+        " JOIN docs d ON d.id = s.doc_id"
+        " WHERE d.doc_key = 'MASVS-PRIVACY'"
+        " AND c.id NOT IN (SELECT chunk_id FROM requirements)"
+    ).fetchall()
+    assert len(rows) > 1
+    assert {row["doc_key"] for row in rows} == {"MASVS-PRIVACY"}
+    assert {row["anchor"] for row in rows} == {"masvs-privacy"}
 
 
 def test_a_source_with_no_controls_is_rejected(conn, tmp_path):
