@@ -2579,6 +2579,12 @@ def test_the_docs_count_the_hooks_the_plugin_ships():
     deliberately not here -- it says "two PreToolUse hooks", which is a per-event
     count and correct, and asserting a total against it would fail a true sentence.
     """
+    def flattened(path: str) -> str:
+        """Whitespace-normalised, so a markdown line wrap between "five" and
+        "hooks" does not read as a missing count. The wrap is not the defect this
+        guards against, and a guard that fires on one gets deleted."""
+        return " ".join(Path(path).read_text().lower().split())
+
     shipped = json.loads(PLUGIN.read_text())["hooks"]
     count = sum(len(matcher["hooks"]) for event in shipped.values() for matcher in event)
     spelled = {1: "one hook", 2: "two hooks", 3: "three hooks", 4: "four hooks", 5: "five hooks"}
@@ -2586,15 +2592,18 @@ def test_the_docs_count_the_hooks_the_plugin_ships():
         f"the plugin ships {count} hooks and this test has no word for that count"
     )
 
-    doc = Path("docs/discoverability.md").read_text().lower()
+    doc = flattened("docs/discoverability.md")
     claim_start = doc.index("the plugin has since gained")
-    claim = doc[claim_start : doc.index("\n\n", claim_start)]
+    # A fixed window rather than the next blank line: flattening collapsed every
+    # newline, so "\n\n" can no longer mark a paragraph's end. The window only
+    # has to reach past the count word, not land on a real boundary.
+    claim = doc[claim_start : claim_start + 600]
     assert spelled[count] in claim, (
         f"the plugin ships {count} hooks and docs/discoverability.md's sentence that "
         f"states the count does not say so"
     )
 
-    readme = Path("README.md").read_text().lower()
+    readme = flattened("README.md")
     assert spelled[count] in readme, (
         f"the plugin ships {count} hooks and README.md never says so; it said "
         f"'two hooks' while four shipped"
@@ -2781,3 +2790,80 @@ def test_no_plugin_ships_a_bin_directory():
         f"the tools to scripts/ and invoke them by the absolute path the SessionStart "
         f"hook states (ADR 0018)."
     )
+
+
+# The token, and the sentence that expands it. The definition is matched on its
+# exact wording so it reads identically in every plugin in the fleet -- an agent
+# holding two of them in context should see one convention, not two that rhyme.
+PLUGIN_SCRIPT_REF = re.compile(r"<scripts>/([\w.-]+)")
+PLUGIN_SCRIPT_DEFINITION = re.compile(r"<scripts>`\s+is the absolute directory")
+SCRIPTS_DIR = Path("plugins/owasp-kb/scripts")
+
+
+def _documented_surfaces() -> list[Path]:
+    """Every doc a reader acts on. Skills, README, and docs/ minus the decisions
+    and the local planning scratch.
+
+    docs/decisions/ is excluded as historical record: ADR 0014 says
+    `bin/owasp-kb-report` became `bin/owasp-kb`, which was true when written and
+    has to stay as written. Excluding a directory rather than listing the files
+    that are scanned is deliberate -- a doc added later is covered by default,
+    instead of being covered only if someone remembers to add it to a list.
+
+    docs/superpowers/ is excluded too, for a different reason: it is gitignored
+    -- `git check-ignore` confirms it, and `.gitignore` names it -- so it is not
+    a documented surface at all, it is this repository's own planning scratch.
+    It routinely holds `<scripts>` tokens (this task's own plan and design docs
+    among them, as of the branch this check was written on) that were never
+    meant to resolve against a shipped tool, and a scan that reached it would
+    fail on notes instead of on documentation.
+    """
+    paths = [Path("README.md")]
+    paths += [
+        p
+        for p in Path("docs").rglob("*.md")
+        if "decisions" not in p.parts and "superpowers" not in p.parts
+    ]
+    paths += sorted(SKILLS_DIR.rglob("*.md"))
+    return paths
+
+
+def test_every_scripts_token_names_a_real_tool_and_every_file_using_one_defines_it():
+    """A renamed tool would otherwise leave behind a command example that runs
+    nothing, invisible until an agent types it.
+
+    Resolving is not the same as being readable. A skill is read piecewise -- a
+    gate branches to one continuation file or another, never both -- so a file
+    naming <scripts>/owasp-kb without explaining what <scripts> means leaves a
+    reader who arrived by that file's own read path holding a token they cannot
+    expand, even if some other file in the same skill defines it. The explainer
+    has to travel with the command.
+
+    Ported from c7-marketplace's check_plugin_script_references. That version
+    resolves each reference against the skill's own plugin (`directory.parent.parent
+    / "scripts"`), because c7-marketplace lints many plugins in one pass. This
+    repository only ships one, so the check is simpler: every reference resolves
+    against the one `plugins/owasp-kb/scripts/` directory.
+
+    Passes vacuously until a doc or skill first writes a `<scripts>/<tool>`
+    command -- nothing does yet, so there is nothing here for this check to
+    catch. It is still added now, ahead of that, so the check exists on the
+    branch that establishes the convention rather than being bolted on after the
+    first doc gets it wrong.
+    """
+    problems: list[str] = []
+    for path in _documented_surfaces():
+        text = path.read_text()
+        names = PLUGIN_SCRIPT_REF.findall(text)
+        if names and not PLUGIN_SCRIPT_DEFINITION.search(text):
+            problems.append(
+                f"{path} names <scripts>/{names[0]} but never explains what <scripts> "
+                f"is; a reader who reaches this file by its own read path cannot "
+                f"expand the token"
+            )
+        problems += [
+            f"{path} names <scripts>/{name}, which is not in {SCRIPTS_DIR}"
+            for name in names
+            if not (SCRIPTS_DIR / name).exists()
+        ]
+    assert not problems, "\n".join(problems)
