@@ -2270,6 +2270,35 @@ def test_secure_coding_forbids_adapting_an_asvs_requirement_to_a_mobile_control(
     )
 
 
+def test_secure_coding_handles_the_pack_being_absent_from_the_image():
+    """The skills ship with this repository, but a pack such as `masvs` only exists once a
+    built server image includes it -- the two are deliberately decoupled (pinned by digest
+    in pinned-packs.json, written by the release flow). Measured against a live server
+    pinned to an image built before this pack shipped, `kb_info` lists only
+    asvs/cheatsheets/cwe and a `masvs` lookup raises "unknown pack 'masvs'". An agent that
+    was just told to cite MASVS and never adapt ASVS by analogy, with no instruction for
+    that error, is the one case where reaching for the adapted ASVS requirement is most
+    tempting -- exactly the failure the routing exists to prevent. This anchors to the
+    dedicated section rather than the whole file, the same way
+    test_secure_coding_forbids_adapting_an_asvs_requirement_to_a_mobile_control anchors to
+    the routing step: a bare substring match would pass on "kb_info" or "not permitted"
+    appearing anywhere else in the file, including places that have nothing to do with the
+    pack being unavailable.
+    """
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower()
+    start = body.index("if the pack is not in this image")
+    end = body.index("\n## notes", start)
+    section = body[start:end]
+    assert "kb_info" in section, (
+        "the section never names kb_info as how you find out which packs the running "
+        "server actually holds"
+    )
+    assert "not permitted" in section, (
+        "the section does not forbid falling back to an adapted ASVS requirement when "
+        "the mobile pack is absent -- the one case where that fallback is most tempting"
+    )
+
+
 def test_the_discoverability_note_counts_the_hooks_the_plugin_ships():
     """The note said "two hooks" after a third had shipped, and denied that any hook
     solves discoverability while that third one exists to do exactly that -- as the same

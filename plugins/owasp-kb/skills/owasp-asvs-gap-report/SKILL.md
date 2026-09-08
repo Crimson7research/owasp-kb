@@ -32,6 +32,11 @@ assumption in the report header** so it is visible and disputable rather than si
    `owasp_roster` already takes a `pack` argument, so this is a "not specified yet", not an
    "impossible."
 
+   **Before promising a MASVS-scoped pass, check `kb_info` for whether `masvs` is among the
+   packs the running server holds.** If it is absent, the image predates the pack — say so
+   in the report header, alongside the other stated assumptions, rather than silently
+   scoping the mobile side out as though it were never in scope.
+
 2. **Target level** — levels are cumulative:
 
    | Level | Requirements | Cost | Justified when |

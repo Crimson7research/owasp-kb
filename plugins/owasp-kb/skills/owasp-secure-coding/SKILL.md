@@ -133,6 +133,34 @@ the outage: step 6 is a local `Grep`, and it is the step that prevented two defe
 check whether the codebase already has the control, searching for the control names you
 would expect, and say in your answer that those terms are yours and not the corpus's.
 
+## If the pack is not in this image
+
+The plugin and the packs it queries ship separately: skills are versioned with this
+repository, but a pack such as `masvs` only exists once a built server image includes it.
+`kb_info` reports which packs the running server actually holds — the same call you use to
+get the version string for a citation. If `masvs` is not among them, the image predates the
+pack. That is a deployment state, not a reason to substitute.
+
+Say so explicitly in the answer: name the control area that has no citable requirement in
+this image, and state plainly that the mobile requirement set is not present. An honest gap
+is a usable answer — a reviewer can act on it.
+
+**Falling back to an adapted ASVS requirement is still not permitted, and this is the case
+where the temptation is strongest.** You have just been told the mobile dimension matters,
+and ASVS is the only thing that will answer. Reaching for it anyway reproduces the exact
+failure step 2 exists to prevent — a web-scoped requirement cited for a device control, with
+a reviewer unable to tell from the citation alone. Do not adapt one because the mobile pack
+happens to be unavailable this session.
+
+`Mobile_Application_Security_Cheat_Sheet` **is** in the corpus and is a legitimate citation
+for implementation guidance here — probe it with `owasp_search`/`owasp_outline` against
+`pack="cheatsheets"` as usual. It is not a requirement set and does not substitute for a
+MASVS control id, but it is better than recall and better than a mis-scoped ASVS id.
+
+For the human reading the answer: the remedy is an image built from a revision that ships
+the pack. `kb_info`'s `server_version` together with the digest recorded in
+`pinned-packs.json` is how you tell which one is running.
+
 ## Notes
 
 - Prefer L1 and L2 requirements unless the user states a higher target level.
