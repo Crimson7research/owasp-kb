@@ -76,10 +76,10 @@ copies of the same CC-BY-SA-4.0 text, not five disjoint texts:
   others, which is why the same text exists as more than one file.
 - **[LICENSE-OWASP-MASVS](../licenses/LICENSE-OWASP-MASVS) (CC-BY-SA-4.0)**
   covers the OWASP Mobile Application Security Verification Standard (MASVS)
-  content as pinned in `sources.lock.yml`, on the same terms — no MASVS
-  content reaches the index yet, so this text is in place ahead of the ingest
-  work that will need it. It too holds the same text as the other two, for
-  the same reason: MASVS is pinned separately and could be relicensed
+  content as pinned in `sources.lock.yml`, on the same terms, wherever that
+  content appears — in this repository, in an index built from it, or in an
+  image shipping one. It too holds the same text as the other two, for the
+  same reason: MASVS is pinned separately and could be relicensed
   independently of them.
 - **[LICENSE-CWE](../licenses/LICENSE-CWE)** covers MITRE's CWE terms of use,
   under which the CWE pack's content is used — see

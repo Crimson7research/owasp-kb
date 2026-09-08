@@ -42,17 +42,20 @@ through the MCP tools — is an adaptation under the Creative Commons
 framework.
 
 The index is a COMPOSITE of differently-licensed content, and no single
-license covers all of it. The portions derived from ASVS and the Cheat Sheet
-Series remain CC-BY-SA-4.0 in their own right as an adaptation; each carries
-its own copy of that license, LICENSE-OWASP-ASVS and
-LICENSE-OWASP-CHEATSHEET. MASVS is pinned under the same license and carries
-its own copy, LICENSE-OWASP-MASVS, ready for the portion of the index its
-content will become once it is ingested. The three files hold the same text
-because the three projects chose the same license, not because they are one
-work: they are pinned separately and any one of them could be relicensed
-without the others. The portion derived from the CWE catalogue is governed
-by MITRE's CWE Terms of Use; see LICENSE-CWE for that text, which must
-accompany redistribution. Each image's OCI labels state the same split
+license covers all of it. Wherever content derived from ASVS, the Cheat
+Sheet Series or MASVS appears -- in this repository, in an index built from
+it, or in an image shipping that index -- it remains CC-BY-SA-4.0 in its own
+right as an adaptation, and each of the three carries its own copy of that
+license: LICENSE-OWASP-ASVS, LICENSE-OWASP-CHEATSHEET and
+LICENSE-OWASP-MASVS. Which of them a given build actually contains is
+recorded per pack in sources.lock.yml and reported by the kb_info tool for a
+running server; this notice does not track that, so that it stays true of
+every build. The three files hold the same text because the three projects
+chose the same license, not because they are one work: they are pinned
+separately and any one of them could be relicensed without the others. The
+portion derived from the CWE catalogue is governed by MITRE's CWE Terms of
+Use; see LICENSE-CWE for that text, which must accompany redistribution.
+Each image's OCI labels state the same split
 (`org.opencontainers.image.licenses="MIT AND CC-BY-SA-4.0 AND
 LicenseRef-CWE-TOU"`), and docs/licensing.md gives the practical reading —
 neither that document nor this one is legal advice.
