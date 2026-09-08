@@ -21,12 +21,14 @@ the note on session state would leave them unreachable in exactly the case where
 `doctor` is what someone needs.
 
 SEPARATE FROM THE NUDGE, deliberately. The two payloads fail in opposite
-directions: the nudge failing open to silence is correct and ADR 0017 argues it,
-because a session must not break over a reminder. This note falling silent is a
-command-not-found later. Sharing one process would let an exception in path
-resolution suppress the nudge, and a malformed nudge suppress the path. ADR 0017
-also bounds the nudge with "its only bound is that it is short", and appending a
-tools inventory to a payload whose entire defence is brevity spends that bound.
+directions: the nudge failing open to silence is correct, argued in its own
+docstring rather than in ADR 0017 -- per ADR 0012, each hook argues its failure
+direction where it lives -- because a session must not break over a reminder.
+This note falling silent is a command-not-found later. Sharing one process would
+let an exception in path resolution suppress the nudge, and a malformed nudge
+suppress the path. ADR 0017 does bound the nudge with "its only bound is that it
+is short", and appending a tools inventory to a payload whose entire defence is
+brevity spends that bound.
 
 FAILS OPEN anyway, for the reason above: an exception exits 0 and emits nothing.
 The degraded state is a longer road to the path, not a broken session.
