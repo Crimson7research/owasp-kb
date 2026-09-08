@@ -48,6 +48,17 @@ def plugin_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
+def invocation() -> str:
+    """How a human runs this CLI, as a command that actually works.
+
+    Derived from __file__ rather than written out: these tools are off PATH
+    (ADR 0018), so a remedy naming a bare `owasp-kb` is a command-not-found at
+    the exact moment someone is already stuck. The entry point sits one level up
+    from this package.
+    """
+    return f"python3 {Path(__file__).resolve().parent.parent / 'owasp-kb'}"
+
+
 def _run(*command: str) -> subprocess.CompletedProcess:
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
@@ -121,7 +132,7 @@ def check_image_present() -> Result:
     return Result(
         False,
         "the pinned image is reachable but not present locally",
-        remedy=f"owasp-kb doctor --pull   (or docker pull {image})",
+        remedy=f"{invocation()} doctor --pull   (or docker pull {image})",
         notes=(
             "otherwise the next session start pulls it, roughly 700 MB for the "
             "full variant, with no indication of why it is hanging",
@@ -201,7 +212,7 @@ def check_server_answers() -> Result:
         return Result(
             False,
             "skipped: the image is not present, so the server was not started",
-            remedy="owasp-kb doctor --pull",
+            remedy=f"{invocation()} doctor --pull",
         )
     requests = (
         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":'

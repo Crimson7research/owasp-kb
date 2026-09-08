@@ -130,10 +130,12 @@ The server runs `ghcr.io/crimson7research/owasp-kb` pinned by digest, so the fir
 start pulls the image (~700 MB for `full`) and later starts use the local copy.
 
 Check the whole chain — plugin, pin, registry access, server, hooks, state
-directory, SSH — with:
+directory, SSH — with the host CLI. It ships in the plugin's `scripts/`, off
+`PATH`, so it is invoked by absolute path; `<scripts>` is the absolute directory
+the owasp-kb session-start note names, which that note states in every session:
 
 ```
-owasp-kb doctor
+python3 <scripts>/owasp-kb doctor
 ```
 
 **Any MCP-capable agent.** The image reference is the digest in

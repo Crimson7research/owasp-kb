@@ -2867,3 +2867,80 @@ def test_every_scripts_token_names_a_real_tool_and_every_file_using_one_defines_
             if not (SCRIPTS_DIR / name).exists()
         ]
     assert not problems, "\n".join(problems)
+
+
+# A backticked span whose content is on one line. The check reads the span's first
+# token, so the span is the unit rather than the line.
+INLINE_CODE = re.compile(r"`([^`\n]+)`")
+# The lead-in that turns a mention into an instruction. Anchored to the end of the
+# preceding text, so it matches only a verb the span is the object of -- "Run `x`"
+# -- and not the same verb elsewhere in the sentence.
+RUN_VERB = re.compile(r"\b(?:run|runs|invoke|execute|call)\s+$", re.IGNORECASE)
+# A flag. A bare name carrying one is being quoted as a command line whatever the
+# surrounding grammar does.
+COMMAND_ARGUMENT = re.compile(r"(?:^|\s)-{1,2}\w")
+CODE_FENCE = re.compile(r"^\s*(?:```|~~~)")
+TOOL = "owasp-kb"
+
+
+def _bare_tool_in_fences(text: str) -> bool:
+    """Whether the tool is the first token of a line inside a fenced block.
+
+    Unconditional, unlike the inline case: a fenced block is what a reader copies
+    verbatim, so an explainer higher up the file does not make the line runnable.
+    """
+    inside = False
+    for line in text.splitlines():
+        if CODE_FENCE.match(line):
+            inside = not inside
+            continue
+        stripped = line.strip()
+        if inside and (stripped == TOOL or stripped.startswith(TOOL + " ")):
+            return True
+    return False
+
+
+def test_no_doc_names_the_host_cli_as_a_bare_command():
+    """The mirror of the token check, catching what it is blind to. That one fires
+    on the <scripts>/ token, so a line still reading ``run `owasp-kb doctor` ``
+    carries no token, is seen by no check, and passes while instructing an agent to
+    type something that is not on PATH. c7-marketplace's own move out of bin/ left
+    four such sites behind precisely because nothing looked for them.
+
+    Deliberately narrow, because a bare name in prose is legitimate and must stay:
+    "`owasp-kb doctor` reports this before it happens" is about the tool, not an
+    instruction to type it, and a check that flagged those would be worked around
+    or deleted. A mention is refused only when command-shaped: first token of a
+    line in a fenced block, or a span carrying a flag, or a span that is the object
+    of an imperative run verb. The last two are excused when the file's explainer
+    appears above them -- which makes the check satisfiable by moving the explainer
+    earlier, a real improvement to the file rather than a way around the check.
+    """
+    problems: list[str] = []
+    for path in _documented_surfaces():
+        text = path.read_text()
+        if _bare_tool_in_fences(text):
+            problems.append(
+                f"{path} runs bare `{TOOL}` inside a code block; it is not on PATH, "
+                f"so write `python3 <scripts>/{TOOL}`"
+            )
+        explained = PLUGIN_SCRIPT_DEFINITION.search(text)
+        explained_at = explained.start() if explained else None
+        for match in INLINE_CODE.finditer(text):
+            span = match.group(1).strip()
+            if not (span == TOOL or span.startswith(TOOL + " ")):
+                continue
+            if explained_at is not None and explained_at < match.start():
+                continue
+            line_start = text.rfind("\n", 0, match.start()) + 1
+            if not (
+                COMMAND_ARGUMENT.search(span[len(TOOL) :])
+                or RUN_VERB.search(text[line_start : match.start()])
+            ):
+                continue
+            problems.append(
+                f"{path} names `{span}` as a command, but it is not on PATH and "
+                f"nothing above says how to invoke it; write "
+                f"`python3 <scripts>/{TOOL}` and explain the token"
+            )
+    assert not problems, "\n".join(problems)

@@ -375,12 +375,18 @@ serial.
 Only the summary genuinely has to come last. Everything else can be written while other agents
 are still running, and a run interrupted late then has most of its report already on disk.
 
-Then merge, giving the finding count `owasp_roster` reported:
+Then merge, giving the finding count `owasp_roster` reported. `<scripts>` is the absolute directory
+the owasp-kb session-start note names — that note states it in every session, because these tools
+are not on `PATH`:
 
 ```
-owasp-kb report merge --session <session-id> \
+python3 <scripts>/owasp-kb report merge --session <session-id> \
     --out docs/security/asvs-5.0.0-l2-<target>.md --expect-findings 38
 ```
+
+**Dispatched as a subagent, with no session note?** A subagent composes its own context and never
+receives it. Take the `Base directory for this skill:` line the `Skill` tool printed when this
+skill loaded, and go two levels up into `scripts/`.
 
 It refuses on a duplicate number, on a count that disagrees with the roster, and on an empty
 directory -- each of which would otherwise hand a client a report that looks complete. Do not
