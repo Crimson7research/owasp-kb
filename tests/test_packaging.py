@@ -2234,7 +2234,50 @@ def test_the_secure_coding_body_says_a_citation_is_not_precedence():
     )
 
 
-MOBILE_ROUTED_SKILLS = ("owasp-secure-coding", "owasp-asvs-verify", "owasp-asvs-gap-report")
+MOBILE_ROUTED_SKILLS = (
+    "owasp-secure-coding",
+    "owasp-asvs-verify",
+    "owasp-asvs-gap-report",
+    "owasp-threat-model",
+)
+
+
+def _skills_routing_to_masvs() -> list[str]:
+    """Every skill that tells an agent to call the MASVS pack, read off the files.
+
+    Derived rather than listed. The list version of this was written with three
+    entries while a fourth skill also routed to the pack, and that fourth one
+    shipped with no instruction for the pack being absent -- found by hand, not
+    by a test. A hardcoded roster is the thing that misses the next one.
+    """
+    found = []
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        body = (skill_dir / "SKILL.md").read_text()
+        if 'pack="masvs"' in body or "pack='masvs'" in body:
+            found.append(skill_dir.name)
+    return found
+
+
+def test_every_skill_routing_to_masvs_says_what_to_do_when_it_is_absent():
+    """The pack ships inside a digest-pinned image; the skills ship with the
+    repository. So a skill can route to a pack this server does not hold, and the
+    agent's most available substitute is the ASVS requirement the routing exists
+    to stop it citing. Each such skill must name kb_info and refuse the fallback.
+    """
+    routing = _skills_routing_to_masvs()
+    assert routing, "no skill routes to the MASVS pack; this test is checking nothing"
+    # A lexical proxy for a semantic property, and accepting several phrasings is
+    # deliberate: four skills say the same thing four ways, and pinning one form
+    # would make this a test of wording. What it cannot catch is a skill that
+    # names the absence and then tells the agent to substitute anyway -- the
+    # per-skill tests above cover that where it matters most.
+    absence = ("unknown pack", "not in this image", "predates the pack", "is absent")
+    for skill in routing:
+        body = (SKILLS_DIR / skill / "SKILL.md").read_text().lower()
+        assert "kb_info" in body, f"{skill} routes to masvs but never says how to tell it is there"
+        assert any(phrase in body for phrase in absence), (
+            f"{skill} routes to masvs with no instruction for the pack being absent"
+        )
 
 
 @pytest.mark.parametrize("skill", MOBILE_ROUTED_SKILLS)
