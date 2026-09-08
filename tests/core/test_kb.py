@@ -232,17 +232,18 @@ def test_checklist_ordering_pins_the_component_order_not_just_numeric_parsing(kb
     another. Both tests do prove _sort_key is exercised -- negating all three
     components fails them -- but not that the component *order* is pinned.
 
-    V2.2.1, V2.10.1 and V10.2.1 can tell permutations apart because all three
-    components vary against each other: (2,2,1), (2,10,1), (10,2,1). Sorted
-    correctly by (chapter, section, number) that is V2.2.1, V2.10.1, V10.2.1.
-    Sorted by (number, section, chapter) instead: (1,2,2), (1,10,2), (1,2,10) ->
-    V2.2.1, V10.2.1, V2.10.1 -- the last two swapped. Plain lexical order on
-    req_id gives V10.2.1, V2.10.1, V2.2.1 -- reversed. Both wrong orderings differ
-    from the correct one, so this test catches them; measured by running each as a
-    mutation, it does not catch every permutation (see the commit's mutation
-    notes for which).
+    V2.2.2, V2.10.1 and V10.2.1 can tell every wrong permutation apart because no
+    component is constant across all three ids: chapter is (2, 2, 10), section is
+    (2, 10, 2), number is (2, 1, 1) -- each takes at least two distinct values, so
+    every component genuinely varies and none of the three can sit out a
+    comparison without affecting the outcome. Componentwise that is
+    (2,2,2), (2,10,1), (10,2,1); sorted correctly by (chapter, section, number)
+    that is V2.2.2, V2.10.1, V10.2.1. Measured by running each of the five wrong
+    orderings of (chapter, section, number) as a mutation of _sort_key, every one
+    of them produces an order that differs from the correct one, so this test
+    catches all five.
 
-    Records are written source-order V10.2.1, V2.2.1, V2.10.1 -- deliberately not
+    Records are written source-order V10.2.1, V2.2.2, V2.10.1 -- deliberately not
     already in the correct order -- so a regression that dropped the sort step
     entirely would not accidentally pass by inheriting a pre-sorted source file.
     """
@@ -266,7 +267,7 @@ def test_checklist_ordering_pins_the_component_order_not_just_numeric_parsing(kb
             "chapter_name": "C2",
             "section_id": "V2.2",
             "section_name": "S2",
-            "req_id": "V2.2.1",
+            "req_id": "V2.2.2",
             "req_description": "text",
             "L": "1",
         },
@@ -285,7 +286,7 @@ def test_checklist_ordering_pins_the_component_order_not_just_numeric_parsing(kb
     conn = _connect(tmp_path / "component_order.sqlite")
     _create(conn)
     ingest_asvs(conn, path, version="5.0.0", license="CC-BY-SA-4.0")
-    assert [r.req_id for r in Kb(conn).checklist("asvs")] == ["V2.2.1", "V2.10.1", "V10.2.1"]
+    assert [r.req_id for r in Kb(conn).checklist("asvs")] == ["V2.2.2", "V2.10.1", "V10.2.1"]
 
 
 def test_checklist_orders_by_the_stored_ordinal_not_by_id_syntax(kb):
