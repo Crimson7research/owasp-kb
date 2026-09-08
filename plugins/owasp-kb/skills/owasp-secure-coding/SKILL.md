@@ -47,7 +47,25 @@ the codebase, and no citation stands in for it.
    code and needs no security vocabulary — which is the point, because deciding whether a
    change "is security work" is the judgement that fails. A field move is a change.
 
-2. **Probe the cheat sheets with those sentences.** Call `owasp_search` with
+2. **Decide which checklist governs, before probing anything.** ASVS is written for web
+   applications and their server endpoints. If the code under change runs *on the device* —
+   Android or iOS native, React Native, Flutter, or any app-side module — the governing
+   checklist is `pack="masvs"`, and ASVS covers only the server endpoint the app talks to,
+   not the code in front of you.
+
+   **Adapting an ASVS requirement to a device-side control by analogy is not permitted.**
+   A session diagnosing a mobile finding noted in its own reasoning that the requirement was
+   written for a web application, argued from that reasoning that it applied anyway, and
+   cited it anyway. The citation then resolved to a web-scoped requirement — the one thing a
+   citation is for, a reviewer checking it against the code, failed. Cite the MASVS control
+   instead.
+
+   MASVS controls are deliberately coarse — 8 groups, 24 controls, one sentence each plus a
+   description. Where the corpus holds no implementation detail for the fix, **say that in the
+   answer** rather than reaching for an ASVS requirement that reads close enough. MASVS has no
+   levels: do not pass `level` with `pack="masvs"` — it raises `ValueError`.
+
+3. **Probe the cheat sheets with those sentences.** Call `owasp_search` with
    `pack="cheatsheets"`, once per sentence. The rule is to phrase the probe as origin and
    use, not as a type. Cheat sheet titles and bodies are topic-shaped, so mundane wording
    reaches them — `api key supplied by an operator, stored in the database` returns
@@ -66,11 +84,11 @@ the codebase, and no citation stands in for it.
    advice is often a version out of date and carries no citation a reviewer can check. An
    empty result is cheap and is itself an answer.
 
-3. **Narrow before fetching.** Cheat sheets reach 37,000 characters. Call `owasp_outline`
+4. **Narrow before fetching.** Cheat sheets reach 37,000 characters. Call `owasp_outline`
    on the best-matching `doc_key`, pick the relevant anchor, then `owasp_get` that section
    only.
 
-4. **Cross to ASVS with the vocabulary the sheet just supplied.** Cheat sheets describe
+5. **Cross to ASVS with the vocabulary the sheet just supplied.** Cheat sheets describe
    implementation mistakes; ASVS states what is *required* at each level. The phrasing rule
    inverts between the packs, so do not reuse the data-flow sentence here. Mundane
    origin-and-use wording reaches the cheat sheets because their titles are topic-shaped;
@@ -92,7 +110,7 @@ the codebase, and no citation stands in for it.
    `doc_key` to `owasp_related` returns no edges — so do not read that emptiness as the
    corpus having no mapping.
 
-5. **Establish precedence with the vocabulary the corpus just gave you.** Call `Grep` on
+6. **Establish precedence with the vocabulary the corpus just gave you.** Call `Grep` on
    the codebase for the control names the guidance named — allowlist, scheme, guard,
    connect, redirect, whatever it used — and not for names you thought of before reading.
    If the corpus returned nothing, grep for the control names you would have expected and
@@ -100,18 +118,18 @@ the codebase, and no citation stands in for it.
    control that already exists or state why it does not fit. Do not write a validator, guard
    or middleware of your own before this step has run.
 
-6. **Cite everything.** Every security claim carries its citation inline — `ASVS 5.0.0
+7. **Cite everything.** Every security claim carries its citation inline — `ASVS 5.0.0
    V6.2.1` or `Authentication_Cheat_Sheet#password-storage`. Get the exact version from
    `kb_info`.
 
-7. **Write the code**, then state which requirements it satisfies and which it does not.
+8. **Write the code**, then state which requirements it satisfies and which it does not.
 
 ## If the knowledge base is unreachable
 
 Say so explicitly and make no citations. Do not fall back on recalled guidance while
 appearing to have consulted the knowledge base — that is worse than no guidance, because the
 citations are missing and nobody can tell the difference until it matters. One step survives
-the outage: step 5 is a local `Grep`, and it is the step that prevented two defects. Still
+the outage: step 6 is a local `Grep`, and it is the step that prevented two defects. Still
 check whether the codebase already has the control, searching for the control names you
 would expect, and say in your answer that those terms are yours and not the corpus's.
 

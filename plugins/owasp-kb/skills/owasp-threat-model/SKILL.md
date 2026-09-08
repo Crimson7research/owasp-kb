@@ -53,6 +53,13 @@ disputable rather than silent.
    anchor=...)` on what matches. A component handling uploads, one issuing tokens, and one
    rendering HTML have entirely different requirement sets.
 
+   **A mobile client component also pulls the MASVS group alongside the cheat sheets.** ASVS
+   and the cheat sheets cover the server endpoints the app talks to, not the device. Call
+   `owasp_checklist(pack="masvs", chapter="MASVS-PLATFORM")` and its seven sibling groups —
+   they enumerate the device-side dimensions ASVS does not cover: platform keystore, biometric
+   and local authentication, screenshot/backup/log leakage, IPC and deep links, and
+   reverse-engineering resilience.
+
 4. **Cross to requirements.** For each relevant cheat sheet, call `owasp_related` to reach
    the ASVS requirements, so the model distinguishes advisory from required.
 

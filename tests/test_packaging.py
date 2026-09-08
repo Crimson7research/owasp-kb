@@ -2234,6 +2234,42 @@ def test_the_secure_coding_body_says_a_citation_is_not_precedence():
     )
 
 
+MOBILE_ROUTED_SKILLS = ("owasp-secure-coding", "owasp-asvs-verify", "owasp-asvs-gap-report")
+
+
+@pytest.mark.parametrize("skill", MOBILE_ROUTED_SKILLS)
+def test_the_skills_name_the_pack_that_governs_a_mobile_client(skill):
+    """The measured failure was an agent citing an ASVS web requirement for a
+    mobile control, having reasoned that it applied by analogy. A pack nothing
+    routes to does not prevent that."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text().lower()
+    assert "masvs" in body, f"{skill} never names the mobile pack"
+    assert "mobile" in body
+
+
+def test_secure_coding_forbids_adapting_an_asvs_requirement_to_a_mobile_control():
+    """A substring window around the first "masvs" hit would pass on any mention of the
+    word anywhere in the file, including one in the "Why call the tools" preamble that
+    has nothing to do with forbidding analogy. This bounds the check to the routing step
+    itself -- from where it decides which checklist governs to where the next numbered
+    step begins -- so the assertion is against the step that has to carry the rule, not
+    an arbitrary character radius around wherever "masvs" happens to first appear.
+
+    What this still does not catch: a routing step that forbids the analogy in different
+    words ("do not borrow a web requirement for a device control", say) with neither
+    "analogy" nor "adapt" in it. A wording check cannot certify meaning, only presence of
+    the words the skill was written to use.
+    """
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower()
+    start = body.index("decide which checklist governs")
+    end = body.index("probe the cheat sheets with those sentences")
+    step = body[start:end]
+    assert "masvs" in step, "the routing step itself never names the mobile pack"
+    assert "analogy" in step or "adapt" in step, (
+        "the routing step never forbids adapting an ASVS requirement to a mobile control"
+    )
+
+
 def test_the_discoverability_note_counts_the_hooks_the_plugin_ships():
     """The note said "two hooks" after a third had shipped, and denied that any hook
     solves discoverability while that third one exists to do exactly that -- as the same
