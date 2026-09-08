@@ -1,11 +1,6 @@
 ---
 name: owasp-threat-model
-description: Use when reviewing architecture or system design before implementation, threat modelling, evaluating a proposed design for security, assessing a new service or integration, triaging a reported vulnerability, or answering what could go wrong with a design - including SSRF, XSS, XXE, IDOR, CSRF, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, SQL injection, command injection, LDAP injection and deserialization. Pulls ASVS documentation-class requirements and cheat sheets relevant to each component.
-  Use when reviewing architecture or system design before implementation,
-  threat modelling, evaluating a proposed design for security, assessing a new
-  service or integration, or answering what could go wrong with a design. Pulls
-  ASVS documentation-class requirements and cheat sheets relevant to each
-  component.
+description: Use when reviewing architecture or system design before implementation, threat modelling, evaluating a proposed design for security, assessing a new service or integration, triaging a reported vulnerability, or answering what could go wrong with a design - including SSRF, XSS, XXE, IDOR, CSRF, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, SQL injection, command injection, LDAP injection and deserialization, or a mobile app design for Android, iOS, React Native or Flutter touching the platform keystore, biometric or local authentication, screenshot, backup or log leakage, IPC, deep links, or reverse-engineering resilience. Pulls ASVS documentation-class requirements and cheat sheets relevant to each component, plus MASVS device-side controls for a mobile client.
 ---
 
 # Threat modelling with OWASP guidance

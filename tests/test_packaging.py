@@ -2328,26 +2328,139 @@ def test_the_skills_name_the_pack_that_governs_a_mobile_client(skill):
     assert "mobile" in body
 
 
+# The branch's own enumeration of the device-side dimensions ASVS does not cover
+# (owasp-threat-model/SKILL.md, "A mobile client component also pulls the MASVS
+# group..."), plus the platform names a user actually types. This is the discovery
+# surface: a request phrased in these words ("handle this deep link", "harden this
+# Android build") is what a skill has to be triggered by, and description frontmatter
+# -- not body prose -- is what decides whether it loads at all.
+MOBILE_PLATFORM_TERMS = ("android", "ios", "react native", "flutter", "mobile app")
+MOBILE_DEVICE_DIMENSION_TERMS = (
+    "keystore",
+    "biometric",
+    "local authentication",
+    "screenshot",
+    "backup",
+    "log leakage",
+    "ipc",
+    "deep link",
+    "reverse-engineering",
+)
+
+
+@pytest.mark.parametrize("skill", ["owasp-secure-coding", "owasp-threat-model"])
+def test_the_skill_description_frontmatter_names_mobile_platforms_and_dimensions(skill):
+    """Defect: every skill's frontmatter `description` returned zero hits for
+    mobile|android|ios|keystore|biometric|deep link|masvs, even after the merge that
+    added MASVS routing prose to the body. A skill's description is the discovery
+    surface -- it decides whether the skill loads at all -- so "handle this deep link
+    in our iOS app" or "harden this Android build against reverse engineering" loaded
+    no skill and the ASVS-by-analogy prohibition was never read.
+
+    test_the_skills_name_the_pack_that_governs_a_mobile_client already checks for
+    "masvs" and "mobile", but it greps `.read_text()` -- the whole file, frontmatter
+    included -- so body prose satisfies it. That is exactly why it did not catch this:
+    every routed skill had the words in its body and none had them in its frontmatter.
+    This test reads only the parsed `description` field via `_frontmatter`, so body
+    prose cannot satisfy it.
+
+    Scoped to the two skills whose job is to look at code or a design directly --
+    owasp-secure-coding writes and reviews it, owasp-threat-model reviews the
+    architecture it will run in -- so both need the full device-side vocabulary a
+    narrowly-phrased, security-silent request would actually use.
+    """
+    described = _frontmatter(SKILLS_DIR / skill / "SKILL.md")["description"].lower()
+    vocabulary = MOBILE_PLATFORM_TERMS + MOBILE_DEVICE_DIMENSION_TERMS
+    missing = [t for t in vocabulary if t not in described]
+    assert not missing, (
+        f"{skill} description frontmatter never names {missing}; a request phrased in "
+        "these words loads no skill at all"
+    )
+
+
+@pytest.mark.parametrize("skill", ["owasp-asvs-verify", "owasp-asvs-gap-report"])
+def test_the_assessment_skill_description_frontmatter_names_mobile_platforms(skill):
+    """These two do not implement device-side dimensions the way secure-coding and
+    threat-model do -- their body already says a mobile client is out of ASVS's scope
+    and that no MASVS assessment flow exists yet, so triggering them on "keystore" or
+    "deep link" would not be answering the request, only redirecting it. But they must
+    still trigger on the platform names themselves ("verify our Android app against
+    ASVS", "what's our gap to L2 for this Flutter app"): the boundary-setting prose in
+    their own scope interview -- scope this to the backend, the device side is MASVS's,
+    no MASVS flow exists, do not improvise one -- is strictly better than never firing
+    and leaving an agent to run ASVS chapters over device code from memory, which is
+    the exact failure this whole exercise exists to stop. That is a reason to trigger
+    on "mobile", not a reason to withhold it.
+    """
+    described = _frontmatter(SKILLS_DIR / skill / "SKILL.md")["description"].lower()
+    missing = [t for t in MOBILE_PLATFORM_TERMS if t not in described]
+    assert not missing, f"{skill} description frontmatter never names {missing}"
+    assert "masvs" in described, f"{skill} description frontmatter never names the mobile pack"
+
+
 def test_secure_coding_forbids_adapting_an_asvs_requirement_to_a_mobile_control():
     """A substring window around the first "masvs" hit would pass on any mention of the
     word anywhere in the file, including one in the "Why call the tools" preamble that
-    has nothing to do with forbidding analogy. This bounds the check to the routing step
-    itself -- from where it decides which checklist governs to where the next numbered
-    step begins -- so the assertion is against the step that has to carry the rule, not
-    an arbitrary character radius around wherever "masvs" happens to first appear.
+    has nothing to do with forbidding analogy. This bounds the check to the whole
+    Process section -- not just the routing step -- because the measured defect was a
+    contradiction living three steps *after* the routing step: step 2 named MASVS as
+    the governing pack, and step 5, a numbered instruction carrying an actual tool
+    call, sent everything to `pack="asvs"` regardless. The previous version of this
+    test sliced only "decide which checklist governs" through "probe the cheat sheets
+    with those sentences" -- exactly steps 2 through the start of 3 -- so it structurally
+    could not see anything steps 3 through 8 said, which is exactly where the
+    contradiction shipped. Scoping to the whole Process section is what makes that
+    class of defect visible again.
 
-    What this still does not catch: a routing step that forbids the analogy in different
-    words ("do not borrow a web requirement for a device control", say) with neither
-    "analogy" nor "adapt" in it. A wording check cannot certify meaning, only presence of
-    the words the skill was written to use.
+    What this still does not catch: a routing step that forbids the analogy, or
+    branches the ASVS search, in different words than the ones pinned below ("do not
+    borrow a web requirement for a device control", say, instead of "analogy" or
+    "adapt"; or a differently-worded but still-correct device-side branch that does not
+    contain the literal phrases this test looks for). A wording check cannot certify
+    meaning, only presence of the words the skill was written to use -- and it cannot
+    catch a contradiction between two *correctly*-worded steps that simply disagree in
+    substance neither phrase captures.
     """
-    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower()
-    start = body.index("decide which checklist governs")
-    end = body.index("probe the cheat sheets with those sentences")
-    step = body[start:end]
-    assert "masvs" in step, "the routing step itself never names the mobile pack"
-    assert "analogy" in step or "adapt" in step, (
-        "the routing step never forbids adapting an ASVS requirement to a mobile control"
+    # Whitespace-normalised: the file hard-wraps at ~90 columns, so a phrase this test
+    # pins can legitimately carry a line break in the middle of it, the same reason
+    # several other tests in this file normalise before matching.
+    body = " ".join((SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower().split())
+    start = body.index("## process")
+    end = body.index("## ", start + len("## process"))
+    process = body[start:end]
+
+    assert "masvs" in process, "the process never names the mobile pack"
+    assert "analogy" in process or "adapt" in process, (
+        "the process never forbids adapting an ASVS requirement to a mobile control"
+    )
+
+    # The defect itself: an unconditional "search pack=\"asvs\"" instruction downstream
+    # of the routing step, with no branch back to pack="masvs" for the device-side code
+    # step 2 just decided governs. Pin the branch's presence, that it precedes the ASVS
+    # search (an agent reading top-to-bottom must meet the branch first), and that the
+    # ASVS search itself is qualified as server-side-only rather than unconditional.
+    assert 'stays on `pack="masvs"`' in process, (
+        'no step re-routes device-side code back to pack="masvs" at the point of the '
+        "ASVS search -- step 2's routing decision is not re-asserted where the tool "
+        "call actually happens, which is how it got overridden three steps later"
+    )
+    assert 'do not fall through to `pack="asvs"`' in process, (
+        'the process never explicitly forbids falling through to pack="asvs" for device-side code'
+    )
+    device_branch = process.index('stays on `pack="masvs"`')
+    asvs_search = process.index('search `pack="asvs"`')
+    assert device_branch < asvs_search, (
+        "the device-side branch appears after the ASVS search instruction, so an agent "
+        "reading top to bottom reaches the unconditional-looking search first"
+    )
+    assert "for server-side code" in process, (
+        'the pack="asvs" search is not qualified as server-side-only, so it reads as '
+        "the unconditional instruction the review flagged"
+    )
+    qualifier = process.index("for server-side code")
+    assert asvs_search - qualifier < 50, (
+        'the "for server-side code" qualifier is not attached to the pack="asvs" search '
+        "it is supposed to scope"
     )
 
 

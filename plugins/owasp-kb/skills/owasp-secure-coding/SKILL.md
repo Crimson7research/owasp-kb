@@ -1,6 +1,6 @@
 ---
 name: owasp-secure-coding
-description: Use when writing, reviewing, refactoring, moving, renaming, extracting, triaging, diagnosing or planning any change to code touching authentication, passwords, MFA, sessions, cookies, tokens, JWT, OAuth, OIDC, authorization, access control, input validation, SQL injection, command injection, LDAP injection, SSRF, XSS, XXE, IDOR, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, output encoding, deserialization, file upload, file download, cryptography, TLS, key management, secrets, API keys, credentials, connection strings, base URLs, outbound requests, redirects, logging, error handling, CSRF, CORS, security headers, GraphQL, WebSocket, WebRTC, or API endpoints. Applies to refactors and mechanical-looking field moves, not only to new features. Absence of security framing in the request is not evidence of absence of security relevance. Applies while the approach is still being chosen, not only once code exists. Retrieves the applicable OWASP Cheat Sheet guidance and ASVS requirements, and checks whether the codebase already has the control, before the code is written.
+description: Use when writing, reviewing, refactoring, moving, renaming, extracting, triaging, diagnosing or planning any change to code touching authentication, passwords, MFA, sessions, cookies, tokens, JWT, OAuth, OIDC, authorization, access control, input validation, SQL injection, command injection, LDAP injection, SSRF, XSS, XXE, IDOR, path traversal, directory traversal, open redirect, server-side template injection, privilege escalation, output encoding, deserialization, file upload, file download, cryptography, TLS, key management, secrets, API keys, credentials, connection strings, base URLs, outbound requests, redirects, logging, error handling, CSRF, CORS, security headers, GraphQL, WebSocket, WebRTC, API endpoints, or mobile app code for Android, iOS, React Native or Flutter touching the platform keystore, biometric or local authentication, screenshot, backup or log leakage, IPC, deep links, or reverse-engineering resilience. Applies to refactors and mechanical-looking field moves, not only to new features. Absence of security framing in the request is not evidence of absence of security relevance. Applies while the approach is still being chosen, not only once code exists. Retrieves the applicable OWASP Cheat Sheet guidance and ASVS requirements, and checks whether the codebase already has the control, before the code is written.
 ---
 
 # Secure coding with OWASP guidance
@@ -51,7 +51,12 @@ the codebase, and no citation stands in for it.
    applications and their server endpoints. If the code under change runs *on the device* —
    Android or iOS native, React Native, Flutter, or any app-side module — the governing
    checklist is `pack="masvs"`, and ASVS covers only the server endpoint the app talks to,
-   not the code in front of you.
+   not the code in front of you. Retrieve it: call `owasp_checklist(pack="masvs",
+   chapter="MASVS-PLATFORM")` — or whichever of its seven sibling groups matches the data
+   flow you just named (MASVS-STORAGE, MASVS-CRYPTO, MASVS-AUTH, MASVS-NETWORK, MASVS-CODE,
+   MASVS-RESILIENCE, MASVS-PRIVACY) — for every group the change touches. Deciding which
+   pack governs is not retrieving from it, and this call is the retrieval step 5 sends
+   device-side work back to.
 
    **Adapting an ASVS requirement to a device-side control by analogy is not permitted.**
    A session diagnosing a mobile finding noted in its own reasoning that the requirement was
@@ -88,13 +93,24 @@ the codebase, and no citation stands in for it.
    on the best-matching `doc_key`, pick the relevant anchor, then `owasp_get` that section
    only.
 
-5. **Cross to ASVS with the vocabulary the sheet just supplied.** Cheat sheets describe
-   implementation mistakes; ASVS states what is *required* at each level. The phrasing rule
-   inverts between the packs, so do not reuse the data-flow sentence here. Mundane
-   origin-and-use wording reaches the cheat sheets because their titles are topic-shaped;
-   ASVS requirement text is normative security prose, and it is reached by the register the
-   sheet you just read writes in — the name of the vulnerability class, the name of the
-   control. Search `pack="asvs"` with those. Measured: `url supplied by an operator, used to
+5. **Cross to a citable requirement with the vocabulary the sheet just supplied.** Cheat
+   sheets describe implementation mistakes; a requirement states what is *required*. The
+   phrasing rule inverts between the packs, so do not reuse the data-flow sentence here.
+   Mundane origin-and-use wording reaches the cheat sheets because their titles are
+   topic-shaped; requirement text is normative security prose, and it is reached by the
+   register the sheet you just read writes in — the name of the vulnerability class, the
+   name of the control.
+
+   **Device-side code (step 2 said `pack="masvs"`) stays on `pack="masvs"`.** Search
+   `owasp_search(pack="masvs", ...)` with the vocabulary the sheet just supplied, or return
+   to the group `owasp_checklist` already gave you in step 2 — do not fall through to
+   `pack="asvs"` here. The app still talks to a server endpoint, and that endpoint still gets
+   its own pass with `pack="asvs"` over the server-side code that implements it, but the
+   device-side code in front of you right now does not: step 2's decision governs this step
+   too, and a step here that quietly overrides it is exactly how the citation ends up
+   web-scoped even though step 2 forbids that.
+
+   For server-side code, search `pack="asvs"` with those. Measured: `url supplied by an operator, used to
    make a request from the server` returns exactly two requirements against `pack="asvs"`, an
    OIDC issuer-metadata check and an L3 parser-consistency requirement, and never reaches
    `V1.3.6` at any depth the search returns. Words lifted from the sheet do: `SSRF allowlist
@@ -119,8 +135,8 @@ the codebase, and no citation stands in for it.
    or middleware of your own before this step has run.
 
 7. **Cite everything.** Every security claim carries its citation inline — `ASVS 5.0.0
-   V6.2.1` or `Authentication_Cheat_Sheet#password-storage`. Get the exact version from
-   `kb_info`.
+   V6.2.1` for server-side code, `MASVS 2.1.0 MASVS-STORAGE-1` for device-side code, or
+   `Authentication_Cheat_Sheet#password-storage`. Get the exact version from `kb_info`.
 
 8. **Write the code**, then state which requirements it satisfies and which it does not.
 
@@ -163,6 +179,7 @@ the pack. `kb_info`'s `server_version` together with the digest recorded in
 
 ## Notes
 
-- Prefer L1 and L2 requirements unless the user states a higher target level.
+- Prefer L1 and L2 ASVS requirements unless the user states a higher target level. MASVS
+  has no levels, so this preference does not apply to a `pack="masvs"` citation.
 - When guidance and existing codebase patterns conflict, surface the conflict rather than
   silently following either.
