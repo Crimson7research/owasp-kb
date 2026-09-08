@@ -33,3 +33,14 @@ packs:
     # rather than cwec_latest.xml.zip: a citation must resolve to the same
     # weakness text for as long as the image exists.
     url: https://cwe.mitre.org/data/xml/cwec_v4.20.xml.zip
+  masvs:
+    type: checklist
+    repo: OWASP/masvs
+    release: v2.1.0
+    version: "2.1.0"
+    license: CC-BY-SA-4.0
+    # The release also ships pdf, epub and a CycloneDX SBOM; only the YAML is
+    # ingestable. `version` is pinned here and never read from the document --
+    # the repo-root copy carries the placeholder `metadata.version: vx.x.x`.
+    assets:
+      - OWASP_MASVS.yaml
