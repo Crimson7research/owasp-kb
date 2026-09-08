@@ -32,10 +32,12 @@ log = logging.getLogger(__name__)
 # be added in the same change that calls its ingest -- not left to be noticed
 # later as a silently uncounted shortfall.
 #
-# asvs is the pre-existing figure. masvs is measured against the pinned v2.1.0
-# release asset (8 groups, 24 controls) -- not verified by this change, since
-# the build job that fetches real upstream corpora cannot run locally; CI's
-# first real build is what proves it.
+# asvs is the pre-existing figure, pinned only here. masvs is measured against
+# the pinned v2.1.0 release asset (8 groups, 24 controls) and is also asserted by
+# test_the_real_release_matches_the_shape_the_build_expects in
+# tests/ingest/test_masvs.py, which skips without data/ and runs in the realdata
+# selection -- so an upstream reshuffle fails there, naming the shape that moved,
+# rather than only here as a count mismatch during a full build.
 EXPECTED_REQUIREMENTS = {"asvs": 345, "masvs": 24}
 
 
