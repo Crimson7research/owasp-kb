@@ -14,6 +14,7 @@ from owasp_kb.ingest.links import (
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 from owasp_kb.ingest.packs.cwe import ingest_cwe
+from owasp_kb.ingest.packs.masvs import ingest_masvs
 
 
 @pytest.fixture
@@ -70,6 +71,28 @@ def test_coverage_counts_requirements_reachable_through_roll_up(kb):
     assert coverage["guidance"].requirements == 2
 
 
+def test_coverage_denominator_is_scoped_to_the_anchored_pack_not_every_pack(tmp_path):
+    """MASVS ships no links rows at all, so guidance -- ASVS-keyed -- can never
+    reach it. Denominator must stay ASVS's own size (3, in these fixtures), not
+    ASVS+MASVS (3+4=7): the extra 4 are requirements no relation anchored here
+    could ever cover, and counting them into the denominator reports a
+    shortfall MASVS's mere presence could not possibly close.
+
+    Built on its own connection, independent of the shared ``kb`` fixture, so
+    adding a second pack here does not perturb every other coverage assertion
+    in this file.
+    """
+    conn = connect(tmp_path / "kb.sqlite")
+    create_schema(conn)
+    ingest_asvs(
+        conn, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0"
+    )
+    ingest_masvs(conn, "tests/fixtures/masvs_sample.yaml", version="2.1.0", license="CC-BY-SA-4.0")
+    ingest_guidance_links(conn, "tests/fixtures/IndexASVS_sample.md")
+    coverage = {c.rel: c for c in Kb(conn).info().link_coverage}
+    assert coverage["guidance"].total_requirements == 3
+
+
 # -- search -----------------------------------------------------------
 
 
@@ -99,6 +122,28 @@ def test_search_no_match_within_a_pack_names_only_that_pack(kb):
 def test_search_unknown_pack_raises_key_error(kb):
     with pytest.raises(KeyError):
         kb.search("password", pack="nope", limit=5)
+
+
+def test_search_no_match_with_level_names_only_the_packs_actually_searched(kb):
+    """A level filter with no pack structurally excludes every level-less pack --
+    SQL drops a NULL level -- so cheatsheets was never searched even though it is
+    loaded. Naming it among the "searched" packs licenses exactly the false
+    inference the module's own docstring warns [] would: an agent reads it as
+    "cheatsheets has nothing on this", when cheatsheets was never queried."""
+    with pytest.raises(LookupError) as excinfo:
+        kb.search("zzzznotpresent", level="2")
+    message = str(excinfo.value)
+    assert "asvs" in message
+    # cheatsheets must be named as EXCLUDED by the filter, not as searched.
+    assert "exclude" in message.lower()
+    assert "cheatsheets" in message
+
+
+def test_search_rejects_a_level_for_an_unknown_pack_as_unknown(kb):
+    """Kb.checklist gets this right by calling get_pack first; search's own
+    levelless-pack refusal must not assert an unknown pack merely lacks levels."""
+    with pytest.raises(KeyError):
+        kb.search("control", pack="bogus", level="2")
 
 
 # -- outline / get ----------------------------------------------------

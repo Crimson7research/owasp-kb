@@ -96,6 +96,35 @@ def test_trigger_topics_are_substantial():
     assert len(TOOL_TRIGGER_TOPICS) >= 20
 
 
+def test_trigger_topics_cover_mobile(tools):
+    """MASVS 2.1.0 shipped as a second checklist pack with zero mobile terms on
+    any discovery surface -- an agent triaging a mobile question had no reason
+    to call owasp_search at all. Same bug class as the SSRF batch above, this
+    time for a whole pack rather than one vulnerability class."""
+    advertised = ", ".join(TOOL_TRIGGER_TOPICS).lower()
+    for topic in (
+        "android",
+        "ios",
+        "react native",
+        "flutter",
+        "keystore",
+        "biometric",
+        "deep link",
+        "ipc",
+        "reverse engineering",
+    ):
+        assert topic in advertised, f"{topic!r} missing from TOOL_TRIGGER_TOPICS"
+
+
+def test_search_description_names_masvs(tools):
+    """owasp_checklist's docstring already names MASVS as a pack; owasp_search's
+    must not contradict it by describing the index as ASVS-and-cheat-sheets-only
+    or by omitting 'masvs' from the pack: argument line."""
+    doc = tools["owasp_search"].__doc__.lower()
+    assert "masvs" in doc
+    assert "'masvs'" in doc or '"masvs"' in doc
+
+
 def test_related_description_explains_the_guidance_relationship(tools):
     doc = tools["owasp_related"].__doc__.lower()
     assert "guidance" in doc and "cwe" in doc
@@ -166,6 +195,26 @@ def test_kb_info_reports_mode_and_packs(tools):
 
 
 def test_kb_info_exposes_link_coverage(tools):
+    coverage = {c["rel"]: c for c in tools["kb_info"]()["link_coverage"]}
+    assert coverage["guidance"]["total_requirements"] == 3
+
+
+def test_kb_info_coverage_denominator_excludes_a_pack_no_relation_anchors_to(tmp_path):
+    """MASVS ships no links rows at all, so guidance -- ASVS-keyed -- can never
+    reach it. With both packs loaded, the honest denominator stays ASVS's own
+    size (3), not ASVS+MASVS (7) -- an inflated denominator that MASVS's mere
+    presence in the index could never satisfy for any relationship.
+
+    Built on its own Kb, independent of the shared ``tools`` fixture, so it
+    does not perturb that fixture's pinned pack set/count."""
+    conn = connect(tmp_path / "kb.sqlite")
+    create_schema(conn)
+    ingest_asvs(
+        conn, "tests/fixtures/asvs_sample.flat.json", version="5.0.0", license="CC-BY-SA-4.0"
+    )
+    ingest_masvs(conn, "tests/fixtures/masvs_sample.yaml", version="2.1.0", license="CC-BY-SA-4.0")
+    ingest_guidance_links(conn, "tests/fixtures/IndexASVS_sample.md")
+    tools = {t.__name__: t for t in build_tools(Kb(conn))}
     coverage = {c["rel"]: c for c in tools["kb_info"]()["link_coverage"]}
     assert coverage["guidance"]["total_requirements"] == 3
 
