@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   refresh:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       # Optional: only raises the GitHub API rate limit for refresh_lock.py.
       # Fetching content needs no token.

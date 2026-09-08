@@ -1,0 +1,83 @@
+# ci.yml's `build` job: fetch the pinned corpora, build both indexes, build both
+# images, and prove each one serves MCP with no network.
+#
+# `needs: test` is gone. On GitHub that edge buys a fast lint failure before
+# twenty-five minutes of build; on one machine the two are separate local files,
+# so a developer gets the same fast answer by running `tests` alone and nothing is
+# gated on anything.
+#
+# Everything else is kept, because the heuristic puts all of it in the second
+# category: the fetch, the model, both index builds and both docker targets are
+# there because the code needs them, not because work is spread across runners.
+#
+# `on:` is quoted deliberately. YAML 1.1 parses a bare `on` key as the boolean
+# True, so `body["on"]` finds nothing without the quotes.
+name: images
+
+"on": workflow_dispatch
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: pip install -e '.[dev]'
+
+      # No GH_TOKEN, same as the real job: fetch.py uses public HTTPS and git.
+      - name: Fetch pinned sources
+        run: |
+          python -c "
+          from pathlib import Path
+          from owasp_kb.ingest.lock import load_lock
+          from owasp_kb.ingest.fetch import fetch_all
+          fetch_all(load_lock('sources.lock.yml'), Path('data'))
+          "
+
+      # Both guards from the real job are kept and they are the point of the step:
+      # `test -f` makes the skip branch unreachable, and `pytest -m` exits 5 when
+      # nothing matches, so a deleted marker fails rather than running nothing.
+      - name: Real-catalogue assertions
+        run: |
+          test -f data/cwe/cwec_v4.20.xml
+          pytest -m realdata -q --strict-markers
+
+      - name: Download embedding model
+        run: python scripts/download_model.py
+
+      - name: Build both indexes
+        run: |
+          python -m owasp_kb.ingest.build --sources data --out dist/owasp-kb-lite.sqlite
+          python -m owasp_kb.ingest.build --sources data --out dist/owasp-kb-full.sqlite \
+            --with-vectors
+
+      - name: Retrieval quality gate
+        run: pytest tests/test_retrieval_quality.py -v -s
+
+      - name: Build images
+        run: |
+          docker build -f docker/Dockerfile --target lite -t owasp-kb:lite .
+          docker build -f docker/Dockerfile --target full -t owasp-kb:full .
+
+      - name: Container smoke test
+        run: |
+          chmod +x scripts/docker_smoke.sh
+          ./scripts/docker_smoke.sh owasp-kb:lite lexical
+          ./scripts/docker_smoke.sh owasp-kb:full hybrid
+
+      # ci.yml's last two steps -- `docker/login-action` and
+      # `scripts/verify_pin.sh` -- are not here, and that is the one hole in this
+      # file. It is recorded under `coverage_gaps` in .claude/c7/github.yml with
+      # the failure that earned it.
+      #
+      # Briefly: the passthrough was tried first and observed to fail.
+      # verify_pin.sh pulls a private GHCR digest, and although act mounts the
+      # host's docker socket so the *daemon* is the host's, the client inside the
+      # container reads its own empty config -- so the pull comes back
+      # `unauthorized` in under half a second. It is also the one step here whose
+      # subject is the registry rather than the working tree, which is the class of
+      # question this suite says out loud that it cannot answer.

@@ -1,0 +1,71 @@
+# Facts about this repository's CI that cannot be read off .github/workflows/.
+# Discovered once; see the local-ci-act and authoring-local-workflows skills.
+ci:
+  runner: act
+
+  # Confirmed by `c7-github-manifest --check-billing` against the repository's
+  # visibility: owasp-kb is private, so GitHub-hosted runners are billed against
+  # the org's allowance. The runner labels are Blacksmith's rather than GitHub's,
+  # which is billed too -- so the value is true either way and the check agreeing
+  # is not the whole reason for it.
+  billed: true
+
+  local_workflows: .github/local-workflows
+
+  translations:
+    - local: tests.yml
+      sources:
+        - {path: .github/workflows/ci.yml, commit: b92a8c7e414e47ffc46d198e63079f4fe3bbd9ff}
+    - local: images.yml
+      sources:
+        - {path: .github/workflows/ci.yml, commit: b92a8c7e414e47ffc46d198e63079f4fe3bbd9ff}
+
+  uncovered:
+    - path: .github/workflows/refresh.yml
+      why: >-
+        `schedule` (cron, Mondays 06:00 UTC) and `workflow_dispatch` only. No pull
+        request starts it, so a pre-push gate proves nothing about it.
+    - path: .github/workflows/release.yml
+      why: >-
+        `push` restricted to `tags: ["v*"]` only. Starts on a tag, never on a pull
+        request. Its build is the same shape as ci.yml's, which images.yml covers;
+        what is uncovered here is the push, the digest capture and the pin request,
+        none of which can run without publishing.
+    - path: .github/workflows/release-promote.yml
+      why: >-
+        `pull_request` with `types: [closed]`, which is the family this gate covers
+        but not a surface a push can reach -- it fires when a request closes, so no
+        run before a push can be about it. Its only step is `gh release edit
+        --draft=false`, which has no local counterpart that is not an actual
+        release. The substance it does have, deriving the tag by stripping
+        `release/pin-` off the branch name, is asserted in tests/test_packaging.py
+        against release.yml's spelling of the same prefix, so `pytest -q` in
+        tests.yml is where it is guarded.
+
+  # One entry, and it is the only thing a green suite here does not cover.
+  #
+  # The pre-1.0 manifest's `known_unrunnable` excused ci.yml's whole `build` job --
+  # slow, and needs network egress -- and that was re-decided from scratch rather
+  # than carried over. It does not survive: images.yml runs that job, fetch and
+  # model download and vector build included, in about sixteen minutes.
+  coverage_gaps:
+    - what: >-
+        ci.yml's `Log in to GHCR` and `Verify the shipped image reference` steps
+        (scripts/verify_pin.sh), which check that the digest plugins/owasp-kb/.mcp.json
+        ships resolves in the registry and holds the packs pinned-packs.json claims.
+      why: >-
+        Needs a GHCR credential inside the act container, and there is no route to
+        one. Host passthrough was tried first and observed to fail: act mounts the
+        host's docker socket, so the daemon is the host's and is logged in, but the
+        docker client inside the container reads its own empty config. Observed
+        `Error response from daemon: error from registry: unauthorized` in 453ms
+        against ghcr.io/crimson7research/owasp-kb@sha256:08555ad1. c7-local-ci
+        passes only `--bind` for the working tree and mounts no docker config, so
+        this is not something the local workflow can arrange for itself; writing a
+        config from an exported token would invent a credential contract no
+        developer here has agreed to.
+      # No issue: this is not a defect waiting to be fixed. verify_pin's subject is
+      # published registry state rather than the working tree, which is the one
+      # class of question this suite already says it cannot answer. Every other
+      # step of that job runs locally and passed.
+      issue: null

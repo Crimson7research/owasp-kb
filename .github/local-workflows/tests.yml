@@ -1,0 +1,44 @@
+# ci.yml's `test` job. Lint and the unit suite -- everything this repository can
+# prove without fetching the upstream corpora, which is why it is a separate local
+# file from images.yml rather than collapsed into it: the split here is not the
+# artefact of a `needs:` edge, it is the difference between a one-minute job and a
+# twenty-five-minute one, and a developer should be able to run the first alone.
+#
+# The unit suite is also where release-promote.yml is actually guarded. That
+# workflow's only substance is deriving a tag by stripping `release/pin-` off a
+# branch name, and tests/test_packaging.py asserts that release.yml writes the
+# prefix release-promote.yml strips -- so `pytest -q` covers it, and the manifest
+# records it as uncovered rather than pretending a `gh release edit` has a local
+# counterpart.
+#
+# `on:` is quoted deliberately. YAML 1.1 parses a bare `on` key as the boolean
+# True, so `body["on"]` finds nothing without the quotes.
+name: tests
+
+"on": workflow_dispatch
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      # Kept, along with `cache: pip`. act's catthehacker image is not the hosted
+      # runner and ships no pinned 3.13, so the code needs this step -- it is not
+      # here because GitHub splits work across machines.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: pip install -e '.[dev]'
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      # The realdata-marked tests skip here, exactly as they do on GitHub: data/
+      # does not exist until images.yml fetches it. images.yml runs them
+      # explicitly, which is where that coverage lives.
+      - name: Unit tests
+        run: pytest -q
