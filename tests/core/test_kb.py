@@ -219,6 +219,75 @@ def test_checklist_returns_asvs_in_numeric_id_order(kb):
     assert [r.req_id for r in rows] == ["V1.1.1", "V6.2.1", "V6.2.2"]
 
 
+def test_checklist_ordering_pins_the_component_order_not_just_numeric_parsing(kb, tmp_path):
+    """The two neighbouring ordering tests pass under a permuted _sort_key: this was
+    found by mutation-checking ef7efee and is the gap this test closes.
+
+    test_checklist_returns_asvs_in_numeric_id_order uses V1.1.1, V6.2.1, V6.2.2 --
+    V1.1.1 is componentwise <= both others regardless of which component is
+    compared first, and the remaining two differ only in their last component, so
+    every permutation of (chapter, section, number) sorts them the same way.
+    test_checklist_orders_numerically_not_lexically holds section and number fixed
+    at 1 and only varies chapter, so it likewise cannot tell one permutation from
+    another. Both tests do prove _sort_key is exercised -- negating all three
+    components fails them -- but not that the component *order* is pinned.
+
+    V2.2.1, V2.10.1 and V10.2.1 can tell permutations apart because all three
+    components vary against each other: (2,2,1), (2,10,1), (10,2,1). Sorted
+    correctly by (chapter, section, number) that is V2.2.1, V2.10.1, V10.2.1.
+    Sorted by (number, section, chapter) instead: (1,2,2), (1,10,2), (1,2,10) ->
+    V2.2.1, V10.2.1, V2.10.1 -- the last two swapped. Plain lexical order on
+    req_id gives V10.2.1, V2.10.1, V2.2.1 -- reversed. Both wrong orderings differ
+    from the correct one, so this test catches them; measured by running each as a
+    mutation, it does not catch every permutation (see the commit's mutation
+    notes for which).
+
+    Records are written source-order V10.2.1, V2.2.1, V2.10.1 -- deliberately not
+    already in the correct order -- so a regression that dropped the sort step
+    entirely would not accidentally pass by inheriting a pre-sorted source file.
+    """
+    import json
+
+    from owasp_kb.core.db import connect as _connect
+    from owasp_kb.core.schema import create_schema as _create
+
+    reqs = [
+        {
+            "chapter_id": "V10",
+            "chapter_name": "C10",
+            "section_id": "V10.2",
+            "section_name": "S2",
+            "req_id": "V10.2.1",
+            "req_description": "text",
+            "L": "1",
+        },
+        {
+            "chapter_id": "V2",
+            "chapter_name": "C2",
+            "section_id": "V2.2",
+            "section_name": "S2",
+            "req_id": "V2.2.1",
+            "req_description": "text",
+            "L": "1",
+        },
+        {
+            "chapter_id": "V2",
+            "chapter_name": "C2",
+            "section_id": "V2.10",
+            "section_name": "S10",
+            "req_id": "V2.10.1",
+            "req_description": "text",
+            "L": "1",
+        },
+    ]
+    path = tmp_path / "component_order.json"
+    path.write_text(json.dumps({"requirements": reqs}))
+    conn = _connect(tmp_path / "component_order.sqlite")
+    _create(conn)
+    ingest_asvs(conn, path, version="5.0.0", license="CC-BY-SA-4.0")
+    assert [r.req_id for r in Kb(conn).checklist("asvs")] == ["V2.2.1", "V2.10.1", "V10.2.1"]
+
+
 def test_checklist_orders_by_the_stored_ordinal_not_by_id_syntax(kb):
     """The ordinal is what decides order. Rewriting it reverses the result --
     which no id-parsing ORDER BY could do, so this test distinguishes the two
