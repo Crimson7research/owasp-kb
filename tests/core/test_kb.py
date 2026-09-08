@@ -212,6 +212,26 @@ def test_checklist_orders_numerically_not_lexically(kb, tmp_path):
     assert [r.req_id for r in Kb(conn).checklist("asvs")] == ["V2.1.1", "V9.1.1", "V10.1.1"]
 
 
+def test_checklist_returns_asvs_in_numeric_id_order(kb):
+    """Pins the order the id-parsing ORDER BY used to produce, so moving it into
+    a column cannot silently reshuffle a gap report."""
+    rows = kb.checklist("asvs")
+    assert [r.req_id for r in rows] == ["V1.1.1", "V6.2.1", "V6.2.2"]
+
+
+def test_checklist_orders_by_the_stored_ordinal_not_by_id_syntax(kb):
+    """The ordinal is what decides order. Rewriting it reverses the result --
+    which no id-parsing ORDER BY could do, so this test distinguishes the two
+    implementations rather than merely passing under both."""
+    conn = kb._conn
+    conn.execute(
+        "UPDATE requirements SET ord = -ord WHERE pack_id ="
+        " (SELECT id FROM packs WHERE name = 'asvs')"
+    )
+    conn.commit()
+    assert [r.req_id for r in kb.checklist("asvs")] == ["V6.2.2", "V6.2.1", "V1.1.1"]
+
+
 def test_checklist_on_corpus_pack_raises_naming_the_alternative(kb):
     with pytest.raises(ValueError) as excinfo:
         kb.checklist("cheatsheets")

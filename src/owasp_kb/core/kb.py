@@ -297,13 +297,11 @@ class Kb:
         elif level_exact is not None:
             sql += " AND level = ?"
             params.append(level_exact)
-        # Numeric-aware ordering so V10 sorts after V9. Lexical ordering would put
-        # V10.1.1 before V2.1.1 and silently corrupt any gap report.
-        sql += (
-            " ORDER BY CAST(SUBSTR(chapter_id, 2) AS INTEGER),"
-            " CAST(SUBSTR(section_id, INSTR(section_id, '.') + 1) AS INTEGER),"
-            " CAST(SUBSTR(req_id, LENGTH(section_id) + 2) AS INTEGER)"
-        )
+        # Ordering is stored, not parsed. The expression this replaces read ASVS id
+        # syntax -- SUBSTR(chapter_id, 2), the dot in section_id -- and evaluated to
+        # 0 for every row of any pack whose ids are not shaped V<n>.<n>.<n>, which
+        # left a second checklist pack ordered by whatever the table scan yielded.
+        sql += " ORDER BY ord"
         rows = self._conn.execute(sql, params).fetchall()
         return [
             RequirementRow(

@@ -231,6 +231,16 @@ def test_catalogue_entries_table_exists_with_the_citation_fields():
     }
 
 
+def test_requirements_carry_an_ordinal(tmp_path):
+    """Ordering is data, not a parse of the id, so the column may not be null."""
+    conn = connect(tmp_path / "kb.sqlite")
+    create_schema(conn)
+    columns = {
+        row["name"]: row for row in conn.execute("PRAGMA table_info(requirements)").fetchall()
+    }
+    assert columns["ord"]["notnull"] == 1
+
+
 def test_catalogue_entries_is_indexed_by_kind():
     """cwe_search filters by kind. Without the index that is a scan of 1,391 rows
     on every query; more importantly, an unasserted index is one nothing notices
