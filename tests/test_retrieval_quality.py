@@ -13,6 +13,8 @@ import pytest
 
 from owasp_kb.core.db import connect, is_wal_index
 from owasp_kb.core.kb import Kb
+from owasp_kb.ingest.build import EXPECTED_REQUIREMENTS
+from owasp_kb.ingest.lock import load_lock
 
 FULL_INDEX = Path(os.environ.get("OWASP_KB_FULL_INDEX", "dist/owasp-kb-full.sqlite"))
 LITE_INDEX = Path(os.environ.get("OWASP_KB_LITE_INDEX", "dist/owasp-kb-lite.sqlite"))
@@ -106,10 +108,23 @@ def _skip_unless_hybrid(kb: Kb) -> None:
 
 
 def test_full_index_has_the_expected_content(full):
+    """Every pack the lock declares is in the built index, and every checklist
+    pack holds the number of requirements the build gate expects.
+
+    Both sides derived rather than listed. This assertion was
+    ``== {"asvs", "cheatsheets", "cwe"}`` and would have failed the first CI
+    build after a fourth pack was pinned -- in ci.yml and release.yml both,
+    against a real index, on a billed runner. The lock is what decides which
+    packs ship, so it is what this compares against.
+    """
     info = full.info()
-    assert {p.name for p in info.packs} == {"asvs", "cheatsheets", "cwe"}
+    assert {p.name for p in info.packs} == set(load_lock("sources.lock.yml").packs)
     assert next(p.version for p in info.packs if p.name == "asvs") == "5.0.0"
-    assert len(full.checklist("asvs")) == 345
+    for pack, expected in sorted(EXPECTED_REQUIREMENTS.items()):
+        assert len(full.checklist(pack)) == expected, (
+            f"{pack} holds a different requirement count than build.EXPECTED_REQUIREMENTS "
+            "declares; the build gate and this index disagree"
+        )
 
 
 @pytest.mark.parametrize("index", ["full", "lite"])

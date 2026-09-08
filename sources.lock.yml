@@ -1,5 +1,6 @@
-# Pinned upstream sources. ASVS pins a release tag; the Cheat Sheet Series rolls
-# continuously so it pins a commit SHA. Bumped by CI via a reviewed PR.
+# Pinned upstream sources, bumped by CI via a reviewed PR. Each pack pins
+# whatever identifies its upstream precisely -- a release tag, a commit SHA,
+# or a numbered release -- see the per-pack comments below.
 packs:
   asvs:
     type: checklist
@@ -33,3 +34,16 @@ packs:
     # rather than cwec_latest.xml.zip: a citation must resolve to the same
     # weakness text for as long as the image exists.
     url: https://cwe.mitre.org/data/xml/cwec_v4.20.xml.zip
+  masvs:
+    type: checklist
+    repo: OWASP/masvs
+    release: v2.1.0
+    version: "2.1.0"
+    license: CC-BY-SA-4.0
+    # The release also ships pdf, epub and a CycloneDX SBOM; only the YAML is
+    # ingestable. `version` is pinned here and never read from the document, so
+    # a citation's version cannot shift on a re-fetch. The release asset itself
+    # stamps `metadata.version: v2.1.0` -- the `v` prefix means it is not
+    # string-equal to the `2.1.0` pinned above; strip it before comparing.
+    assets:
+      - OWASP_MASVS.yaml

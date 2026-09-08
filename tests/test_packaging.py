@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import sys
@@ -892,32 +893,6 @@ def test_the_repo_carries_a_cwe_license_text():
 # file exists" while carrying no terms at all.
 MIN_LICENCE_BYTES = 500
 
-CC_BY_SA_TEXTS = (
-    Path("licenses/LICENSE-OWASP-ASVS"),
-    Path("licenses/LICENSE-OWASP-CHEATSHEET"),
-)
-
-
-def test_the_two_cc_by_sa_texts_are_identical():
-    """ASVS and the Cheat Sheet Series are both CC-BY-SA-4.0, so each pack's
-    licence file is a copy of one 20 KB text. Two copies of legal text is the
-    shape that drifts: one gets updated and the repository then makes two
-    different claims about the same licence, silently.
-
-    Bytes, not text -- a line-ending change is drift. Non-emptiness is asserted
-    first because two empty files are also identical, and that is the way this
-    assertion passes while proving nothing.
-
-    If this ever fails, reconcile the two files. Deleting the test is not the
-    fix; if the upstreams have genuinely relicensed apart, that is the news and
-    sources.lock.yml should say so before these files do."""
-    asvs, cheatsheets = (path.read_bytes() for path in CC_BY_SA_TEXTS)
-    assert len(asvs) > MIN_LICENCE_BYTES, f"{CC_BY_SA_TEXTS[0]} is a stub, not a licence"
-    assert asvs == cheatsheets, (
-        f"{CC_BY_SA_TEXTS[0]} and {CC_BY_SA_TEXTS[1]} have drifted apart; both "
-        "are CC-BY-SA-4.0 and must be the same text"
-    )
-
 
 LOCK_FILE = Path("sources.lock.yml")
 
@@ -930,6 +905,7 @@ PACK_LICENCE_FILES = {
     "asvs": Path("licenses/LICENSE-OWASP-ASVS"),
     "cheatsheets": Path("licenses/LICENSE-OWASP-CHEATSHEET"),
     "cwe": Path("licenses/LICENSE-CWE"),
+    "masvs": Path("licenses/LICENSE-OWASP-MASVS"),
 }
 
 # What a licence's own text says about itself, so a pack's file can be checked
@@ -942,6 +918,45 @@ LICENCE_TEXT_MARKERS = {
 }
 
 
+def test_the_cc_by_sa_texts_are_identical():
+    """ASVS, the Cheat Sheet Series and MASVS are all CC-BY-SA-4.0, so each
+    pack's licence file is a copy of one 20 KB text. Multiple copies of the
+    same legal text is the shape that drifts: one gets updated and the
+    repository then makes different claims about the same licence, silently.
+
+    Derived from the lock rather than from a fixed list of files: a pack in
+    the lock under CC-BY-SA-4.0 with no PACK_LICENCE_FILES entry fails here,
+    naming the pack and what to add, rather than being silently skipped or
+    raising a bare KeyError.
+
+    Bytes, not text -- a line-ending change is drift. Non-emptiness is asserted
+    first because empty files are also identical, and that is the way this
+    assertion passes while proving nothing.
+
+    If this ever fails, reconcile the files. Deleting the test is not the
+    fix; if the upstreams have genuinely relicensed apart, that is the news and
+    sources.lock.yml should say so before these files do."""
+    cc_by_sa_paths = []
+    for name, pack in sorted(_lock_packs().items()):
+        if pack["license"] != "CC-BY-SA-4.0":
+            continue
+        assert name in PACK_LICENCE_FILES, (
+            f"pack {name!r} is CC-BY-SA-4.0 but has no PACK_LICENCE_FILES "
+            "entry; add one pointing at its licence text"
+        )
+        cc_by_sa_paths.append(PACK_LICENCE_FILES[name])
+    assert len(cc_by_sa_paths) > 1, "fewer than two CC-BY-SA-4.0 packs -- nothing to compare"
+    first_path, *rest_paths = cc_by_sa_paths
+    first_text = first_path.read_bytes()
+    assert len(first_text) > MIN_LICENCE_BYTES, f"{first_path} is a stub, not a licence"
+    for path in rest_paths:
+        text = path.read_bytes()
+        assert text == first_text, (
+            f"{first_path} and {path} have drifted apart; both are CC-BY-SA-4.0 "
+            "and must be the same text"
+        )
+
+
 def test_every_pack_in_the_lock_has_its_own_licence_text():
     """sources.lock.yml declares a licence per pack. Until this branch the files
     did not: one CC-BY-SA-4.0 text covered two packs, so a redistributor could
@@ -952,20 +967,35 @@ def test_every_pack_in_the_lock_has_its_own_licence_text():
     a fourth pack added without a licence text fails here, and so does a licence
     text left behind for a pack that has been dropped.
 
-    The set-equality and size checks alone are structural: they pass on a
-    mapping with the right keys pointing at real, non-stub files even if a
-    pack's file is transposed with a different pack's. Mutating
-    PACK_LICENCE_FILES["cwe"] to point at the ASVS text -- real, well over the
-    stub threshold, just the wrong pack's terms -- passed both checks above
-    silently. So each mapped file's text is also checked against the SPDX id
-    the lock declares for its pack: the file has to identify itself as the
-    licence it claims to be, not just exist and be large enough. This cannot
-    tell asvs and cheatsheets apart from one another -- both are CC-BY-SA-4.0
-    and, per the identity test above, byte-identical, so a transposition
-    between those two specifically leaves no content difference to detect."""
+    Key equality alone is not enough: two different pack names can be mapped
+    onto the same PACK_LICENCE_FILES value, and `set(PACK_LICENCE_FILES) ==
+    set(packs)` does not notice, because it only compares keys. Reproduced:
+    aliasing one pack's key onto another pack's licence file, with NOTICE
+    updated to match, left this whole test module green. So the mapped values
+    are also asserted distinct, independently of what they contain -- each
+    pack needs its own file, because they are pinned separately and either
+    could be relicensed without the other.
+
+    The set-equality, distinctness and size checks alone are still structural:
+    they pass on a mapping with the right keys pointing at real, non-stub,
+    distinct files even if a pack's file is transposed with a different
+    pack's. Mutating PACK_LICENCE_FILES["cwe"] to point at a copy of the ASVS
+    text saved under its own filename -- real, distinct from every other
+    value, well over the stub threshold, just the wrong pack's terms --
+    passes all three checks above silently. So each mapped file's text is
+    also checked against the SPDX id the lock declares for its pack: the file
+    has to identify itself as the licence it claims to be, not just exist, be
+    large enough, and be unique. This cannot tell asvs and cheatsheets apart
+    from one another -- both are CC-BY-SA-4.0 and, per the identity test
+    above, byte-identical, so a transposition between those two specifically
+    leaves no content difference to detect."""
     packs = _lock_packs()
     assert set(PACK_LICENCE_FILES) == set(packs), (
         f"licence files cover {sorted(PACK_LICENCE_FILES)}, the lock has {sorted(packs)}"
+    )
+    assert len(set(PACK_LICENCE_FILES.values())) == len(PACK_LICENCE_FILES), (
+        "two packs share one licence file; each pack needs its own, because they "
+        "are pinned separately and either could be relicensed without the other"
     )
     for name, path in sorted(PACK_LICENCE_FILES.items()):
         assert path.is_file(), f"pack {name!r}: {path} does not exist"
@@ -1009,11 +1039,15 @@ def _dockerfile_targets(text: str) -> dict[str, str]:
     return blocks
 
 
-EXPECTED_LICENSE_NAMES = {
+# Derived from PACK_LICENCE_FILES (itself asserted equal to the lock's pack set
+# by test_every_pack_in_the_lock_has_its_own_licence_text), unioned with the
+# project's own two files. Not a fixed list of names: a hardcoded set is
+# exactly what let the masvs pack be added to the lock, given its own licence
+# file, and attributed in NOTICE, while the image still shipped without it --
+# with this test green the whole time, because the hardcoded set never grew
+# a fourth name to catch the missing COPY.
+EXPECTED_LICENSE_NAMES = {path.name for path in PACK_LICENCE_FILES.values()} | {
     "LICENSE",
-    "LICENSE-OWASP-ASVS",
-    "LICENSE-OWASP-CHEATSHEET",
-    "LICENSE-CWE",
     "NOTICE",
 }
 EXPECTED_LICENSES_LABEL = "MIT AND CC-BY-SA-4.0 AND LicenseRef-CWE-TOU"
@@ -1330,6 +1364,24 @@ def test_notice_attributes_every_pack_in_the_lock():
         )
 
 
+def test_licensing_doc_names_every_pack_in_the_lock():
+    """docs/licensing.md hand-counted the packs in prose ("three of the four
+    upstream repos", "four upstream projects", "(four)", "all four upstream
+    projects", "one of the four packs"). A fifth pack added to the lock
+    without touching this file leaves those counts wrong, and worse, leaves
+    the pack entirely unmentioned to a reader deciding how they may use or
+    redistribute it.
+
+    Coverage, not the English count words, is the property pinned here: every
+    pack in the lock must be named somewhere in the doc. Reuses
+    _upstream_marker, the same derivation NOTICE's coverage test above uses,
+    so a pack that satisfies that guard is held to the same standard here."""
+    text = Path("docs/licensing.md").read_text()
+    for name, pack in sorted(_lock_packs().items()):
+        marker = _upstream_marker(name, pack)
+        assert marker in text, f"pack {name!r}: docs/licensing.md never mentions {marker}"
+
+
 def test_notice_states_each_packs_licence_on_that_packs_own_entry():
     """Not "the licence string appears in NOTICE somewhere": LicenseRef-CWE-TOU
     also appears in the composite-index paragraph, so a file-wide search would
@@ -1369,16 +1421,53 @@ def test_notice_does_not_claim_one_licence_covers_the_whole_index():
     )
 
 
-def test_the_image_tag_records_every_packs_version():
+def _pinned_tag_module():
+    """Loaded by path, like the other scripts/ tooling tests: scripts/ is not on
+    the import path under bare `pytest`, which is what CI runs."""
+    spec = importlib.util.spec_from_file_location("pinned_tag", Path("scripts/pinned_tag.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_every_locked_pack_has_a_tag_prefix_and_is_named_in_the_tag():
     """asvs$(V)-cs$(DATE) named two of three packs, so a CWE bump produced an
     indistinguishable tag for a different index. The immutable tag is the whole
     basis of the reproducible-citation promise, and cwe_get means CWE ids are
-    now part of what it promises."""
+    part of what it promises -- MASVS's own gets no less.
+
+    Both sides derived from the lock and the script rather than hardcoded: a
+    hardcoded expected tag string would be the same defect one layer up, passing
+    right up until the next pack is added and nobody updates the literal here."""
+    module = _pinned_tag_module()
+    packs = _lock_packs()
+    missing = sorted(set(packs) - set(module.PREFIXES))
+    assert not missing, (
+        f"{missing} has no tag prefix in scripts/pinned_tag.py -- a version bump "
+        "for that pack would ship under an unchanged tag"
+    )
+    tag = module.pinned_tag(packs)
+    for name, pack in packs.items():
+        expected = f"{module.PREFIXES[name]}{pack['version']}"
+        assert expected in tag, f"the tag {tag!r} does not name pack {name!r} ({expected!r})"
+
+
+HAND_COMPOSED_TAG = re.compile(r"asvs\$")
+
+
+def test_neither_release_caller_composes_the_tag_by_hand():
+    """The Makefile and release.yml each used to concatenate `asvs$(...)-cs$(...)`
+    themselves, kept in step only by a comment asking a human to update both --
+    which is exactly how the MASVS pack shipped without joining the tag. Both must
+    now call the one script that derives it, and neither may fall back to composing
+    a tag literal, or this regresses to the same defect under a different name."""
     makefile = Path("Makefile").read_text()
     release = Path(".github/workflows/release.yml").read_text()
-    assert "CWE_VERSION" in makefile, "the Makefile does not read the CWE version"
     for text, name in ((makefile, "Makefile"), (release, "release.yml")):
-        assert "-cwe" in text, f"{name} builds a tag that does not name the CWE pack"
+        assert "scripts/pinned_tag.py" in text, f"{name} does not call scripts/pinned_tag.py"
+        assert not HAND_COMPOSED_TAG.search(text), (
+            f"{name} still composes the tag by hand instead of calling the script"
+        )
 
 
 @pytest.mark.parametrize("skill", sorted(ASSESSMENT_SKILLS))
@@ -2180,6 +2269,114 @@ def test_the_secure_coding_body_says_a_citation_is_not_precedence():
     )
     assert "cannot see the codebase" in section, (
         "the body does not say what the corpus structurally cannot supply"
+    )
+
+
+MOBILE_ROUTED_SKILLS = (
+    "owasp-secure-coding",
+    "owasp-asvs-verify",
+    "owasp-asvs-gap-report",
+    "owasp-threat-model",
+)
+
+
+def _skills_routing_to_masvs() -> list[str]:
+    """Every skill that tells an agent to call the MASVS pack, read off the files.
+
+    Derived rather than listed. The list version of this was written with three
+    entries while a fourth skill also routed to the pack, and that fourth one
+    shipped with no instruction for the pack being absent -- found by hand, not
+    by a test. A hardcoded roster is the thing that misses the next one.
+    """
+    found = []
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        body = (skill_dir / "SKILL.md").read_text()
+        if 'pack="masvs"' in body or "pack='masvs'" in body:
+            found.append(skill_dir.name)
+    return found
+
+
+def test_every_skill_routing_to_masvs_says_what_to_do_when_it_is_absent():
+    """The pack ships inside a digest-pinned image; the skills ship with the
+    repository. So a skill can route to a pack this server does not hold, and the
+    agent's most available substitute is the ASVS requirement the routing exists
+    to stop it citing. Each such skill must name kb_info and refuse the fallback.
+    """
+    routing = _skills_routing_to_masvs()
+    assert routing, "no skill routes to the MASVS pack; this test is checking nothing"
+    # A lexical proxy for a semantic property, and accepting several phrasings is
+    # deliberate: four skills say the same thing four ways, and pinning one form
+    # would make this a test of wording. What it cannot catch is a skill that
+    # names the absence and then tells the agent to substitute anyway -- the
+    # per-skill tests above cover that where it matters most.
+    absence = ("unknown pack", "not in this image", "predates the pack", "is absent")
+    for skill in routing:
+        body = (SKILLS_DIR / skill / "SKILL.md").read_text().lower()
+        assert "kb_info" in body, f"{skill} routes to masvs but never says how to tell it is there"
+        assert any(phrase in body for phrase in absence), (
+            f"{skill} routes to masvs with no instruction for the pack being absent"
+        )
+
+
+@pytest.mark.parametrize("skill", MOBILE_ROUTED_SKILLS)
+def test_the_skills_name_the_pack_that_governs_a_mobile_client(skill):
+    """The measured failure was an agent citing an ASVS web requirement for a
+    mobile control, having reasoned that it applied by analogy. A pack nothing
+    routes to does not prevent that."""
+    body = (SKILLS_DIR / skill / "SKILL.md").read_text().lower()
+    assert "masvs" in body, f"{skill} never names the mobile pack"
+    assert "mobile" in body
+
+
+def test_secure_coding_forbids_adapting_an_asvs_requirement_to_a_mobile_control():
+    """A substring window around the first "masvs" hit would pass on any mention of the
+    word anywhere in the file, including one in the "Why call the tools" preamble that
+    has nothing to do with forbidding analogy. This bounds the check to the routing step
+    itself -- from where it decides which checklist governs to where the next numbered
+    step begins -- so the assertion is against the step that has to carry the rule, not
+    an arbitrary character radius around wherever "masvs" happens to first appear.
+
+    What this still does not catch: a routing step that forbids the analogy in different
+    words ("do not borrow a web requirement for a device control", say) with neither
+    "analogy" nor "adapt" in it. A wording check cannot certify meaning, only presence of
+    the words the skill was written to use.
+    """
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower()
+    start = body.index("decide which checklist governs")
+    end = body.index("probe the cheat sheets with those sentences")
+    step = body[start:end]
+    assert "masvs" in step, "the routing step itself never names the mobile pack"
+    assert "analogy" in step or "adapt" in step, (
+        "the routing step never forbids adapting an ASVS requirement to a mobile control"
+    )
+
+
+def test_secure_coding_handles_the_pack_being_absent_from_the_image():
+    """The skills ship with this repository, but a pack such as `masvs` only exists once a
+    built server image includes it -- the two are deliberately decoupled (pinned by digest
+    in pinned-packs.json, written by the release flow). Measured against a live server
+    pinned to an image built before this pack shipped, `kb_info` lists only
+    asvs/cheatsheets/cwe and a `masvs` lookup raises "unknown pack 'masvs'". An agent that
+    was just told to cite MASVS and never adapt ASVS by analogy, with no instruction for
+    that error, is the one case where reaching for the adapted ASVS requirement is most
+    tempting -- exactly the failure the routing exists to prevent. This anchors to the
+    dedicated section rather than the whole file, the same way
+    test_secure_coding_forbids_adapting_an_asvs_requirement_to_a_mobile_control anchors to
+    the routing step: a bare substring match would pass on "kb_info" or "not permitted"
+    appearing anywhere else in the file, including places that have nothing to do with the
+    pack being unavailable.
+    """
+    body = (SKILLS_DIR / "owasp-secure-coding" / "SKILL.md").read_text().lower()
+    start = body.index("if the pack is not in this image")
+    end = body.index("\n## notes", start)
+    section = body[start:end]
+    assert "kb_info" in section, (
+        "the section never names kb_info as how you find out which packs the running "
+        "server actually holds"
+    )
+    assert "not permitted" in section, (
+        "the section does not forbid falling back to an adapted ASVS requirement when "
+        "the mobile pack is absent -- the one case where that fallback is most tempting"
     )
 
 

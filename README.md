@@ -1,8 +1,8 @@
 # owasp-kb
 
-Authoritative OWASP security guidance — ASVS 5.0.0 and the Cheat Sheet Series —
-plus MITRE's CWE catalogue, served to AI coding agents as an MCP server, with
-citations, over stdio, offline.
+Authoritative OWASP security guidance — ASVS 5.0.0, MASVS 2.1.0 and the Cheat
+Sheet Series — plus MITRE's CWE catalogue, served to AI coding agents as an MCP
+server, with citations, over stdio, offline.
 
 This project is not affiliated with, endorsed by, or sponsored by the OWASP
 Foundation. See [NOTICE](licenses/NOTICE). **CWE is not an OWASP project** —
@@ -18,16 +18,26 @@ is frequently right and always unverifiable — there is no way to tell "this
 matches ASVS 5.0.0 V6.2.1" from "this sounds plausible."
 
 `owasp-kb` replaces that recall with retrieval. It ships the OWASP Application
-Security Verification Standard, the OWASP Cheat Sheet Series and MITRE's CWE
-catalogue, each pinned to an exact release or commit, chunked and cross-linked
-into a single SQLite index, and exposes it over MCP so an agent calls a tool and
-gets back a citable requirement id, cheat sheet anchor or CWE id — not a
-paraphrase of what it remembers.
+Security Verification Standard, the OWASP Mobile Application Security
+Verification Standard, the OWASP Cheat Sheet Series and MITRE's CWE catalogue,
+each pinned to an exact release or commit, chunked and cross-linked into a
+single SQLite index, and exposes it over MCP so an agent calls a tool and gets
+back a citable requirement id, cheat sheet anchor or CWE id — not a paraphrase
+of what it remembers.
 
 The CWE pack is here for one measured reason: of 95 CWE ids cited in findings in
 one real assessment, **42 were absent from OWASP's ASVS→CWE mapping**, so nothing
 in this server could check them and they were effectively recalled from training
 data and asserted. `cwe_get` is what checks them.
+
+The MASVS pack is here because ASVS has no citable answer for a mobile client.
+ASVS is written for web applications and their server endpoints, so an agent
+auditing a mobile app was adapting ASVS requirements by analogy — a citation
+that resolves to a web-scoped requirement, leaving the device-side dimensions
+(platform keystore, biometric and local authentication, screenshot/backup/log
+leakage, IPC and deep links, resilience) with no id to enumerate. MASVS 2.1.0
+gives those dimensions their own citable ids, queried through the same
+`owasp_*` tools with `pack="masvs"`.
 
 ## Tools
 
@@ -41,7 +51,7 @@ verdicts into a checked roster:
 | `owasp_search` | Hybrid (or lexical-only) search across ASVS requirements and Cheat Sheets for a natural-language security topic. Returns citable hits, never invented ones. |
 | `owasp_outline` | Heading structure and section anchors for one document, so a large cheat sheet can be navigated instead of fetched whole. |
 | `owasp_get` | Full text of a document, or one section by anchor. |
-| `owasp_checklist` | Enumerate ASVS requirements filtered by chapter, section, id, or level — the tool for assessments and gap reports that need every applicable requirement, not the best-matching few. |
+| `owasp_checklist` | Enumerate requirements from a checklist pack (`asvs` or `masvs`) filtered by chapter, section, id, or level — the tool for assessments and gap reports that need every applicable requirement, not the best-matching few. |
 | `owasp_related` | Cross-reference a requirement, section, chapter, or cheat sheet doc_key across `guidance`, `cwe`, `supersedes`, and `nist` relationships. |
 | `cwe_get` | Look up one CWE weakness or category by id — name, abstraction, status, description. Call it before citing an id OWASP's mapping does not carry; an id that is not in the catalogue is an error, not an empty result. |
 | `cwe_search` | Search the CWE catalogue by describing a defect in your own words, for when you know what the weakness is but not which CWE names it. OWASP's mapping is silent for 141 of 345 requirements. |
@@ -188,8 +198,8 @@ trade-off, and why the project is Python — are recorded as ADRs in
 
 ## Licensing
 
-Code is MIT (see [LICENSE](LICENSE)). The ASVS and Cheat Sheet Series content,
-and the SQLite index built from it, are CC-BY-SA-4.0 (see
+Code is MIT (see [LICENSE](LICENSE)). The ASVS, MASVS and Cheat Sheet Series
+content, and the SQLite index built from it, are CC-BY-SA-4.0 (see
 [licenses/](licenses/), one text per pack). The CWE catalogue is MITRE's, under
 the CWE Terms of Use, which must accompany redistribution (see
 [LICENSE-CWE](licenses/LICENSE-CWE)) — `CWE™` is a MITRE trademark and naming

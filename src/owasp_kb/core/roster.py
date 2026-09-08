@@ -400,7 +400,11 @@ def build_roster(
                 "req_id": req_id,
                 "chapter": req["chapter"],
                 "section": req["section"],
-                "level": req.get("level"),
+                # Omitted rather than null for a requirement with no level: a null
+                # in a tool response is a value an agent has to interpret, and
+                # there is nothing here to interpret. Matches _grouped's "L" in
+                # server/tools.py.
+                **({"level": req["level"]} if req.get("level") is not None else {}),
                 "verdict": verdict,
                 "finding_id": finding_id,
             }

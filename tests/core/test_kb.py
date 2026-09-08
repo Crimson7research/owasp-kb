@@ -212,6 +212,96 @@ def test_checklist_orders_numerically_not_lexically(kb, tmp_path):
     assert [r.req_id for r in Kb(conn).checklist("asvs")] == ["V2.1.1", "V9.1.1", "V10.1.1"]
 
 
+def test_checklist_returns_asvs_in_numeric_id_order(kb):
+    """Pins the order the id-parsing ORDER BY used to produce, so moving it into
+    a column cannot silently reshuffle a gap report."""
+    rows = kb.checklist("asvs")
+    assert [r.req_id for r in rows] == ["V1.1.1", "V6.2.1", "V6.2.2"]
+
+
+def test_checklist_ordering_pins_the_component_order_not_just_numeric_parsing(kb, tmp_path):
+    """The two neighbouring ordering tests pass under a permuted _sort_key: this was
+    found by mutation-checking ef7efee and is the gap this test closes.
+
+    test_checklist_returns_asvs_in_numeric_id_order uses V1.1.1, V6.2.1, V6.2.2 --
+    V1.1.1 is componentwise <= both others regardless of which component is
+    compared first, and the remaining two differ only in their last component, so
+    every permutation of (chapter, section, number) sorts them the same way.
+    test_checklist_orders_numerically_not_lexically holds section and number fixed
+    at 1 and only varies chapter, so it likewise cannot tell one permutation from
+    another. Both tests do prove _sort_key is exercised -- negating all three
+    components fails them -- but not that the component *order* is pinned.
+
+    V2.2.2, V2.10.1 and V10.2.1 can tell every wrong permutation apart because no
+    component is constant across all three ids: chapter is (2, 2, 10), section is
+    (2, 10, 2), number is (2, 1, 1) -- each takes at least two distinct values, so
+    every component genuinely varies and none of the three can sit out a
+    comparison without affecting the outcome. Componentwise that is
+    (2,2,2), (2,10,1), (10,2,1); sorted correctly by (chapter, section, number)
+    that is V2.2.2, V2.10.1, V10.2.1. Measured by running each of the five wrong
+    orderings of (chapter, section, number) as a mutation of _sort_key, every one
+    of them produces an order that differs from the correct one, so this test
+    catches all five.
+
+    Records are written source-order V10.2.1, V2.2.2, V2.10.1 -- deliberately not
+    already in the correct order -- so a regression that dropped the sort step
+    entirely would not accidentally pass by inheriting a pre-sorted source file.
+    """
+    import json
+
+    from owasp_kb.core.db import connect as _connect
+    from owasp_kb.core.schema import create_schema as _create
+
+    reqs = [
+        {
+            "chapter_id": "V10",
+            "chapter_name": "C10",
+            "section_id": "V10.2",
+            "section_name": "S2",
+            "req_id": "V10.2.1",
+            "req_description": "text",
+            "L": "1",
+        },
+        {
+            "chapter_id": "V2",
+            "chapter_name": "C2",
+            "section_id": "V2.2",
+            "section_name": "S2",
+            "req_id": "V2.2.2",
+            "req_description": "text",
+            "L": "1",
+        },
+        {
+            "chapter_id": "V2",
+            "chapter_name": "C2",
+            "section_id": "V2.10",
+            "section_name": "S10",
+            "req_id": "V2.10.1",
+            "req_description": "text",
+            "L": "1",
+        },
+    ]
+    path = tmp_path / "component_order.json"
+    path.write_text(json.dumps({"requirements": reqs}))
+    conn = _connect(tmp_path / "component_order.sqlite")
+    _create(conn)
+    ingest_asvs(conn, path, version="5.0.0", license="CC-BY-SA-4.0")
+    assert [r.req_id for r in Kb(conn).checklist("asvs")] == ["V2.2.2", "V2.10.1", "V10.2.1"]
+
+
+def test_checklist_orders_by_the_stored_ordinal_not_by_id_syntax(kb):
+    """The ordinal is what decides order. Rewriting it reverses the result --
+    which no id-parsing ORDER BY could do, so this test distinguishes the two
+    implementations rather than merely passing under both."""
+    conn = kb._conn
+    conn.execute(
+        "UPDATE requirements SET ord = -ord WHERE pack_id ="
+        " (SELECT id FROM packs WHERE name = 'asvs')"
+    )
+    conn.commit()
+    assert [r.req_id for r in kb.checklist("asvs")] == ["V6.2.2", "V6.2.1", "V1.1.1"]
+
+
 def test_checklist_on_corpus_pack_raises_naming_the_alternative(kb):
     with pytest.raises(ValueError) as excinfo:
         kb.checklist("cheatsheets")
@@ -231,6 +321,89 @@ def test_checklist_returns_the_bare_requirement_text(kb):
     row = [r for r in kb.checklist("asvs", req_id="V6.2.1")][0]
     assert row.text.startswith("Verify")
     assert "Authentication >" not in row.text
+
+
+def _levelless_pack(conn):
+    """A minimal checklist pack whose rows carry no level, inserted directly.
+
+    Written by hand rather than through an ingest so the refusal is tested
+    against the shape, not against one pack's parser.
+    """
+    conn.execute(
+        "INSERT INTO packs (name, type, version, source_url, license, fetched_at)"
+        " VALUES ('levelless', 'checklist', '1.0', 'https://example.invalid',"
+        " 'CC-BY-SA-4.0', '2026-01-01T00:00:00+00:00')"
+    )
+    pid = conn.execute("SELECT id FROM packs WHERE name = 'levelless'").fetchone()[0]
+    doc = conn.execute(
+        "INSERT INTO docs (pack_id, doc_key, title, source_url)"
+        " VALUES (?, 'GROUP-A', 'GROUP-A: Group A', 'https://example.invalid')",
+        (pid,),
+    ).lastrowid
+    sec = conn.execute(
+        "INSERT INTO sections (doc_id, anchor, heading_path, ord, depth)"
+        " VALUES (?, 'group-a', 'Group A', 0, 2)",
+        (doc,),
+    ).lastrowid
+    chunk = conn.execute(
+        "INSERT INTO chunks (section_id, text, token_est) VALUES (?, 'Group A: a control', 5)",
+        (sec,),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO requirements (pack_id, req_id, chapter_id, chapter_name, section_id,"
+        " section_name, text, level, ord, chunk_id)"
+        " VALUES (?, 'GROUP-A-1', 'GROUP-A', 'Group A', 'GROUP-A', 'Group A',"
+        " 'a control', NULL, 0, ?)",
+        (pid, chunk),
+    )
+    conn.commit()
+
+
+def test_checklist_returns_a_levelless_pack_when_no_level_is_asked_for(kb):
+    _levelless_pack(kb._conn)
+    rows = kb.checklist("levelless")
+    assert [r.req_id for r in rows] == ["GROUP-A-1"]
+    assert rows[0].level is None
+
+
+def test_levelless_pack_level_filter_is_empty_not_everything_at_the_sql_level(kb):
+    """Pins the measurement the refusal message rests on, so the rationale can't
+    drift from the behaviour again. Under sqlite:
+
+        CAST(NULL AS INTEGER) <= 2  -> NULL   (row filtered OUT)
+        CAST('' AS INTEGER) <= 2    -> 1      (row filtered IN)
+
+    So an unguarded level filter on the NULL design that shipped returns [],
+    never every row -- "every row" was true only of the empty-string sentinel
+    that was rejected in favour of NULL.
+    """
+    _levelless_pack(kb._conn)
+    pid = kb._conn.execute("SELECT id FROM packs WHERE name = 'levelless'").fetchone()[0]
+    sql = "SELECT COUNT(*) FROM requirements WHERE pack_id = ? AND CAST(level AS INTEGER) <= ?"
+    assert kb._conn.execute(sql, (pid, 2)).fetchone()[0] == 0
+
+    kb._conn.execute("UPDATE requirements SET level = '' WHERE pack_id = ?", (pid,))
+    assert kb._conn.execute(sql, (pid, 2)).fetchone()[0] == 1
+
+
+def test_checklist_refuses_a_level_for_a_levelless_pack(kb):
+    """Silently returning an empty list is the failure mode: it looks like a
+    filtered answer and is not one."""
+    _levelless_pack(kb._conn)
+    with pytest.raises(ValueError, match="no levels"):
+        kb.checklist("levelless", level="2")
+
+
+def test_checklist_refuses_level_exact_for_a_levelless_pack(kb):
+    _levelless_pack(kb._conn)
+    with pytest.raises(ValueError, match="no levels"):
+        kb.checklist("levelless", level_exact="2")
+
+
+def test_search_refuses_a_level_for_a_levelless_pack(kb):
+    _levelless_pack(kb._conn)
+    with pytest.raises(ValueError, match="no levels"):
+        kb.search("control", pack="levelless", level="2")
 
 
 # -- related ----------------------------------------------------------

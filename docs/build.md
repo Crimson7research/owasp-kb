@@ -70,10 +70,12 @@ variable.
 between the `lite` and `full` variants is which phases run:
 
 - **Phase 1 — structural ingest**, identical for both variants: fetch already
-  happened; `create_schema` creates every non-vector table; `ingest_asvs` and
-  `ingest_cheatsheets` populate `packs`/`docs`/`sections`/`chunks`/`requirements`;
+  happened; `create_schema` creates every non-vector table; `ingest_asvs`,
+  `ingest_masvs` and `ingest_cheatsheets` populate
+  `packs`/`docs`/`sections`/`chunks`/`requirements`;
   `ingest_guidance_links`/`ingest_cwe_links`/`ingest_supersedes_links`/
-  `ingest_nist_links` populate `links`; `run_checks` validates the result.
+  `ingest_nist_links` populate `links`; `run_checks` validates the result — see
+  [Per-pack requirement counts](#per-pack-requirement-counts) below.
 - **Phase 2 — vector indexing**, gated entirely by one flag: `--with-vectors`.
   When set, `build_index` additionally imports `core.embed.Embedder` and calls
   `retrieval.hybrid.index_vectors`, which creates `chunks_vec` and embeds every
@@ -224,6 +226,50 @@ image is built, and reaches this branch through the release pull request — see
 [0016](decisions/0016-the-tag-writes-the-version.md) for why the order matters and what
 the hand bump cost at v0.17.1. The two numbers drift on purpose — an image is released
 when its content changes, and the plugin ships on every commit.
+
+## Per-pack requirement counts
+
+`core/integrity.run_checks` takes `expected_requirements` as a
+`Mapping[str, int]` — a count per checklist pack, keyed by pack `name` — not a
+single integer compared against one global `COUNT(*) FROM requirements`, which
+is what it took before MASVS shipped. With more than one checklist pack a
+total is meaningless: ASVS and MASVS summed would pass whether both packs are
+complete or one is short by exactly what the other is long, and a single
+number cannot say which pack a shortfall came from. Counting per pack instead
+makes each pack's ingest accountable for its own rows.
+
+`build.EXPECTED_REQUIREMENTS = {"asvs": 345, "masvs": 24}` is what `build_index`
+and the CLI default to. Of those two figures, only 24 is pinned by a test —
+`test_the_real_release_matches_the_shape_the_build_expects` in
+`tests/ingest/test_masvs.py`, marked `realdata` and run against the actual
+pinned v2.1.0 release asset. 345 is not asserted anywhere in the unit suite; it
+is checked only when a real build runs `run_checks` against the real ASVS
+ingest, so a drift in that count fails a full build, not `make test`.
+
+`run_checks` also fails when a `checklist` pack is present in the database
+(has a row in `packs` with `type = 'checklist'`) but absent from
+`expected_requirements` — this is new, and deliberate: an ingest that inserts
+zero rows for a newly wired pack, with nobody having added a line to
+`EXPECTED_REQUIREMENTS`, would otherwise ship with nothing counting it, which
+is the exact defect class [Mapping coverage](#mapping-coverage) below exists to
+catch for `links` edges. Every checklist pack the build ingests must be
+declared in `EXPECTED_REQUIREMENTS` in the same change that wires its ingest
+call — see [Adding a pack](kb-packs.md#adding-a-pack) in `docs/kb-packs.md`.
+
+`--expected-requirements` on `python -m owasp_kb.ingest.build` changed to
+match: it is now a repeatable `PACK=COUNT` flag, one per pack, rather than a
+bare integer —
+
+```
+python -m owasp_kb.ingest.build --sources data --out dist/owasp-kb.sqlite \
+    --expected-requirements asvs=345 --expected-requirements masvs=24
+```
+
+— rather than the old `--expected-requirements 345`. Neither `make index` nor
+`make index-full` passes the flag at all, so both build against the
+`EXPECTED_REQUIREMENTS` default shown above; a malformed pair (no `=`, or a
+non-integer count) is rejected before any build is attempted, logged
+actionably, and exits 1 rather than surfacing as a traceback partway through.
 
 ## Mapping coverage
 

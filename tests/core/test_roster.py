@@ -420,6 +420,18 @@ def test_every_requirement_appears_exactly_once():
     assert roster["complete"] is True
 
 
+def test_a_levelless_requirement_omits_the_level_key():
+    """Matches _grouped in server/tools.py: a null in a tool response is a value
+    an agent has to interpret, and there is nothing here to interpret."""
+    roster = build_roster(
+        requirements=[{"req_id": "GROUP-A-1", "chapter": "GROUP-A", "section": "GROUP-A"}],
+        findings=[],
+        chapter_states={"GROUP-A": "APPLIES"},
+        detail=True,
+    )
+    assert "level" not in roster["entries"][0]
+
+
 def test_a_requirement_with_no_verdict_is_insufficient_evidence():
     """Absence of a result is not absence of a problem."""
     roster = build_roster(

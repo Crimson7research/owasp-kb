@@ -1,0 +1,25 @@
+metadata:
+  title: Mobile Application Security Verification Standard (MASVS)
+  remarks: A single group whose description is deliberately long enough that it
+    must split across paragraph boundaries to stay inside the embedder's window,
+    unlike masvs_sample.yaml's short prose.
+  version: v9.9.9
+groups:
+- id: MASVS-PRIVACY
+  index: 8
+  title: Privacy
+  description: |
+    Mobile applications increasingly collect, process, and transmit information that can be linked to an identifiable individual, whether directly through account registration fields or indirectly through device identifiers, precise location signals, and behavioural telemetry gathered during ordinary use of the app. That collection often happens well before the user has formed any expectation about what the app does with their data, and frequently continues in the background long after the screen most users associate with the app has been closed.
+
+    This category addresses whether an application's handling of that information respects the user's reasonable expectations of privacy and satisfies the data protection principles that most jurisdictions now codify in some form, including purpose limitation, data minimisation, and informed consent before collection begins. A control that merely encrypts data in transit says nothing about whether the data should have been collected, or retained, in the first place.
+
+    Controls here are distinct from the cryptography and storage categories: encrypting a database at rest does not answer whether the data should have been collected in the first place, retained for as long as it was, or shared with a third-party analytics or advertising SDK without the user's knowledge. Two applications can pass every storage and cryptography control while still failing this one, because the failure is in what is collected and disclosed rather than in how it is protected once held.
+
+    Assessors verifying this category should inventory every data collection point in the application, trace each field to its declared purpose in the privacy policy, and confirm that data leaving the device -- to a backend, a crash reporter, or an embedded SDK -- matches what the user was told would happen. A mismatch between the declared purpose and the observed network traffic is itself a finding, independent of whether the transport channel is otherwise sound.
+
+    Because mobile platforms expose identifiers and sensors that a user cannot easily observe being read, the burden of demonstrating restraint falls on the application rather than on the user noticing a leak, which is why this category exists separately from the general data-protection expectations placed on any networked service. Bundled third-party libraries deserve particular scrutiny, since they frequently collect on the developer's behalf without the developer having reviewed what leaves the device.
+  controls:
+  - id: MASVS-PRIVACY-1
+    statement: The app minimizes the collection and retention of sensitive user data.
+    description: This control covers whether the app collects only the data it
+      needs for its declared purpose, and retains it no longer than necessary.

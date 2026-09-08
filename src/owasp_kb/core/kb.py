@@ -185,7 +185,13 @@ class Kb:
         Raises LookupError on no match rather than returning an empty list: an
         agent reads ``[]`` as "no requirements apply", which is a different and
         far more dangerous claim than "nothing matched".
+
+        A ``level`` filter with no ``pack`` excludes level-less packs by
+        construction -- asking for L2 is asking ASVS. Naming a level-less pack
+        *and* a level is refused instead, because that call can only be a mistake.
         """
+        if level is not None and pack is not None:
+            self._reject_level_for_levelless_pack(pack)
         hits = self._retriever.search(query, pack=pack, level=level, limit=limit)
         if not hits:
             searched = pack or ", ".join(self._pack_names())
@@ -246,6 +252,30 @@ class Kb:
 
     # -- checklist packs -------------------------------------------------
 
+    def _has_levels(self, pack: str) -> bool:
+        """Whether any of this pack's requirements carry a level.
+
+        Asked of the data, not of a list of pack names: a hardcoded list is a
+        second place to update when a pack is added, and the one that gets missed.
+        """
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM requirements r JOIN packs p ON p.id = r.pack_id"
+            " WHERE p.name = ? AND r.level IS NOT NULL",
+            (pack,),
+        ).fetchone()
+        return bool(row[0])
+
+    def _reject_level_for_levelless_pack(self, pack: str) -> None:
+        if self._has_levels(pack):
+            return
+        raise ValueError(
+            f"pack {pack!r} defines no levels, so filtering by one would return an "
+            "empty list, not a filtered one -- an agent reads [] as 'nothing in this "
+            "pack meets that level', which is a different and far more dangerous "
+            "claim than 'this pack has no levels'. Same reasoning Kb.search documents "
+            "for raising LookupError instead of returning []. Omit level and level_exact."
+        )
+
     def checklist(
         self,
         pack: str,
@@ -278,6 +308,8 @@ class Kb:
                 f"pack {pack!r} is of type {meta.type!r}; owasp_checklist only applies to "
                 "checklist packs. Use owasp_search or owasp_outline for corpus packs."
             )
+        if level is not None or level_exact is not None:
+            self._reject_level_for_levelless_pack(pack)
         sql = (
             "SELECT req_id, chapter_id, chapter_name, section_id, section_name, text, level"
             " FROM requirements WHERE pack_id = ?"
@@ -297,13 +329,11 @@ class Kb:
         elif level_exact is not None:
             sql += " AND level = ?"
             params.append(level_exact)
-        # Numeric-aware ordering so V10 sorts after V9. Lexical ordering would put
-        # V10.1.1 before V2.1.1 and silently corrupt any gap report.
-        sql += (
-            " ORDER BY CAST(SUBSTR(chapter_id, 2) AS INTEGER),"
-            " CAST(SUBSTR(section_id, INSTR(section_id, '.') + 1) AS INTEGER),"
-            " CAST(SUBSTR(req_id, LENGTH(section_id) + 2) AS INTEGER)"
-        )
+        # Ordering is stored, not parsed. The expression this replaces read ASVS id
+        # syntax -- SUBSTR(chapter_id, 2), the dot in section_id -- and evaluated to
+        # 0 for every row of any pack whose ids are not shaped V<n>.<n>.<n>, which
+        # left a second checklist pack ordered by whatever the table scan yielded.
+        sql += " ORDER BY ord"
         rows = self._conn.execute(sql, params).fetchall()
         return [
             RequirementRow(

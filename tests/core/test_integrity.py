@@ -53,12 +53,12 @@ def _all_rels(conn):
 
 def test_clean_index_reports_no_failures(conn):
     _all_rels(conn)
-    assert run_checks(conn, expected_requirements=3, check_edge_floors=False) == []
+    assert run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False) == []
 
 
 def test_detects_wrong_requirement_count(conn):
     _all_rels(conn)
-    failures = run_checks(conn, expected_requirements=345, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 345}, check_edge_floors=False)
     assert any("requirement count" in f for f in failures)
 
 
@@ -69,7 +69,7 @@ def test_detects_empty_chunks(conn):
     conn.commit()
     assert any(
         "empty chunk" in f
-        for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+        for f in run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     )
 
 
@@ -81,7 +81,8 @@ def test_detects_document_with_no_chunks(conn):
     )
     conn.commit()
     assert any(
-        "Empty_Doc" in f for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+        "Empty_Doc" in f
+        for f in run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     )
 
 
@@ -95,7 +96,7 @@ def test_detects_dangling_guidance_link(conn):
     conn.commit()
     assert any(
         "Does_Not_Exist_Cheat_Sheet" in f
-        for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+        for f in run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     )
 
 
@@ -104,7 +105,8 @@ def test_detects_requirement_without_a_chunk(conn):
     conn.execute("UPDATE requirements SET chunk_id = NULL WHERE req_id = 'V6.2.1'")
     conn.commit()
     assert any(
-        "V6.2.1" in f for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+        "V6.2.1" in f
+        for f in run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     )
 
 
@@ -118,7 +120,7 @@ def test_detects_unbalanced_code_fence(conn):
     conn.commit()
     assert any(
         "code fence" in f
-        for f in run_checks(conn, expected_requirements=3, check_edge_floors=False)
+        for f in run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     )
 
 
@@ -126,14 +128,14 @@ def test_a_missing_relationship_type_is_an_error(conn):
     """The CWE mapping once produced zero edges because it is keyed on
     bleeding-edge ids, and drop-and-count made that look like normal operation.
     owasp_related advertises all four relationships, so none may be empty."""
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     for rel in ("guidance", "cwe", "supersedes", "nist"):
         assert any(rel in f and "zero edges" in f for f in failures), rel
 
 
 def test_all_four_relationship_types_present_clears_the_check(conn):
     _all_rels(conn)
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     assert not any("zero edges" in f for f in failures)
     assert not any("expected at least" in f for f in failures)
 
@@ -146,7 +148,7 @@ def test_a_collapsed_relationship_count_is_flagged(conn):
     _add_edges(conn, "cwe", 2)
     _add_edges(conn, "supersedes", 150)
     _add_edges(conn, "nist", 20)
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=True)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=True)
     assert any("only 2 'cwe' links" in f for f in failures)
 
 
@@ -158,7 +160,7 @@ def test_a_cwe_mapping_pointing_at_nothing_is_reported(conn):
         "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
         "VALUES ('requirement','V1.1.1','cwe','CWE-99999','cwe','test')"
     )
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     assert any("CWE-99999" in f for f in failures)
 
 
@@ -168,7 +170,7 @@ def test_a_cwe_mapping_that_resolves_is_not_reported(conn):
         "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
         "VALUES ('requirement','V1.1.1','cwe','CWE-789','cwe','test')"
     )
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     assert not any("catalogue entry" in f for f in failures)
 
 
@@ -185,7 +187,7 @@ def test_a_dangling_intra_cwe_edge_is_not_reported(conn):
         "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
         "VALUES ('cwe','CWE-789','cwe','CWE-99999','cwe_child','test')"
     )
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     # Both halves are needed. The report names only the first five ids, and
     # CWE-99999 sorts outside the five that a widened check surfaces, so the id
     # assertion on its own stays green while the check fires on all 24.
@@ -200,7 +202,7 @@ def test_the_check_is_skipped_when_the_catalogue_is_absent(conn):
         "INSERT INTO links (from_kind, from_id, to_kind, to_id, rel, source) "
         "VALUES ('requirement','V1.1.1','cwe','CWE-99999','cwe','test')"
     )
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     assert not any("catalogue entry" in f for f in failures)
     assert not any("CWE-99999" in f for f in failures)
 
@@ -229,7 +231,7 @@ def test_zero_edges_for_any_cwe_graph_rel_is_an_error(conn, rel):
     failure appears."""
     _ingest_cwe_fixture(conn)
     conn.execute("DELETE FROM links WHERE rel = ?", (rel,))
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     assert any(rel in f and "zero edges" in f for f in failures)
 
 
@@ -244,7 +246,7 @@ def test_a_collapsed_cwe_graph_count_is_flagged(conn):
     entry fails here rather than passing vacuously."""
     _all_rels(conn)
     _ingest_cwe_fixture(conn)
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=True)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=True)
     for rel in CWE_GRAPH_RELS:
         expected = f"{rel!r} links, expected at least {MIN_EDGES_PER_REL[rel]}"
         assert any(expected in f for f in failures), rel
@@ -254,7 +256,7 @@ def test_a_catalogue_less_index_is_not_asked_for_the_cwe_graph_rels(conn):
     """The three rels only exist when the CWE pack is ingested. Requiring them
     unconditionally would fail every build that omits the pack."""
     _all_rels(conn)
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     for rel in ("cwe_child", "cwe_peer", "cwe_member"):
         assert not any(rel in f for f in failures), rel
 
@@ -267,11 +269,32 @@ def test_detects_too_many_oversized_chunks(conn):
             "INSERT INTO chunks (section_id, text, token_est) VALUES (?, 'x', 9999)", (sid,)
         )
     conn.commit()
-    failures = run_checks(conn, expected_requirements=3, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
     assert any("truncated" in f or "token window" in f for f in failures)
 
 
 def test_failures_are_human_readable_strings(conn):
-    failures = run_checks(conn, expected_requirements=999, check_edge_floors=False)
+    failures = run_checks(conn, expected_requirements={"asvs": 999}, check_edge_floors=False)
     assert failures
     assert all(isinstance(f, str) and f.strip() for f in failures)
+
+
+def test_counts_requirements_per_pack_not_in_total(conn):
+    """Two checklist packs make one total meaningless: either can be short while
+    the sum is right."""
+    _all_rels(conn)
+    failures = run_checks(conn, expected_requirements={"asvs": 2}, check_edge_floors=False)
+    assert any("asvs" in f and "requirement count" in f for f in failures)
+
+
+def test_a_checklist_pack_with_no_declared_count_fails(conn):
+    """A pack nothing counts is how a silently smaller index ships."""
+    _all_rels(conn)
+    conn.execute(
+        "INSERT INTO packs (name, type, version, source_url, license, fetched_at)"
+        " VALUES ('masvs', 'checklist', '2.1.0', 'https://example.invalid',"
+        " 'CC-BY-SA-4.0', '2026-01-01T00:00:00+00:00')"
+    )
+    conn.commit()
+    failures = run_checks(conn, expected_requirements={"asvs": 3}, check_edge_floors=False)
+    assert any("masvs" in f and "no expected requirement count" in f for f in failures)

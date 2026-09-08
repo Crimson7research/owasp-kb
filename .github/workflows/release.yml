@@ -45,17 +45,6 @@ jobs:
       - name: Install
         run: pip install -e '.[dev]'
 
-      - name: Read pinned versions
-        id: versions
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import yaml
-          packs = yaml.safe_load(open("sources.lock.yml"))["packs"]
-          print(f"asvs={packs['asvs']['version']}")
-          print(f"cs={packs['cheatsheets']['version']}")
-          print(f"cwe={packs['cwe']['version']}")
-          PY
-
       - name: Fetch sources and model
         run: |
           python -c "
@@ -85,15 +74,14 @@ jobs:
       - name: Build, smoke test, then push
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/owasp-kb
-          ASVS: ${{ steps.versions.outputs.asvs }}
-          CS: ${{ steps.versions.outputs.cs }}
-          CWE: ${{ steps.versions.outputs.cwe }}
         run: |
           # GHCR requires a lowercase image path; repository_owner is "Crimson7research".
           IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
           # Every pack in the index gets named in the immutable tag -- see the
-          # PINNED_TAG comment in the Makefile for why CWE had to join it.
-          PINNED="asvs$ASVS-cs$CS-cwe$CWE"
+          # PINNED_TAG comment in the Makefile for why CWE had to join it. Derived by
+          # the same script the Makefile calls, so a pack neither names is a release
+          # failure rather than a silently stale tag.
+          PINNED=$(python scripts/pinned_tag.py)
           for target in lite full; do
             docker build -f docker/Dockerfile --target "$target" \
               -t "$IMAGE_LC:$target" \

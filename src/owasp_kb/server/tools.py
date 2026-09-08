@@ -114,7 +114,10 @@ SEARCH_DESCRIPTION = (
     "Args:\n"
     "    query: Natural-language description of the security topic.\n"
     "    pack: Restrict to one pack, e.g. 'asvs' or 'cheatsheets'.\n"
-    "    level: ASVS level '1', '2' or '3'. Applies to requirements only.\n"
+    "    level: ASVS level '1', '2' or '3'. Applies to ASVS requirements only --\n"
+    "        naming a pack with no levels (e.g. 'masvs') together with a level\n"
+    "        is refused. Omitting pack, a level filter excludes level-less\n"
+    "        packs by construction: asking for L2 is asking ASVS.\n"
     "    limit: Maximum hits to return."
 )
 
@@ -146,8 +149,18 @@ def _grouped(rows) -> list[dict]:
 
     Measured 27% smaller on the full 345-requirement enumeration with no row
     dropped -- completeness is the point of this tool, so the saving comes from
-    removing repetition, never from omitting content. Kb.checklist already
-    returns rows in chapter -> section -> requirement order, so no pre-sort.
+    removing repetition, never from omitting content.
+
+    No pre-sort: this relies on rows already arriving with each chapter's rows
+    contiguous and each section's rows contiguous within it, which is exactly
+    what a bare groupby needs and nothing else guarantees -- groupby does not
+    merge non-adjacent runs of the same key, it emits a second block for them.
+    Kb.checklist supplies that contiguity by returning rows ``ORDER BY ord``,
+    and ``ord`` is a per-pack column each ingest assigns (see the comment on
+    ``requirements.ord`` in schema.py), not a property of the query itself. So
+    the invariant this function depends on lives in every pack's ingest: if a
+    future pack's ordinals ever interleaved two chapters, this would silently
+    emit a duplicate chapter (or section) block instead of raising.
     """
     chapters = []
     for chapter_id, chapter_rows in itertools.groupby(rows, key=lambda r: r.chapter_id):
@@ -159,8 +172,13 @@ def _grouped(rows) -> list[dict]:
                 {
                     "id": section_id,
                     "name": section_rows[0].section_name,
+                    # "L" is omitted rather than null for a pack without levels:
+                    # a null in a tool response is a value an agent has to
+                    # interpret, and there is nothing here to interpret.
                     "requirements": [
-                        {"id": r.req_id, "L": r.level, "text": r.text} for r in section_rows
+                        {"id": r.req_id, "text": r.text}
+                        | ({"L": r.level} if r.level is not None else {})
+                        for r in section_rows
                     ],
                 }
             )
@@ -315,13 +333,18 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         level: str | None = None,
         level_exact: str | None = None,
     ) -> dict:
-        """Enumerate verification requirements from a checklist pack such as ASVS,
-        filtered by chapter (V6), section (V6.2), requirement id (V6.2.1) or level.
+        """Enumerate verification requirements from a checklist pack such as ASVS
+        or MASVS, filtered by chapter (V6), section (V6.2), requirement id
+        (V6.2.1) or level.
 
-        level is CUMULATIVE, as ASVS defines it: level='2' returns the 253
+        Not every checklist pack has levels. Where a pack does -- ASVS -- level
+        is CUMULATIVE, as ASVS defines it: level='2' returns the 253
         requirements an L2 assessment must verify, including all 70 L1 ones.
         level='1' returns 70, level='3' returns all 345. Use level_exact only to
         inspect a single tier (level_exact='2' returns the 183 tagged L2).
+        MASVS 2.x defines no levels: its 24 controls are unlevelled, passing
+        level or level_exact with pack='masvs' is refused rather than silently
+        answered, and requirements from a level-less pack carry no "L" key.
 
         Use this for assessments, gap analysis and compliance reports where you
         need every applicable requirement rather than the best-matching few.

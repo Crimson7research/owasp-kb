@@ -72,10 +72,15 @@ owasp_search(query: str, pack: str | None = None, level: str | None = None,
   internally reduced to a set of search terms (stopwords stripped for the
   lexical half — see [docs/build.md](build.md) and
   `core/retrieval/lexical.to_fts_query`).
-- `pack` — restrict to one pack (`"asvs"`, `"cheatsheets"` or `"cwe"`). Omit to
-  search all three. `cwe_search` is exactly this call with `pack="cwe"`.
-- `level` — ASVS level `"1"`, `"2"`, or `"3"`. Applies to requirement hits
-  only; cheat sheet hits are unaffected since they carry no level.
+- `pack` — restrict to one pack (`"asvs"`, `"cheatsheets"`, `"cwe"` or
+  `"masvs"`). Omit to search all four. `cwe_search` is exactly this call with
+  `pack="cwe"`.
+- `level` — ASVS level `"1"`, `"2"`, or `"3"`. Levels are ASVS's, not every
+  checklist pack's: cheat sheet and CWE hits are unaffected since they carry
+  no level, and naming a level-less checklist pack (`pack="masvs"`) together
+  with `level` is refused rather than silently matching nothing. Omitting
+  `pack`, a `level` filter excludes level-less packs by construction — asking
+  for L2 is asking ASVS.
 - `limit` — maximum hits returned (default 8).
 
 **Return shape (a hit):**
@@ -94,7 +99,7 @@ For a cheat sheet hit, `req_id` is `null` and `doc_key`/`anchor` are set
 instead; `citation` is `"{doc_key}#{anchor}"` in that case.
 
 **Error cases:**
-- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: asvs, cheatsheets, cwe"}`.
+- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: asvs, cheatsheets, cwe, masvs"}`.
 - **No match → `{"hits": [], "message": "..."}`, not `{"hits": []}` and never
   a bare `[]`.** This is deliberate and worth stating explicitly: an agent
   that receives `[]` for a search reads it as "no security requirements apply
@@ -181,13 +186,21 @@ owasp_checklist(pack: str = "asvs", chapter: str | None = None,
                  level: str | None = None, level_exact: str | None = None) -> dict
 ```
 
-Enumerates requirements from a `checklist` pack, filtered by any combination
-of `chapter` (`"V6"`), `section` (`"V6.2"`), and `req_id` (`"V6.2.1"`). Rows
-come back in numeric-aware chapter/section/id order (`V10` after `V9`, not
-before `V2`) rather than lexical order, since lexical order would silently
-corrupt any gap report that assumes ascending ids.
+Enumerates requirements from a `checklist` pack (`asvs` or `masvs`), filtered
+by any combination of `chapter` (`"V6"`), `section` (`"V6.2"`), and `req_id`
+(`"V6.2.1"`). Rows come back in ascending chapter/section/id order (`V10`
+after `V9`, not before `V2`, for ASVS) rather than lexical order, since
+lexical order would silently corrupt any gap report that assumes ascending
+ids. The guarantee holds for any pack, but the mechanism behind it changed:
+ordering comes from `requirements.ord`, a per-pack, dense-from-0 ordinal each
+ingest module assigns as it inserts rows (`UNIQUE (pack_id, ord)`), not from
+parsing id syntax in SQL. The `ORDER BY ord` this replaced was an expression
+that read ASVS's `V<n>.<n>.<n>` shape directly and evaluated to `0` for any
+other id shape — which would have silently ordered a second checklist pack by
+table-scan order the moment one existed.
 
-**`level` is cumulative**, matching how ASVS itself defines its levels:
+**Levels are ASVS's, not every checklist pack's.** Where a pack has levels,
+`level` is **cumulative**, matching how ASVS itself defines its levels:
 `level="2"` returns every requirement an L2 assessment must verify — all L1
 requirements plus everything newly introduced at L2 (253 of 345 in ASVS
 5.0.0), not only the 183 individually tagged L2. Returning just the tagged
@@ -196,6 +209,11 @@ report labelled L2. `level="1"` returns 70; `level="3"` returns all 345.
 `level_exact` is the rarer single-tier query — `level_exact="2"` returns
 exactly the 183 requirements tagged L2, nothing inherited from L1. Passing
 both `level` and `level_exact` is an error (see below).
+
+MASVS defines no levels at all: its 24 controls come back with no `"L"` key,
+and passing `level` or `level_exact` with `pack="masvs"` is an error naming
+the pack (see below), not a filter that quietly matches nothing — the same
+reasoning `owasp_search` documents for refusing a level on a level-less pack.
 
 **Return shape**, grouped by chapter then section so each name is stated once
 rather than once per row (measured 27% smaller on the full 345-requirement
@@ -222,6 +240,31 @@ enumeration, with no row dropped):
 Walk `chapters[].sections[].requirements[]`; the top-level `count` is the total
 and nothing is ever truncated.
 
+A level-less pack's shape is worth showing rather than just describing, since
+the absence of a key reads very differently in prose than in the JSON an agent
+actually parses (`pack="masvs"`, two-tier — the chapter and section are the
+same group):
+```json
+{
+  "pack": "masvs", "pack_version": "2.1.0", "count": 24,
+  "chapters": [
+    {
+      "id": "MASVS-STORAGE", "name": "Storage",
+      "sections": [
+        {
+          "id": "MASVS-STORAGE", "name": "Storage",
+          "requirements": [
+            {"id": "MASVS-STORAGE-1",
+             "text": "The app securely stores sensitive data..."}
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+No `"L"` key on the requirement — omitted, not `null`.
+
 **No truncation.** Unlike `owasp_search` and `owasp_get`, this response is
 never cut short: a gap report or assessment needs every applicable
 requirement, and silently dropping rows from a compliance enumeration is a
@@ -236,6 +279,8 @@ sampling a small subset of a compliance-relevant list.
 - Unknown `pack` → same message as `owasp_search`.
 - `pack` is `corpus`-typed → `{"error": "pack 'cheatsheets' is of type 'corpus'; owasp_checklist only applies to checklist packs. Use owasp_search or owasp_outline for corpus packs."}`.
 - Both `level` and `level_exact` given → `{"error": "pass level or level_exact, not both: level is cumulative (L2 = L1 + L2), level_exact is a single tier"}`.
+- `level` or `level_exact` given for a pack with no levels (`pack="masvs"`) →
+  `{"error": "pack 'masvs' defines no levels, so filtering by one would return an empty list, not a filtered one -- an agent reads [] as 'nothing in this pack meets that level', which is a different and far more dangerous claim than 'this pack has no levels'. Same reasoning Kb.search documents for raising LookupError instead of returning []. Omit level and level_exact."}`.
 
 ## `owasp_related`
 

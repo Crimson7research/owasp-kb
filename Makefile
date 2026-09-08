@@ -41,17 +41,16 @@ serve: ## Run the MCP server against the full index (for manual stdio testing)
 	$(EXEC) python -m owasp_kb.server.app --index $(DIST)/owasp-kb-full.sqlite
 
 IMAGE ?= owasp-kb
-ASVS_VERSION ?= $(shell $(EXEC) python -c "import yaml;print(yaml.safe_load(open('sources.lock.yml'))['packs']['asvs']['version'])" | tr -d '\r')
-CS_DATE ?= $(shell $(EXEC) python -c "import yaml;print(yaml.safe_load(open('sources.lock.yml'))['packs']['cheatsheets']['version'])" | tr -d '\r')
-CWE_VERSION ?= $(shell $(EXEC) python -c "import yaml;print(yaml.safe_load(open('sources.lock.yml'))['packs']['cwe']['version'])" | tr -d '\r')
 
 # The immutable tag names every pack in the index. It named two of three until the
 # CWE pack shipped, at which point a CWE release bump -- which deprecates ids and
 # renumbers others -- would have produced a byte-different index under an identical
 # tag. cwe_get makes CWE ids directly citable, so they are part of what the
 # reproducible-citation promise covers, and the tag has to be able to distinguish
-# them. Keep this in step with .github/workflows/release.yml.
-PINNED_TAG := asvs$(ASVS_VERSION)-cs$(CS_DATE)-cwe$(CWE_VERSION)
+# them. scripts/pinned_tag.py is the one derivation this and release.yml both call,
+# so a pack the script has no prefix for fails the release instead of silently
+# falling out of step.
+PINNED_TAG := $(shell $(EXEC) python scripts/pinned_tag.py)
 
 build-lite: index ## Build the lite image
 	docker build -f docker/Dockerfile --target lite \

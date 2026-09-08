@@ -1,0 +1,37 @@
+metadata:
+  title: Mobile Application Security Verification Standard (MASVS)
+  remarks: A trimmed sample in the shape of the real release asset.
+  version: v9.9.9
+groups:
+- id: MASVS-STORAGE
+  index: 1
+  title: Storage
+  description: 'Mobile applications handle sensitive data that often needs to be
+    stored locally, in private or public locations.
+
+    '
+  controls:
+  - id: MASVS-STORAGE-1
+    statement: The app securely stores sensitive data.
+    description: This control ensures that any sensitive data intentionally stored
+      by the app is properly protected independently of the target location.
+  - id: MASVS-STORAGE-2
+    statement: The app prevents leakage of sensitive data.
+    description: This control covers unintentional leaks through backups, logs and
+      other system capabilities the developer can prevent.
+- id: MASVS-CRYPTO
+  index: 2
+  title: Cryptography
+  description: 'Cryptography protects data on a device that can be lost or stolen.
+
+    '
+  controls:
+  - id: MASVS-CRYPTO-1
+    statement: The app employs current strong cryptography and uses it according to
+      industry best practices.
+    description: This control covers general cryptography best practices, typically
+      defined in external standards.
+  - id: MASVS-CRYPTO-2
+    statement: The app performs key management according to industry best practices.
+    description: This control covers the management of cryptographic keys throughout
+      their lifecycle, including generation, storage and protection.

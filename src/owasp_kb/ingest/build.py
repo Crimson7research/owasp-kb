@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from sqlite3 import Connection
@@ -22,9 +23,22 @@ from owasp_kb.ingest.lock import Lock, load_lock
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 from owasp_kb.ingest.packs.cwe import ingest_cwe
+from owasp_kb.ingest.packs.masvs import ingest_masvs
 
 log = logging.getLogger(__name__)
-EXPECTED_ASVS_REQUIREMENTS = 345
+
+# One entry per checklist pack the lock declares. run_checks fails the build if
+# a checklist pack in the database is missing here, so a newly wired pack must
+# be added in the same change that calls its ingest -- not left to be noticed
+# later as a silently uncounted shortfall.
+#
+# asvs is the pre-existing figure, pinned only here. masvs is measured against
+# the pinned v2.1.0 release asset (8 groups, 24 controls) and is also asserted by
+# test_the_real_release_matches_the_shape_the_build_expects in
+# tests/ingest/test_masvs.py, which skips without data/ and runs in the realdata
+# selection -- so an upstream reshuffle fails there, naming the shape that moved,
+# rather than only here as a count mismatch during a full build.
+EXPECTED_REQUIREMENTS = {"asvs": 345, "masvs": 24}
 
 
 @dataclass
@@ -48,6 +62,7 @@ class BuildReport:
     # gap with no explanation. `chunks` below is a whole-index COUNT, so the two
     # scopes sat in one log line looking alike.
     requirements: int = 0
+    masvs_requirements: int = 0
     cheatsheet_documents: int = 0
     catalogue_entries: int = 0
     chunks: int = 0
@@ -74,7 +89,7 @@ def build_index(
     out_path: str | Path,
     *,
     lock_path: str | Path = "sources.lock.yml",
-    expected_requirements: int = EXPECTED_ASVS_REQUIREMENTS,
+    expected_requirements: Mapping[str, int] = EXPECTED_REQUIREMENTS,
     with_vectors: bool = False,
     check_edge_floors: bool = True,
 ) -> BuildReport:
@@ -122,7 +137,7 @@ def _populate(
     sources: Path,
     lock: Lock,
     *,
-    expected_requirements: int,
+    expected_requirements: Mapping[str, int],
     with_vectors: bool,
     check_edge_floors: bool,
 ) -> BuildReport:
@@ -138,6 +153,18 @@ def _populate(
         _one(sources / "asvs", "*flat.json"),
         version=asvs_cfg.version,
         license=asvs_cfg.license,
+    )
+
+    # Indexed like the other packs -- a KeyError if the lock stops declaring it,
+    # rather than a silent skip. The asset's filename carries no version number
+    # (unlike the ASVS and CWE assets above, which do and so are matched by
+    # glob through _one()), so a direct path is used instead.
+    masvs_cfg = lock.packs["masvs"]
+    report.masvs_requirements = ingest_masvs(
+        conn,
+        sources / "masvs" / "OWASP_MASVS.yaml",
+        version=masvs_cfg.version,
+        license=masvs_cfg.license,
     )
 
     cs_cfg = lock.packs["cheatsheets"]
@@ -210,7 +237,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default="dist/owasp-kb.sqlite")
     parser.add_argument("--lock", default="sources.lock.yml")
     parser.add_argument("--with-vectors", action="store_true")
-    parser.add_argument("--expected-requirements", type=int, default=EXPECTED_ASVS_REQUIREMENTS)
+    parser.add_argument(
+        "--expected-requirements",
+        action="append",
+        metavar="PACK=COUNT",
+        help=(
+            "expected requirement count for one checklist pack, as PACK=COUNT "
+            "(e.g. asvs=345); repeatable, one per pack. Defaults to the figures "
+            "in EXPECTED_REQUIREMENTS for every pack the build ingests."
+        ),
+    )
     parser.add_argument(
         "--no-edge-floors",
         action="store_true",
@@ -219,12 +255,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    if args.expected_requirements is None:
+        expected_requirements = EXPECTED_REQUIREMENTS
+    else:
+        expected_requirements = {}
+        for pair in args.expected_requirements:
+            pack, sep, count = pair.partition("=")
+            if not sep or not pack or not count:
+                log.error(
+                    "invalid --expected-requirements %r; expected PACK=COUNT, e.g. asvs=345",
+                    pair,
+                )
+                return 1
+            try:
+                expected_requirements[pack] = int(count)
+            except ValueError:
+                log.error("invalid --expected-requirements %r; COUNT must be an integer", pair)
+                return 1
+
     try:
         report = build_index(
             args.sources,
             args.out,
             lock_path=args.lock,
-            expected_requirements=args.expected_requirements,
+            expected_requirements=expected_requirements,
             with_vectors=args.with_vectors,
             check_edge_floors=not args.no_edge_floors,
         )
@@ -236,11 +291,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     log.info(
-        "built %s: %d ASVS requirements, %d cheat sheet documents, %d CWE catalogue "
-        "entries, %d chunks index-wide (%d truncated), %d guidance links, %d CWE links "
-        "(%d dropped), %d supersedes links, %d NIST links (%d unmatched), %d vectors",
+        "built %s: %d ASVS requirements, %d MASVS controls, %d cheat sheet documents, "
+        "%d CWE catalogue entries, %d chunks index-wide (%d truncated), %d guidance "
+        "links, %d CWE links (%d dropped), %d supersedes links, %d NIST links "
+        "(%d unmatched), %d vectors",
         args.out,
         report.requirements,
+        report.masvs_requirements,
         report.cheatsheet_documents,
         report.catalogue_entries,
         report.chunks,

@@ -18,6 +18,27 @@ def _now() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
 
 
+def _sort_key(req: dict) -> tuple[int, int, int]:
+    """Chapter, section and requirement numbers, each as an integer.
+
+    V6.2.1 -> (6, 2, 1). Derived from req_id rather than from chapter_id and
+    section_id so all three segments come from one string and cannot disagree.
+    """
+    req_id = req["req_id"]
+    # removeprefix, not lstrip: lstrip strips characters, not a prefix, and
+    # would silently accept "VVV1.1.1". Every real ASVS id (345 of 345 in the
+    # 5.0.0 release) is single-"V"-prefixed, so this states that intent rather
+    # than changing behaviour.
+    parts = req_id.removeprefix("V").split(".")
+    if len(parts) != 3:
+        raise ValueError(
+            f"requirement {req_id!r} does not match the expected V<chapter>.<section>.<number> "
+            "id shape; cannot compute its sort key"
+        )
+    chapter, section, number = parts
+    return int(chapter), int(section), int(number)
+
+
 def _clear_pack(conn: sqlite3.Connection, pid: int) -> None:
     """Remove this pack's rows so a rebuild cannot duplicate or leave stale content.
 
@@ -42,7 +63,10 @@ def ingest_asvs(
 ) -> int:
     """Load every requirement. Returns the count ingested. Idempotent."""
     data = json.loads(Path(flat_json_path).read_text(encoding="utf-8"))
-    requirements = data["requirements"]
+    # Sorted here rather than ordered in SQL later. The key is numeric per segment
+    # for the reason the old ORDER BY was: lexically V10.1.1 precedes V2.1.1, which
+    # silently corrupts any gap report that assumes ascending ids.
+    requirements = sorted(data["requirements"], key=_sort_key)
 
     upsert_pack(
         conn,
@@ -63,7 +87,7 @@ def ingest_asvs(
     section_ids: dict[str, int] = {}
     section_ord: dict[str, int] = {}
 
-    for req in requirements:
+    for ordinal, req in enumerate(requirements):
         chapter, section = req["chapter_id"], req["section_id"]
 
         if chapter not in doc_ids:
@@ -99,8 +123,8 @@ def ingest_asvs(
         )
         conn.execute(
             "INSERT INTO requirements (pack_id, req_id, chapter_id, chapter_name,"
-            " section_id, section_name, text, level, chunk_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " section_id, section_name, text, level, ord, chunk_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 pid,
                 req["req_id"],
@@ -110,6 +134,7 @@ def ingest_asvs(
                 req["section_name"],
                 req["req_description"],
                 str(req["L"]),
+                ordinal,
                 int(cur.lastrowid),
             ),
         )

@@ -14,8 +14,25 @@ def _lock_yaml(packs: dict) -> str:
     return yaml.safe_dump({"packs": packs})
 
 
-def test_lock_parses_all_three_packs():
-    assert set(load_lock(LOCK).packs) == {"asvs", "cheatsheets", "cwe"}
+def test_lock_parses_all_four_packs():
+    assert set(load_lock(LOCK).packs) == {"asvs", "cheatsheets", "cwe", "masvs"}
+
+
+def test_masvs_pins_a_release_and_its_machine_readable_asset():
+    """The YAML asset is the only ingestable form: the pdf and epub are not.
+
+    version is pinned here and never read from the document, so a citation's
+    version cannot shift on a re-fetch. The release asset stamps
+    `metadata.version: v2.1.0` -- the `v` prefix means it is not string-equal
+    to the `2.1.0` pinned above; strip it before comparing the two.
+    """
+    masvs = load_lock(LOCK).packs["masvs"]
+    assert masvs.type == "checklist"
+    assert masvs.release == "v2.1.0"
+    assert masvs.version == "2.1.0"
+    assert masvs.license == "CC-BY-SA-4.0"
+    assert masvs.assets == ["OWASP_MASVS.yaml"]
+    assert masvs.commit is None
 
 
 def test_asvs_pins_a_release_not_latest():

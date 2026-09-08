@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-PACK_LABELS = {"asvs": "ASVS"}
+PACK_LABELS = {"asvs": "ASVS", "masvs": "MASVS"}
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,9 @@ class RequirementRow:
     section_id: str
     section_name: str
     text: str
-    level: str
+    # None for a pack that does not define levels. MASVS 2.x dropped v1's L1/L2/R
+    # and the surviving MAS profiles live on MASTG tests, not on MASVS controls.
+    level: str | None
 
 
 @dataclass(frozen=True)

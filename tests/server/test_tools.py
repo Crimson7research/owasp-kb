@@ -16,6 +16,7 @@ from owasp_kb.ingest.links import (
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 from owasp_kb.ingest.packs.cwe import ingest_cwe
+from owasp_kb.ingest.packs.masvs import ingest_masvs
 from owasp_kb.server.tools import (
     MAX_RESPONSE_CHARS,
     TOOL_TRIGGER_TOPICS,
@@ -327,18 +328,80 @@ def test_grouped_response_contains_every_requirement(tools):
 
 
 def test_grouped_response_states_each_chapter_name_once(tools):
+    """Also pins the contiguity invariant _grouped now depends on: a bare
+    groupby (no pre-sort, see the comment on _grouped in tools.py) emits a
+    second block for a repeated key instead of merging it, so a chapter id
+    appearing twice would mean the ingest's ordinals interleaved two chapters.
+    Only the ASVS fixture is exercised here -- the shared ``tools`` fixture
+    below doesn't ingest MASVS, since several other tests in this file pin an
+    exact pack set/count from it. The chapter-id check below is therefore
+    tied to this fixture's own two chapters, not to "starts with V", which is
+    the ASVS-only assumption this branch removed from kb.py and which is false
+    for a MASVS chapter id like "MASVS-STORAGE".
+    test_grouped_response_chapter_ids_need_not_look_like_asvs below exercises
+    the same uniqueness invariant against a pack whose ids don't start with V.
+    """
     result = tools["owasp_checklist"]("asvs")
+    chapter_ids = [c["id"] for c in result["chapters"]]
+    assert chapter_ids
+    assert len(chapter_ids) == len(set(chapter_ids)), "a chapter id was repeated"
     for chapter in result["chapters"]:
         assert chapter["name"]
-        assert chapter["id"].startswith("V")
+        assert chapter["id"] in {"V1", "V6"}, "not one of the ASVS sample fixture's own chapters"
+        section_ids = [s["id"] for s in chapter["sections"]]
+        assert len(section_ids) == len(set(section_ids)), (
+            f"a section id was repeated within chapter {chapter['id']!r}"
+        )
         for section in chapter["sections"]:
             assert section["name"]
             assert section["requirements"]
 
 
+def test_grouped_response_chapter_ids_need_not_look_like_asvs(tmp_path):
+    """The uniqueness invariant above must hold for a pack whose chapter ids
+    don't start with "V" -- MASVS's do not. Built on its own Kb, independent of
+    the shared ``tools`` fixture, so it does not perturb that fixture's pinned
+    pack set/count."""
+    conn = connect(tmp_path / "kb.sqlite")
+    create_schema(conn)
+    ingest_masvs(conn, "tests/fixtures/masvs_sample.yaml", version="2.1.0", license="CC-BY-SA-4.0")
+    tools = {t.__name__: t for t in build_tools(Kb(conn))}
+    result = tools["owasp_checklist"]("masvs")
+    chapter_ids = [c["id"] for c in result["chapters"]]
+    assert chapter_ids == ["MASVS-STORAGE", "MASVS-CRYPTO"]
+    assert len(chapter_ids) == len(set(chapter_ids))
+    for chapter in result["chapters"]:
+        assert not chapter["id"].startswith("V")
+
+
 def test_grouped_response_preserves_requirement_order(tools):
     result = tools["owasp_checklist"]("asvs")
     assert [r["id"] for r in _flat(result)] == ["V1.1.1", "V6.2.1", "V6.2.2"]
+
+
+def test_checklist_omits_the_level_key_for_a_levelless_requirement():
+    """`"L": null` in a tool response is noise an agent has to interpret."""
+    from owasp_kb.core.models import RequirementRow
+    from owasp_kb.server.tools import _grouped
+
+    grouped = _grouped(
+        [
+            RequirementRow(
+                req_id="MASVS-STORAGE-1",
+                chapter_id="MASVS-STORAGE",
+                chapter_name="Storage",
+                section_id="MASVS-STORAGE",
+                section_name="Storage",
+                text="The app securely stores sensitive data.",
+                level=None,
+            )
+        ]
+    )
+    requirement = grouped[0]["sections"][0]["requirements"][0]
+    assert requirement == {
+        "id": "MASVS-STORAGE-1",
+        "text": "The app securely stores sensitive data.",
+    }
 
 
 def test_checklist_note_names_the_chapters_and_the_expected_total(tools, monkeypatch):

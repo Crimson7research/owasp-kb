@@ -10,15 +10,15 @@ with no network access.
   build time (make build)                      serve time (per agent session)
  ┌─────────────────────────────────────┐       ┌───────────────────────────────┐
  │ sources.lock.yml                     │       │  docker run -i --rm           │
- │   pins ASVS + CWE releases, CS SHA   │       │    --network none owasp-kb    │
+ │   pins ASVS,MASVS,CWE rels, CS SHA   │       │    --network none owasp-kb    │
  │            │                         │       │            │                  │
  │            v                         │       │            v                  │
  │ ingest/fetch.py  -- downloads -->    │       │  server/app.py (entrypoint)   │
- │   data/{asvs,cheatsheets,cwe}/*      │       │    opens the baked index      │
+ │   data/{asvs,cheatsheets,cwe,masvs}/*│       │    opens the baked index      │
  │            │                         │       │    read-only, builds Kb       │
  │            v                         │       │            │                  │
  │ ingest/packs/{asvs,cheatsheets,      │       │            v                  │
- │               cwe}.py                │       │  server/tools.py              │
+ │               cwe,masvs}.py          │       │  server/tools.py              │
  │   -> requirements, catalogue_entries,│       │    ten MCP tool adapters      │
  │      docs, sections, chunks          │       │                               │
  │      (core/chunking.py)              │       │  server/prompts.py            │
@@ -51,11 +51,13 @@ binary over stdio; nothing about the server is Claude-Code-specific.
 - **`ingest/`** — everything that runs at build time and touches the network
   or the filesystem outside the index: `fetch.py` downloads pinned sources per
   `sources.lock.yml`; `lock.py` parses and validates the lock file (and
-  refuses `release: latest`); `packs/asvs.py`, `packs/cheatsheets.py` and
-  `packs/cwe.py` turn the three source formats into rows; `links.py` populates
-  the `links` edge table from the four upstream mapping files, and `packs/cwe.py`
-  writes CWE's own three graph rels directly; `build.py` orchestrates all of
-  it, runs the integrity checks, and either finalizes the file or deletes it.
+  refuses `release: latest`); `packs/asvs.py`, `packs/cheatsheets.py`,
+  `packs/cwe.py` and `packs/masvs.py` turn the four source formats into rows;
+  `links.py` populates the `links` edge table from the four upstream mapping
+  files (MASVS ships none of its own — see [docs/kb-packs.md](kb-packs.md)),
+  and `packs/cwe.py` writes CWE's own three graph rels directly; `build.py`
+  orchestrates all of it, runs the integrity checks, and either finalizes the
+  file or deletes it.
   Nothing in `ingest/` is imported by `server/`.
 
 - **`core/`** — the domain model, shared by both ingest and serving. `schema.py`
@@ -93,14 +95,17 @@ a change to how search ranks results can never require touching the server.
 ## Pack registry
 
 A **pack** is one ingested knowledge base, recorded in the `packs` table with
-a `type` of one of three values. Two of the three packs are OWASP's; `cwe` is
+a `type` of one of three values. Three of the four packs are OWASP's; `cwe` is
 MITRE's — see [docs/licensing.md](licensing.md).
 
 
 
-- **`checklist`** — an enumerable, leveled requirement set. Currently only
-  `asvs`. Supports `owasp_checklist` (enumerate by chapter/section/id/level)
-  in addition to the corpus-navigation tools below.
+- **`checklist`** — an enumerable requirement set; levels are a property some
+  packs carry, not part of the type. `asvs` and `masvs`. Supports
+  `owasp_checklist` (enumerate by chapter/section/id, and by level for a pack
+  that has one — `asvs` does, `masvs` does not and refuses a level filter
+  rather than silently matching nothing) in addition to the corpus-navigation
+  tools below.
 - **`corpus`** — a document collection with no per-item structure beyond
   headings. Currently only `cheatsheets`. Supports `owasp_search`,
   `owasp_outline`, `owasp_get` — not `owasp_checklist`, which raises
@@ -131,8 +136,10 @@ chunks        (id, section_id -> sections, text, token_est)
 chunks_fts    FTS5 virtual table, external-content over chunks, porter+unicode61
 chunks_vec    vec0 virtual table (full builds only): chunk_id -> FLOAT[384]
 requirements  (id, pack_id -> packs, req_id, chapter_id, chapter_name,
-               section_id, section_name, text, level, chunk_id -> chunks;
-               UNIQUE(pack_id, req_id))
+               section_id, section_name, text, level, ord, chunk_id -> chunks;
+               ord is a per-pack, zero-based display ordinal assigned by that
+               pack's own ingest -- the sole thing Kb.checklist orders by;
+               UNIQUE(pack_id, req_id), UNIQUE(pack_id, ord))
 catalogue_entries
               (id, pack_id -> packs, entry_id, kind, name, abstraction, status,
                description, extended_description, chunk_id -> chunks;

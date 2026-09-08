@@ -22,6 +22,21 @@ so it is visible and disputable rather than silent.
 1. **Scope** — which subtrees are in scope? List the candidates you can see. Anything
    excluded gets stated as excluded, never silently unexamined.
 
+   **A mobile client is not in ASVS's scope.** ASVS is written for web applications and
+   their server endpoints. If the target is an Android, iOS, React Native or Flutter app,
+   ASVS governs its server endpoints and nothing that runs on the device. The device side is
+   MASVS's (`pack="masvs"`, 8 groups, 24 controls, no levels). Say so to the user and scope
+   this pass to the backend, rather than running ASVS chapters over app code and adapting the
+   verdicts to fit. A MASVS assessment flow — group orchestration, MAS profiles, a roster
+   shaped for 8 groups instead of 17 chapters — does not exist yet; do not improvise one.
+   `owasp_roster` already takes a `pack` argument, so this is a "not specified yet", not an
+   "impossible."
+
+   **Before promising a MASVS-scoped pass, check `kb_info` for whether `masvs` is among the
+   packs the running server holds.** If it is absent, the image predates the pack — say so
+   in the report header, alongside the other stated assumptions, rather than silently
+   scoping the mobile side out as though it were never in scope.
+
 2. **Target level** — levels are cumulative:
 
    | Level | Requirements | Cost | Justified when |
