@@ -88,7 +88,7 @@ def _context() -> str | None:
     handler catches anything -- including an import failure, which at module scope
     would kill the process before the fail-open path could run.
     """
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     from owasp_kb_cli.security_terms import matched_term
     from owasp_kb_cli.state import session_dir
 

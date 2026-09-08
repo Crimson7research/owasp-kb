@@ -101,7 +101,7 @@ before a prompt is even in play.
   solution (trigger-worded descriptions and skill bodies) that is identically
   effective everywhere the four layers above are honored by the client.
 
-  **The plugin has since gained four hooks, and this rejection now stands only for
+  **The plugin has since gained five hooks, and this rejection now stands only for
   the primary discovery layer.** Two enforce assessment invariants no tool
   description could — refusing a read of an excluded prior assessment, and refusing
   triage over an incomplete inventory. The cross-agent objection does not apply to
@@ -125,7 +125,16 @@ before a prompt is even in play.
   the skill, and it asks the agent to state the decision either way — used, or
   declined with a reason — because a decline is otherwise invisible until someone
   asks afterwards. See ADR
-  [0017](decisions/0017-a-session-start-hook-argues-the-token-ledger.md).
+  [0017](decisions/0017-a-session-start-hook-argues-the-token-ledger.md). The fifth,
+  `state_host_cli.py`, is not part of this argument at all, and is counted here only
+  because "hooks" is the shipping unit this section tallies. It is also a
+  `SessionStart` hook, but it answers a different question than discoverability of
+  the skill: where the host CLI is, now that it has moved off PATH (ADR 0018) and
+  `owasp-kb` is otherwise command-not-found. It fires unconditionally for the same
+  reason the fourth does — nothing else runs before the first tool call and holds
+  `CLAUDE_PLUGIN_ROOT`, which a `Bash` call never receives — but it enforces no
+  invariant, backstops no vocabulary, and asks the agent to decide nothing. It states
+  a path.
 
 ## The anti-goal
 

@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from owasp_kb_cli.doctor import invocation
 from owasp_kb_cli.state import sessions_dir, validate_session_id
 
 
@@ -95,7 +96,7 @@ def render(summaries: list[Summary]) -> None:
         )
     total = sum(s.bytes for s in summaries)
     print(f"\n{len(summaries)} session(s), {_human(total)} total")
-    print("This is assessment material. `owasp-kb sessions purge <id> --yes` removes one.")
+    print(f"This is assessment material. `{invocation()} sessions purge <id> --yes` removes one.")
 
 
 def purge(ids: list[str], confirmed: bool) -> int:

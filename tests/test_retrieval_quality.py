@@ -308,7 +308,7 @@ def test_every_flagged_vulnerability_is_served_by_the_corpus(full):
     """
     import sys
 
-    path = str(Path("plugins/owasp-kb/bin").resolve())
+    path = str(Path("plugins/owasp-kb/scripts").resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
     from owasp_kb_cli.security_terms import VULNERABILITY_NAMES

@@ -4,7 +4,7 @@ The CLI runs on the host rather than as an MCP tool: the server's state mount is
 read-only and the target repository is not mounted at all, so nothing inside the
 container can write a report or clear a session.
 
-`plugins/owasp-kb/bin` is put on the path and the package imported normally, rather
+`plugins/owasp-kb/scripts` is put on the path and the package imported normally, rather
 than loading each module by file path. The modules import each other as
 `from owasp_kb_cli.state import ...`, and loading a submodule by path without its
 parent package registered breaks that import -- so a path-loading helper would test
@@ -22,12 +22,12 @@ from pathlib import Path
 
 import pytest
 
-BIN = Path("plugins/owasp-kb/bin")
+SCRIPTS = Path("plugins/owasp-kb/scripts")
 HOOK = Path("plugins/owasp-kb/hooks/flag_security_topic.py")
 
 
 def _module(name: str):
-    path = str(BIN.resolve())
+    path = str(SCRIPTS.resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
     return importlib.import_module(f"owasp_kb_cli.{name}")
@@ -719,3 +719,35 @@ def test_the_hook_fails_open_when_stdout_cannot_be_written(tmp_path):
             env={**os.environ, "CLAUDE_CONFIG_DIR": str(tmp_path)},
         )
     assert result.returncode == 0, f"hook must never fail the call: {result.stderr}"
+
+
+def test_plugin_root_resolves_to_the_plugin_directory_from_the_real_layout(monkeypatch):
+    """Pins the depth, which no other test does.
+
+    doctor.plugin_root() walks three parents up from
+    scripts/owasp_kb_cli/doctor.py. That was correct under bin/ and is correct
+    under scripts/, so the move needed no edit -- which is exactly why this is
+    worth pinning: the next move of this package changes the arithmetic and
+    nothing else would notice. A wrong answer here is not a crash. It is doctor
+    reporting on a different install than the one running, which is the one
+    question a stale install makes unanswerable.
+    """
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    doctor = _module("doctor")
+    assert doctor.plugin_root() == SCRIPTS.parent.resolve()
+    assert (doctor.plugin_root() / ".claude-plugin" / "plugin.json").is_file(), (
+        "plugin_root() resolved somewhere with no plugin manifest in it"
+    )
+
+
+def test_the_entry_point_puts_its_own_directory_on_the_import_path():
+    """The package sits beside the entry point, and scripts/ is not on sys.path --
+    it never was on the import path, only on PATH, and it is not on that any more
+    either. The insert is what makes `from owasp_kb_cli import ...` resolve, so a
+    move that broke it would fail at import with no other test to catch it.
+    """
+    source = (SCRIPTS / "owasp-kb").read_text()
+    assert "sys.path.insert(0, str(Path(__file__).resolve().parent))" in source, (
+        "the entry point no longer inserts its own directory, so the package "
+        "beside it is unimportable"
+    )

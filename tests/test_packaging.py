@@ -1910,7 +1910,7 @@ def test_the_doctor_check_names_are_the_ones_the_cli_registers():
     """Guard on the test below, which reads the docs against DOCTOR_CHECK_NAMES. If
     that set drifts from the CLI, the docs check passes while describing checks
     that do not exist -- documentation asserted against documentation."""
-    text = Path("plugins/owasp-kb/bin/owasp_kb_cli/doctor.py").read_text()
+    text = Path("plugins/owasp-kb/scripts/owasp_kb_cli/doctor.py").read_text()
     registry = text[text.index("CHECKS: list[") : text.index("def run(")]
     registered = set(re.findall(r'\("(\w+)", check_', registry))
     assert registered == DOCTOR_CHECK_NAMES, (
@@ -1944,7 +1944,7 @@ def _flagged_vulnerability_names() -> tuple[str, ...]:
     defect this guards against was two surfaces disagreeing about which
     vulnerability classes exist.
     """
-    path = str(Path("plugins/owasp-kb/bin").resolve())
+    path = str(Path("plugins/owasp-kb/scripts").resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
     from owasp_kb_cli.security_terms import VULNERABILITY_NAMES
@@ -2568,22 +2568,46 @@ def test_secure_coding_handles_the_pack_being_absent_from_the_image():
     )
 
 
-def test_the_discoverability_note_counts_the_hooks_the_plugin_ships():
+def test_the_docs_count_the_hooks_the_plugin_ships():
     """The note said "two hooks" after a third had shipped, and denied that any hook
     solves discoverability while that third one exists to do exactly that -- as the same
     file argues 50 lines further down. A doc that contradicts itself is read as whichever
-    half the reader reaches first."""
+    half the reader reaches first.
+
+    README is checked too, because it is the surface that was actually wrong: it
+    still said "two hooks" at four, and nothing was watching it. docs/install.md is
+    deliberately not here -- it says "two PreToolUse hooks", which is a per-event
+    count and correct, and asserting a total against it would fail a true sentence.
+    """
+
+    def flattened(path: str) -> str:
+        """Whitespace-normalised, so a markdown line wrap between "five" and
+        "hooks" does not read as a missing count. The wrap is not the defect this
+        guards against, and a guard that fires on one gets deleted."""
+        return " ".join(Path(path).read_text().lower().split())
+
     shipped = json.loads(PLUGIN.read_text())["hooks"]
     count = sum(len(matcher["hooks"]) for event in shipped.values() for matcher in event)
-    doc = Path("docs/discoverability.md").read_text().lower()
-    spelled = {1: "one hook", 2: "two hooks", 3: "three hooks", 4: "four hooks"}
+    spelled = {1: "one hook", 2: "two hooks", 3: "three hooks", 4: "four hooks", 5: "five hooks"}
     assert count in spelled, (
         f"the plugin ships {count} hooks and this test has no word for that count"
     )
+
+    doc = flattened("docs/discoverability.md")
     claim_start = doc.index("the plugin has since gained")
-    claim = doc[claim_start : doc.index("\n\n", claim_start)]
+    # A fixed window rather than the next blank line: flattening collapsed every
+    # newline, so "\n\n" can no longer mark a paragraph's end. The window only
+    # has to reach past the count word, not land on a real boundary.
+    claim = doc[claim_start : claim_start + 600]
     assert spelled[count] in claim, (
-        f"the plugin ships {count} hooks and the sentence that states the count does not say so"
+        f"the plugin ships {count} hooks and docs/discoverability.md's sentence that "
+        f"states the count does not say so"
+    )
+
+    readme = flattened("README.md")
+    assert spelled[count] in readme, (
+        f"the plugin ships {count} hooks and README.md never says so; it said "
+        f"'two hooks' while four shipped"
     )
 
 
@@ -2748,3 +2772,176 @@ def test_the_pin_branch_name_is_a_contract_between_the_two_workflows():
         f"branch starts {branch.group(1)!r}, so the job is skipped and the draft never "
         "publishes -- silently, because a skipped job is not a failed one"
     )
+
+
+def test_no_plugin_ships_a_bin_directory():
+    """Claude Code appends `<plugin_root>/bin` to PATH for every installed plugin,
+    unconditionally and with nothing in plugin.json declaring it -- which is the
+    objection: a hosted plugin's executables reach PATH without ever appearing on
+    the admin approval surface, so organization sync rejects the plugin outright
+    (c7-marketplace #30, its ADR 0019, our ADR 0018).
+
+    The directory is the defect, not its contents. An empty bin/ is still appended
+    to PATH, so this does not look inside.
+    """
+    offenders = sorted(str(p) for p in Path("plugins").glob("*/bin") if p.is_dir())
+    assert not offenders, (
+        f"{offenders} ship a bin/ directory, which a claude.ai-hosted plugin may not "
+        f"do -- it reaches PATH without appearing on the admin approval surface. Move "
+        f"the tools to scripts/ and invoke them by the absolute path the SessionStart "
+        f"hook states (ADR 0018)."
+    )
+
+
+# The token, and the sentence that expands it. The definition is matched on its
+# exact wording so it reads identically in every plugin in the fleet -- an agent
+# holding two of them in context should see one convention, not two that rhyme.
+PLUGIN_SCRIPT_REF = re.compile(r"<scripts>/([\w.-]+)")
+PLUGIN_SCRIPT_DEFINITION = re.compile(r"<scripts>`\s+is the absolute directory")
+SCRIPTS_DIR = Path("plugins/owasp-kb/scripts")
+
+
+def _documented_surfaces() -> list[Path]:
+    """Every doc a reader acts on. Skills, README, and docs/ minus the decisions
+    and the local planning scratch.
+
+    docs/decisions/ is excluded as historical record: ADR 0014 says
+    `bin/owasp-kb-report` became `bin/owasp-kb`, which was true when written and
+    has to stay as written. Excluding a directory rather than listing the files
+    that are scanned is deliberate -- a doc added later is covered by default,
+    instead of being covered only if someone remembers to add it to a list.
+
+    docs/superpowers/ is excluded too, for a different reason: it is gitignored
+    -- `git check-ignore` confirms it, and `.gitignore` names it -- so it is not
+    a documented surface at all, it is this repository's own planning scratch.
+    It routinely holds `<scripts>` tokens (this task's own plan and design docs
+    among them, as of the branch this check was written on) that were never
+    meant to resolve against a shipped tool, and a scan that reached it would
+    fail on notes instead of on documentation.
+    """
+    paths = [Path("README.md")]
+    paths += [
+        p
+        for p in Path("docs").rglob("*.md")
+        if "decisions" not in p.parts and "superpowers" not in p.parts
+    ]
+    paths += sorted(SKILLS_DIR.rglob("*.md"))
+    return paths
+
+
+def test_every_scripts_token_names_a_real_tool_and_every_file_using_one_defines_it():
+    """A renamed tool would otherwise leave behind a command example that runs
+    nothing, invisible until an agent types it.
+
+    Resolving is not the same as being readable. A skill is read piecewise -- a
+    gate branches to one continuation file or another, never both -- so a file
+    naming <scripts>/owasp-kb without explaining what <scripts> means leaves a
+    reader who arrived by that file's own read path holding a token they cannot
+    expand, even if some other file in the same skill defines it. The explainer
+    has to travel with the command.
+
+    Ported from c7-marketplace's check_plugin_script_references. That version
+    resolves each reference against the skill's own plugin (`directory.parent.parent
+    / "scripts"`), because c7-marketplace lints many plugins in one pass. This
+    repository only ships one, so the check is simpler: every reference resolves
+    against the one `plugins/owasp-kb/scripts/` directory.
+
+    Passes vacuously until a doc or skill first writes a `<scripts>/<tool>`
+    command -- nothing does yet, so there is nothing here for this check to
+    catch. It is still added now, ahead of that, so the check exists on the
+    branch that establishes the convention rather than being bolted on after the
+    first doc gets it wrong.
+    """
+    problems: list[str] = []
+    for path in _documented_surfaces():
+        text = path.read_text()
+        names = PLUGIN_SCRIPT_REF.findall(text)
+        if names and not PLUGIN_SCRIPT_DEFINITION.search(text):
+            problems.append(
+                f"{path} names <scripts>/{names[0]} but never explains what <scripts> "
+                f"is; a reader who reaches this file by its own read path cannot "
+                f"expand the token"
+            )
+        problems += [
+            f"{path} names <scripts>/{name}, which is not in {SCRIPTS_DIR}"
+            for name in names
+            if not (SCRIPTS_DIR / name).exists()
+        ]
+    assert not problems, "\n".join(problems)
+
+
+# A backticked span whose content is on one line. The check reads the span's first
+# token, so the span is the unit rather than the line.
+INLINE_CODE = re.compile(r"`([^`\n]+)`")
+# The lead-in that turns a mention into an instruction. Anchored to the end of the
+# preceding text, so it matches only a verb the span is the object of -- "Run `x`"
+# -- and not the same verb elsewhere in the sentence.
+RUN_VERB = re.compile(r"\b(?:run|runs|invoke|execute|call)\s+$", re.IGNORECASE)
+# A flag. A bare name carrying one is being quoted as a command line whatever the
+# surrounding grammar does.
+COMMAND_ARGUMENT = re.compile(r"(?:^|\s)-{1,2}\w")
+CODE_FENCE = re.compile(r"^\s*(?:```|~~~)")
+TOOL = "owasp-kb"
+
+
+def _bare_tool_in_fences(text: str) -> bool:
+    """Whether the tool is the first token of a line inside a fenced block.
+
+    Unconditional, unlike the inline case: a fenced block is what a reader copies
+    verbatim, so an explainer higher up the file does not make the line runnable.
+    """
+    inside = False
+    for line in text.splitlines():
+        if CODE_FENCE.match(line):
+            inside = not inside
+            continue
+        stripped = line.strip()
+        if inside and (stripped == TOOL or stripped.startswith(TOOL + " ")):
+            return True
+    return False
+
+
+def test_no_doc_names_the_host_cli_as_a_bare_command():
+    """The mirror of the token check, catching what it is blind to. That one fires
+    on the <scripts>/ token, so a line still reading ``run `owasp-kb doctor` ``
+    carries no token, is seen by no check, and passes while instructing an agent to
+    type something that is not on PATH. c7-marketplace's own move out of bin/ left
+    four such sites behind precisely because nothing looked for them.
+
+    Deliberately narrow, because a bare name in prose is legitimate and must stay:
+    "`owasp-kb doctor` reports this before it happens" is about the tool, not an
+    instruction to type it, and a check that flagged those would be worked around
+    or deleted. A mention is refused only when command-shaped: first token of a
+    line in a fenced block, or a span carrying a flag, or a span that is the object
+    of an imperative run verb. The last two are excused when the file's explainer
+    appears above them -- which makes the check satisfiable by moving the explainer
+    earlier, a real improvement to the file rather than a way around the check.
+    """
+    problems: list[str] = []
+    for path in _documented_surfaces():
+        text = path.read_text()
+        if _bare_tool_in_fences(text):
+            problems.append(
+                f"{path} runs bare `{TOOL}` inside a code block; it is not on PATH, "
+                f"so write `python3 <scripts>/{TOOL}`"
+            )
+        explained = PLUGIN_SCRIPT_DEFINITION.search(text)
+        explained_at = explained.start() if explained else None
+        for match in INLINE_CODE.finditer(text):
+            span = match.group(1).strip()
+            if not (span == TOOL or span.startswith(TOOL + " ")):
+                continue
+            if explained_at is not None and explained_at < match.start():
+                continue
+            line_start = text.rfind("\n", 0, match.start()) + 1
+            if not (
+                COMMAND_ARGUMENT.search(span[len(TOOL) :])
+                or RUN_VERB.search(text[line_start : match.start()])
+            ):
+                continue
+            problems.append(
+                f"{path} names `{span}` as a command, but it is not on PATH and "
+                f"nothing above says how to invoke it; write "
+                f"`python3 <scripts>/{TOOL}` and explain the token"
+            )
+    assert not problems, "\n".join(problems)

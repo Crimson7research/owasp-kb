@@ -15,10 +15,10 @@ ci:
   translations:
     - local: tests.yml
       sources:
-        - {path: .github/workflows/ci.yml, commit: b92a8c7e414e47ffc46d198e63079f4fe3bbd9ff}
+        - {path: .github/workflows/ci.yml, commit: 65ea9ac77ba885b62dc1484733b635f76e6ed30a}
     - local: images.yml
       sources:
-        - {path: .github/workflows/ci.yml, commit: b92a8c7e414e47ffc46d198e63079f4fe3bbd9ff}
+        - {path: .github/workflows/ci.yml, commit: 65ea9ac77ba885b62dc1484733b635f76e6ed30a}
 
   uncovered:
     - path: .github/workflows/refresh.yml

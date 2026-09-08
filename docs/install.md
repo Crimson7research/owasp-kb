@@ -21,6 +21,8 @@ a question instead surfaces as an unexplained clone failure:
 `owasp-kb doctor` checks both, by running `ssh -T git@github.com` under
 `BatchMode` — the same non-interactive position the background refresh is in, so a
 pass there predicts a working auto-update rather than merely approximating it.
+The host CLI ships in the plugin's `scripts/`, off `PATH`.
+`<scripts>` is the absolute directory the owasp-kb session-start note names.
 
 ## Why SSH and not HTTPS
 
@@ -73,7 +75,7 @@ first start pulls it, roughly 700 MB for the `full` variant; later starts use th
 local copy. Pull it deliberately rather than at the head of a session with:
 
 ```
-owasp-kb doctor --pull
+python3 <scripts>/owasp-kb doctor --pull
 ```
 
 A digest rather than a tag because a tag is shadowed by any local image of the
@@ -211,9 +213,9 @@ delete it, so on a machine used for several engagements it accumulates one set p
 session, under opaque session ids.
 
 ```
-owasp-kb sessions list                              # what each session holds, and how big
-owasp-kb sessions purge <session-id> --yes           # remove one
-owasp-kb sessions purge --older-than 30 --yes        # remove everything older than a month
+python3 <scripts>/owasp-kb sessions list                       # what each session holds, and how big
+python3 <scripts>/owasp-kb sessions purge <session-id> --yes    # remove one
+python3 <scripts>/owasp-kb sessions purge --older-than 30 --yes # remove everything older than a month
 ```
 
 Neither runs on a timer and neither deletes without `--yes`; both print exactly
@@ -228,18 +230,18 @@ state is on disk at all.
 
 ## Troubleshooting
 
-**Run `owasp-kb doctor` first.** It checks the chain end to end and prints the fix
-for anything it finds. The `Check` column below is the name doctor reports a
-symptom under.
+**Run `python3 <scripts>/owasp-kb doctor` first.** It checks the chain end to
+end and prints the fix for anything it finds. The `Check` column below is the
+name doctor reports a symptom under.
 
 | Symptom | Check | Cause |
 |---|---|---|
-| Anything at all, as a first step | — | `owasp-kb doctor` |
+| Anything at all, as a first step | — | `python3 <scripts>/owasp-kb doctor` |
 | `docker: permission denied`, or docker missing | `docker` | Not on PATH, daemon down, or user not in the `docker` group |
 | Tools absent right after installing | `plugin` | The plugin loaded from an unexpected directory; doctor prints which one it ran from |
 | The configured image is a tag, not a digest | `pin` | `.mcp.json` was hand-edited, or `pin_image.py` never ran for this release |
 | `unauthorized` / `denied` pulling the image | `image` | No `docker login ghcr.io`, or a PAT without the `read:packages` scope |
-| A session start hangs for minutes | `image` | The pinned digest is not local yet; run `owasp-kb doctor --pull` |
+| A session start hangs for minutes | `image` | The pinned digest is not local yet; run `python3 <scripts>/owasp-kb doctor --pull` |
 | `kb_info` reports `lexical` on the `full` image | `server` | Model or vectors missing from the image; the release smoke test should have caught it, so report it |
 | Server starts then exits | `server` | Something wrote to stdout; logs must go to stderr |
 | `no index at /opt/owasp-kb/...` | `server` | Image built without a baked index; run `make build` |
