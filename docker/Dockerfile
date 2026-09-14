@@ -6,7 +6,7 @@
 # the plugin's own image digest exists to close, and it undercuts the immutable
 # content tag's reproducibility claim. The cost is that this no longer picks up
 # security updates on its own, which is what .github/dependabot.yml is for.
-FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS base
+FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
