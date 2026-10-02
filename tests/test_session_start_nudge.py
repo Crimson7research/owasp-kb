@@ -80,8 +80,8 @@ def _payload() -> str:
     return module.NUDGE
 
 
-def _router_terms() -> tuple[str, ...]:
-    """The prompt router's vocabulary, imported from the plugin package."""
+def _flagged_vulnerability_names() -> tuple[str, ...]:
+    """The UserPromptSubmit hook's vulnerability names."""
     path = str(Path("plugins/owasp-kb/scripts").resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -90,15 +90,18 @@ def _router_terms() -> tuple[str, ...]:
     return VULNERABILITY_NAMES
 
 
-def test_the_payload_does_not_front_load_prompt_router_vocabulary():
-    """SessionStart runs unconditionally, so it must not inject router terms.
+def test_the_payload_does_not_front_load_flagged_vulnerability_names():
+    """SessionStart must not repeat terms handled by the scoped prompt hook.
 
-    The separate UserPromptSubmit hook can still react when a user supplies one of
-    these terms. Keeping the list imported avoids a second vocabulary that drifts.
+    Importing the list avoids a second vocabulary that can drift.
     """
     payload = _payload().lower()
-    present = [term for term in _router_terms() if term.lower() in payload]
-    assert not present, f"SessionStart payload front-loads prompt router terms: {present}"
+    present = [
+        name for name in _flagged_vulnerability_names() if name.lower() in payload
+    ]
+    assert not present, (
+        f"SessionStart payload front-loads flagged vulnerability names: {present}"
+    )
 
 
 def test_the_payload_asks_for_both_notices():
