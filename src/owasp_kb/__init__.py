@@ -19,4 +19,4 @@ until it is reinstalled, which is exactly the silent-drift failure this is meant
 A module attribute is always current.
 """
 
-__version__ = "0.20.1"
+__version__ = "0.21.0"
