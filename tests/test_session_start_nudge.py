@@ -80,14 +80,8 @@ def _payload() -> str:
     return module.NUDGE
 
 
-def _flagged_vulnerability_names() -> tuple[str, ...]:
-    """The hook's firing vocabulary, imported from the plugin's own package.
-
-    Not duplicated here: a second list is a second thing to forget, and the whole
-    defect this guards against was two surfaces disagreeing about which
-    vulnerability classes exist. The loader is repeated from tests/test_packaging.py
-    -- the list it returns is not.
-    """
+def _router_terms() -> tuple[str, ...]:
+    """The prompt router's vocabulary, imported from the plugin package."""
     path = str(Path("plugins/owasp-kb/scripts").resolve())
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -96,22 +90,15 @@ def _flagged_vulnerability_names() -> tuple[str, ...]:
     return VULNERABILITY_NAMES
 
 
-def test_the_payload_names_every_class_the_other_hook_fires_on():
-    """The payload tells the agent where it is unassisted by naming what the other
-    hook covers. A term added to security_terms.py without updating that sentence
-    makes the payload wrong about the mechanism, silently.
+def test_the_payload_does_not_front_load_prompt_router_vocabulary():
+    """SessionStart runs unconditionally, so it must not inject router terms.
 
-    Only the named-class list is compared. security_terms.py also fires on a CVE id
-    via a separate `_CVE` pattern, which is deliberately outside VULNERABILITY_NAMES
-    and outside this check: the payload names classes an agent can recognise its own
-    work in, and no finite list of CVE ids could be enumerated there.
+    The separate UserPromptSubmit hook can still react when a user supplies one of
+    these terms. Keeping the list imported avoids a second vocabulary that drifts.
     """
     payload = _payload().lower()
-    missing = [n for n in _flagged_vulnerability_names() if n.lower() not in payload]
-    assert not missing, (
-        f"flag_security_topic fires on {missing} and the SessionStart payload does "
-        "not list them, so it understates what is already covered"
-    )
+    present = [term for term in _router_terms() if term.lower() in payload]
+    assert not present, f"SessionStart payload front-loads prompt router terms: {present}"
 
 
 def test_the_payload_asks_for_both_notices():

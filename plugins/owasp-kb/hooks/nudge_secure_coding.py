@@ -74,14 +74,6 @@ citable id a reviewer can check. What it cannot give is whether this codebase \
 already has the control -- that comes from the codebase, and a citation does not \
 stand in for it.
 
-**Nothing will prompt you in the ordinary cases.** A second hook here fires on named \
-vulnerability classes -- SSRF, XSS, CSRF, XXE, IDOR, SQL injection, command injection, \
-LDAP injection, path traversal, directory traversal, deserialization, open redirect, \
-server-side template injection, privilege escalation -- and deliberately not on \
-`token`, `session`, `cookie`, `auth`, `crypto`, `logging` or `error handling`, since \
-matching those would match most prompts. Most security-relevant work arrives in that \
-second vocabulary. There the call is yours, and unprompted.
-
 **Say which way you went, either way.** When you use the skill: **Using \
 owasp-secure-coding to <purpose>.** When you consider it and decide against, one line \
 with the reason: **Not using owasp-secure-coding: <why>.**
