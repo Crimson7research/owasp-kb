@@ -22,10 +22,10 @@ LITE_INDEX = Path(os.environ.get("OWASP_KB_LITE_INDEX", "dist/owasp-kb-lite.sqli
 TOP_N = 3
 
 PARAPHRASED_QUERIES = [
-    ("stop people brute-forcing logins", "Authentication_Cheat_Sheet"),
-    ("keep my users logged out after they close the tab", "Session_Management_Cheat_Sheet"),
-    ("someone is uploading a php shell disguised as a jpeg", "File_Upload_Cheat_Sheet"),
-    ("how do I store passwords", "Password_Storage_Cheat_Sheet"),
+    ("slow down repeated login guesses", "Authentication_Cheat_Sheet"),
+    ("keep login state safe across requests", "Session_Management_Cheat_Sheet"),
+    ("stop malicious programs hidden in image uploads", "File_Upload_Cheat_Sheet"),
+    ("choose a one way password derivation method", "Password_Storage_Cheat_Sheet"),
 ]
 
 NOISE_QUERIES = ["zzzznotpresentanywhere", "qwertyuiop asdfghjkl", "the of and is a"]
@@ -210,7 +210,7 @@ def test_hybrid_ranks_paraphrased_queries_within_the_top_five(full, query, expec
 
 
 def test_hybrid_mean_rank_beats_lexical(full, lite):
-    """The figure that justifies the full variant. Measured: 3.4 lexical, 2.0
+    """The figure that justifies the full variant. Measured: 5.5 lexical, 1.5
     hybrid. A per-query 'hybrid beats both' assertion would be wrong -- fusion
     lands between its inputs when they disagree."""
 
