@@ -96,12 +96,8 @@ def test_the_payload_does_not_front_load_flagged_vulnerability_names():
     Importing the list avoids a second vocabulary that can drift.
     """
     payload = _payload().lower()
-    present = [
-        name for name in _flagged_vulnerability_names() if name.lower() in payload
-    ]
-    assert not present, (
-        f"SessionStart payload front-loads flagged vulnerability names: {present}"
-    )
+    present = [name for name in _flagged_vulnerability_names() if name.lower() in payload]
+    assert not present, f"SessionStart payload front-loads flagged vulnerability names: {present}"
 
 
 def test_the_payload_asks_for_both_notices():
