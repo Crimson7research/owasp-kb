@@ -165,6 +165,28 @@ egress path for the codebase being reviewed, works inside networks that are
 deliberately locked down, and needs no allowlisting exception to pass a
 client's own security review before it can be used on their systems.
 
+## HTTP transports (sidecar deployments)
+
+The stdio transport above is the default and what the plugin uses. For a
+container deployment where the consumer cannot spawn the server as a subprocess
+— a sidecar on an internal Docker network — the same server also serves HTTP:
+
+```sh
+owasp-kb-server --transport streamable-http   # POST /mcp
+owasp-kb-server --transport sse               # GET /sse + POST /messages/
+```
+
+`--host` and `--port` (defaults `0.0.0.0:8000`) control the bind address. Each
+of the three settings also reads an environment variable — `OWASP_KB_TRANSPORT`,
+`OWASP_KB_HOST`, `OWASP_KB_PORT` — with a CLI flag overriding the environment,
+the same precedence `OWASP_KB_INDEX` already follows. Containers are configured
+by environment, which is why the env vars exist.
+
+An HTTP server is a listening surface, so the boundary moves: bind to an
+internal network or localhost, never a public one, and front it with whatever
+auth the deployment already has. There is no authentication built into either
+HTTP transport. `--network none` remains correct for every stdio use.
+
 ## Reproducible citations
 
 Standard `:lite` and `:full` tags move as sources are refreshed. Every release
