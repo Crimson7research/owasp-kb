@@ -1,13 +1,78 @@
 # owasp-kb
 
-Authoritative OWASP security guidance — ASVS 5.0.0, MASVS 2.1.0 and the Cheat
-Sheet Series — plus MITRE's CWE catalogue, served to AI coding agents as an MCP
-server, with citations, over stdio, offline.
+[![ASVS 5.0.0](https://img.shields.io/badge/ASVS-5.0.0-4c8dff)](https://github.com/OWASP/ASVS)
+[![MASVS 2.1.0](https://img.shields.io/badge/MASVS-2.1.0-2ea043)](https://github.com/OWASP/masvs)
+[![AISVS 1.01](https://img.shields.io/badge/AISVS-1.01-a371f7)](https://github.com/OWASP/AISVS)
+[![Cheat Sheet Series](https://img.shields.io/badge/Cheat%20Sheets-137-f0883e)](https://github.com/OWASP/CheatSheetSeries)
+[![CWE 4.20](https://img.shields.io/badge/CWE-4.20-f85149)](https://cwe.mitre.org/)
+[![MCP server](https://img.shields.io/badge/MCP-stdio%20%7C%20HTTP-58a6ff)](#http-transports-sidecar-deployments)
+[![Offline](https://img.shields.io/badge/network-none-6e7681)](#runs-offline)
+[![Code: MIT](https://img.shields.io/badge/code-MIT-6e7681)](LICENSE)
+
+**Your coding agent cites the exact OWASP requirement before it writes the
+code, instead of guessing from memory.**
+
+Authoritative OWASP security guidance — ASVS 5.0.0 for web applications, MASVS
+2.1.0 for mobile apps, AISVS 1.01 for AI systems, and the Cheat Sheet Series —
+plus MITRE's CWE catalogue, served to AI coding agents as an MCP server, with
+citations, over stdio, offline.
+
+![Five illustrative agent sessions: an SSRF fix citing ASVS V1.3.6 and CWE-918, an OAuth design review citing ASVS V10.1.2, an MCP server review citing AISVS C10.2.2 and C10.2.7, an Android token-storage change citing MASVS-STORAGE-1, and the skill declining a CSS fix](docs/assets/owasp-kb-in-action.png)
+
+<sub>Illustrative sessions, modelled on how agents announce the
+`owasp-secure-coding` skill in real work. The projects are invented; every
+requirement, cheat sheet and CWE id shown is real and was retrieved from the
+index. Source: [docs/assets/showcase/index.html](docs/assets/showcase/index.html).</sub>
 
 This project is not affiliated with, endorsed by, or sponsored by the OWASP
 Foundation. See [NOTICE](licenses/NOTICE). **CWE is not an OWASP project** —
 it is MITRE's, and it is here because ASVS maps its requirements to CWE ids; see
 [docs/licensing.md](docs/licensing.md).
+
+## What it serves
+
+One SQLite index, five pinned upstream sources, cross-linked so an agent can
+walk from "what is required" to "how do I do it":
+
+| Pack | Covers | Pinned to | Content |
+|---|---|---|---|
+| `asvs` | Web applications and their APIs | ASVS `5.0.0` | 345 requirements, levels L1–L3 |
+| `masvs` | Android and iOS clients | MASVS `2.1.0` | 24 controls |
+| `aisvs` | LLM applications, agents, RAG pipelines, MCP servers, the model lifecycle | AISVS `1.01` | 213 requirements, levels L1–L3 |
+| `cheatsheets` | How to implement the controls | Cheat Sheet Series commit `668ba7db` | 137 cheat sheets |
+| `cwe` | The weakness behind a finding | CWE `4.20` | 1,391 weaknesses and categories |
+
+The packs link to each other: 187 `guidance` edges from requirements to cheat
+sheets, 204 ASVS requirements mapped to CWE, 265 links from 190 ASVS 5.0.0
+requirements to the 4.0.3 ids they replace, and 48 NIST SP 800-63B links. Counts are from a
+build of the pinned sources on 2026-11-05.
+
+## Ask it
+
+You do not call the tools yourself. The skills trigger on what you are working
+on, and the agent retrieves before it answers. Prompts like these get a
+citation back instead of a recollection:
+
+- "Add an endpoint that downloads a file from a URL the user gives us." → ASVS
+  V1.3.6, the SSRF Prevention cheat sheet, CWE-918.
+- "Review the auth on our MCP server." → AISVS C10.2, the MCP Security cheat sheet.
+- "Where should the Android app keep the refresh token?" → MASVS-STORAGE-1.
+- "What do we need for ASVS level 2 on sessions?" → every L1 and L2 requirement
+  in the chapter, enumerated, not the best-matching few.
+- "Is CWE-1004 the right id for this cookie finding?" → the catalogue entry, or
+  an error if the id does not exist.
+
+When the work has no security dimension, the skill says so in one line, with
+its reason, so you can overrule it.
+
+## Works with
+
+- **Claude Code** — install the plugin: MCP server, four skills, six agents
+  and five hooks in one step.
+- **Codex** and **OpenCode** — `install/codex.sh` and `install/opencode.sh`
+  print the config snippet.
+- **Any MCP client** — stdio by default, or streamable HTTP and SSE for a
+  sidecar deployment.
 
 ## Why this exists
 
@@ -19,7 +84,8 @@ matches ASVS 5.0.0 V6.2.1" from "this sounds plausible."
 
 `owasp-kb` replaces that recall with retrieval. It ships the OWASP Application
 Security Verification Standard, the OWASP Mobile Application Security
-Verification Standard, the OWASP Cheat Sheet Series and MITRE's CWE catalogue,
+Verification Standard, the OWASP AI Security Verification Standard, the OWASP
+Cheat Sheet Series and MITRE's CWE catalogue,
 each pinned to an exact release or commit, chunked and cross-linked into a
 single SQLite index, and exposes it over MCP so an agent calls a tool and gets
 back a citable requirement id, cheat sheet anchor or CWE id — not a paraphrase
@@ -39,19 +105,26 @@ leakage, IPC and deep links, resilience) with no id to enumerate. MASVS 2.1.0
 gives those dimensions their own citable ids, queried through the same
 `owasp_*` tools with `pack="masvs"`.
 
+The AISVS pack is here because neither ASVS nor MASVS covers an AI system.
+Prompt injection screening, agent action approval, vector-store tenant
+isolation, MCP token validation and training-data provenance had no citable
+requirement, so a finding about an MCP server cited ASVS by analogy or cited
+nothing. AISVS 1.01 gives them ids like `C10.2.2`, and its levels align with
+ASVS's one to one.
+
 ## Tools
 
 Ten tools cover search, navigation, checklist enumeration, cross-references
-between the three knowledge bases, CWE lookup by id, and assembling assessment
+between the knowledge bases, CWE lookup by id, and assembling assessment
 verdicts into a checked roster:
 
 | Tool | Purpose |
 |---|---|
 | `kb_info` | Report which packs are loaded, their pinned versions, and the active retrieval mode (`lexical` or `hybrid`). Call first when unsure what content is available or when a citation needs an exact version string. |
-| `owasp_search` | Hybrid (or lexical-only) search across ASVS requirements and Cheat Sheets for a natural-language security topic. Returns citable hits, never invented ones. |
+| `owasp_search` | Hybrid (or lexical-only) search across ASVS, MASVS and AISVS requirements and Cheat Sheets for a natural-language security topic. Returns citable hits, never invented ones. |
 | `owasp_outline` | Heading structure and section anchors for one document, so a large cheat sheet can be navigated instead of fetched whole. |
 | `owasp_get` | Full text of a document, or one section by anchor. |
-| `owasp_checklist` | Enumerate requirements from a checklist pack (`asvs` or `masvs`) filtered by chapter, section, id, or level — the tool for assessments and gap reports that need every applicable requirement, not the best-matching few. |
+| `owasp_checklist` | Enumerate requirements from a checklist pack (`asvs`, `masvs` or `aisvs`) filtered by chapter, section, id, or level — the tool for assessments and gap reports that need every applicable requirement, not the best-matching few. |
 | `owasp_related` | Cross-reference a requirement, section, chapter, or cheat sheet doc_key across `guidance`, `cwe`, `supersedes`, and `nist` relationships. |
 | `cwe_get` | Look up one CWE weakness or category by id — name, abstraction, status, description. Call it before citing an id OWASP's mapping does not carry; an id that is not in the catalogue is an error, not an empty result. |
 | `cwe_search` | Search the CWE catalogue by describing a defect in your own words, for when you know what the weakness is but not which CWE names it. OWASP's mapping is silent for 141 of 345 requirements. |
@@ -125,7 +198,7 @@ docker login ghcr.io          # a GitHub PAT with the read:packages scope
 /plugin install owasp-kb
 ```
 
-That registers the MCP server and installs four skills, five agents and five hooks.
+That registers the MCP server and installs four skills, six agents and five hooks.
 The server runs `ghcr.io/crimson7research/owasp-kb` pinned by digest, so the first
 start pulls the image (~700 MB for `full`) and later starts use the local copy.
 
@@ -191,8 +264,9 @@ HTTP transport. `--network none` remains correct for every stdio use.
 
 Standard `:lite` and `:full` tags move as sources are refreshed. Every release
 also gets an immutable tag encoding the exact pinned content, for example
-`owasp-kb:full-asvs5.0.0-cs20260724-cwe4.20` — ASVS release `5.0.0`, Cheat Sheet
-Series pinned at the commit dated `2026-07-24`, CWE release `4.20`. A citation
+`owasp-kb:full-asvs5.0.0-cs20261004-cwe4.20-masvs2.1.0-aisvs1.01` — ASVS release
+`5.0.0`, Cheat Sheet Series pinned at the commit dated `2026-10-04`, CWE release
+`4.20`, MASVS `2.1.0` and AISVS `1.01`. A citation
 produced against that tag (`ASVS 5.0.0 V6.2.1`, or `CWE-789`) resolves to the same
 text for as long as the image exists, independent of whatever `:full` points to
 later.
@@ -221,8 +295,8 @@ trade-off, and why the project is Python — are recorded as ADRs in
 
 ## Licensing
 
-Code is MIT (see [LICENSE](LICENSE)). The ASVS, MASVS and Cheat Sheet Series
-content, and the SQLite index built from it, are CC-BY-SA-4.0 (see
+Code is MIT (see [LICENSE](LICENSE)). The ASVS, MASVS, AISVS and Cheat Sheet
+Series content, and the SQLite index built from it, are CC-BY-SA-4.0 (see
 [licenses/](licenses/), one text per pack). The CWE catalogue is MITRE's, under
 the CWE Terms of Use, which must accompany redistribution (see
 [LICENSE-CWE](licenses/LICENSE-CWE)) — `CWE™` is a MITRE trademark and naming
