@@ -181,7 +181,7 @@ Observed on `codex-cli 0.166.0`:
   commit is the version (ADR [0014](decisions/0014-image-digest-pin.md)).
 - **The two assessment skills do not complete.** `owasp-asvs-verify` and
   `owasp-asvs-gap-report` dispatch six agents. Codex copies `agents/*.md` into
-  its plugin cache but does not register them. Issue #94 tracks the port.
+  its plugin cache but does not register them. Issue #96 tracks the port.
 
 ## OpenCode
 

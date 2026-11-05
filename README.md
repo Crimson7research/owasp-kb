@@ -89,7 +89,7 @@ The page these are cut from is
   and five hooks in one step.
 - **Codex** — install the same plugin with `codex plugin marketplace add` and
   `codex plugin add`: MCP server, skills and hooks. The two assessment skills
-  need the agents, which Codex does not load yet (#94).
+  need the agents, which Codex does not load yet (#96).
 - **OpenCode** — `install/opencode.sh` prints the config snippet. The two
   assessment skills need agents OpenCode does not load (#95).
 - **Any MCP client** — stdio by default, or streamable HTTP and SSE for a
