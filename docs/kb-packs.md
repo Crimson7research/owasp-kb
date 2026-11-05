@@ -57,7 +57,7 @@ exactly one `chunks` row via `chunk_id`, and a `catalogue` pack to
 
 | Type | Structure | Tools that apply | Current pack |
 |---|---|---|---|
-| `checklist` | Enumerable items (requirements); levels are optional, not part of the type | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_checklist`, `owasp_related` | `asvs`, `masvs` |
+| `checklist` | Enumerable items (requirements); levels are optional, not part of the type | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_checklist`, `owasp_related` | `asvs`, `masvs`, `aisvs` |
 | `corpus` | Document collection, headings only | `owasp_search`, `owasp_outline`, `owasp_get`, `owasp_related` | `cheatsheets` |
 | `catalogue` | Keyed entries and a relationship graph | `owasp_search`, `owasp_outline`, `owasp_get`, `cwe_get`, `cwe_search`, `cwe_related` | `cwe` |
 
@@ -212,6 +212,72 @@ Series, is tracked separately as issue #61 — MASTG's v1 tests carry a
 atomic tests carry no MASVS id at all, only a `weakness: MASWE-nnnn`, so
 reaching those requires the MASWE mapping as the bridge.
 
+## The AISVS pack
+
+`aisvs` (`sources.lock.yml`, tag `v1.01`) ingests 213 requirements in 12
+chapters from the AI Security Verification Standard: 57 at L1, 110 at L2 and
+46 at L3. It covers what ASVS and MASVS do not: LLM applications, agents, RAG
+pipelines, MCP servers and the model lifecycle. Its shape is ASVS's — chapter,
+section, numbered requirement, cumulative levels 1–3 — so it needs no new tool.
+Issue #87 left four decisions open; this section records them.
+
+**The pin is `1.01/en/`, not `1.0/en/`.** Tag `v1.01` carries both folders.
+`1.0/LOCKED.md` names 1.01 "the latest stable release", and `1.01/LOCKED.md`
+freezes `1.01/en/` as the citable `v1.01-Cx.y.z` text. 1.01 adds 22
+requirements to 1.0's 191 and rewords others. The release's only asset is a
+PDF, so the build fetches the 12 chapter Markdown files from the tag
+(`extra_paths`) and `ingest/packs/aisvs.py` parses their requirement tables.
+
+**Ids keep the upstream `C` prefix.** A requirement is `C10.2.2`, its section
+`C10.2`, its chapter `C10`, and a search hit cites `aisvs 1.01 C10.2.2`. The
+prefix is AISVS's own citation form, and it is also load-bearing: `links` ids
+carry no pack, so a bare `10.2.2` would sit beside ASVS's `V10.2.2`.
+
+**A removed requirement is not ingested.** 1.01 keeps `10.2.6` as a numbered
+row reading `Requirement removed.` with no level. The ingest skips that exact
+tombstone and raises on any other row without a level, a row whose number does
+not match its section, or a chapter with no requirement rows.
+
+**Prose is retrievable, references are edges.** Each chapter's Control
+Objective cites as `C2#control-objective`, and section intro prose sits under
+the section's anchor (`C2#c21`), both as chunks with no requirement row, like
+MASVS's group descriptions. The References list is not indexed; its cheat
+sheet links become `guidance` edges.
+
+**Guidance edges come from three sources, and one is ours.** No
+`IndexASVS.md` exists for AISVS, so `ingest_aisvs_guidance_links`
+(`ingest/links.py`) writes chapter-level `aisvs_section` edges from, in order
+of authority:
+
+1. `AISVS chapter references` — the cheat sheet links in AISVS's own chapters
+   (C2 → LLM Prompt Injection Prevention, C10 → MCP Security).
+2. `cheat sheet links to AISVS` — cheat sheets that link an AISVS chapter (RAG
+   Security → C8).
+3. `owasp-kb curated AISVS map` — the reviewed map in
+   `ingest/aisvs_guidance.py`.
+
+The third is an exception to the principle stated under the MASVS pack, that
+this project does not author mappings upstream did not provide. Without it,
+`AI_Agent_Security`, `Secure_AI_Model_Ops` and `Secure_Coding_with_AI` link to
+no requirement, and the discovery path stops at the cheat sheet. The map is
+kept honest three ways: each entry names the cheat sheet sections that justify
+it, every curated edge carries its own `source` so `owasp_related` shows it is
+not OWASP's, and a curated chapter the ingested release lacks fails the build.
+Upstream wins a duplicate, because its edge is inserted first. The AISVS
+research wiki (`1.01/research/`) holds finer, per-section links, but it is
+AI-generated and `LOCKED.md` lets it change by automation, so it is not a
+source.
+
+**Appendices B and C stay out.** Appendix C's `AC.x.y` requirements govern
+using AI to write code, not building AI systems, and would distort the level
+counts. Appendix B is a reverse index from controls to requirement ids; whether
+it becomes searchable text or edges is a follow-up, not part of this pack.
+
+**A level filter with no pack now means ASVS and AISVS.** `0x03-Using-AISVS.md`
+aligns the levels one to one and has AISVS L*N* assume ASVS L*N*, so
+`owasp_search(level="2")` returns both standards. Nothing in the code changed
+for this; only the tool descriptions did.
+
 ## Deliberate omissions
 
 Two notes before the list, because the list used to carry an unstated assumption.
@@ -246,7 +312,8 @@ The following OWASP projects are **not** packs, on purpose — not oversights:
   requirement or reference corpus; a different shape of content than either
   existing pack, better served by its own design than forced into `checklist`
   or `corpus`.
-- **Top Ten** — a summary of categories ASVS and the Cheat Sheets already
+- **Top Ten**, including the Top 10 for LLM Applications and the MCP Top 10 —
+  summaries of categories ASVS, AISVS and the Cheat Sheets already
   cover in far more actionable detail; adding it risks an agent citing
   "A03:2021" instead of the specific requirement or cheat sheet section that
   actually explains what to do.

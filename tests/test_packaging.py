@@ -906,6 +906,7 @@ PACK_LICENCE_FILES = {
     "cheatsheets": Path("licenses/LICENSE-OWASP-CHEATSHEET"),
     "cwe": Path("licenses/LICENSE-CWE"),
     "masvs": Path("licenses/LICENSE-OWASP-MASVS"),
+    "aisvs": Path("licenses/LICENSE-OWASP-AISVS"),
 }
 
 # What a licence's own text says about itself, so a pack's file can be checked

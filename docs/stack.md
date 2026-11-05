@@ -25,8 +25,8 @@ one against a knowledge base that is *not* shaped like this one.
 Ten properties. Every one of them is a fact about the content, not a preference
 of this project's.
 
-**Three of the four packs are OWASP's; one is not.** ASVS, MASVS and the Cheat
-Sheet Series are OWASP Foundation projects. The CWE catalogue is MITRE's — CWE
+**Four of the five packs are OWASP's; one is not.** ASVS, MASVS, AISVS and the
+Cheat Sheet Series are OWASP Foundation projects. The CWE catalogue is MITRE's — CWE
 is **not an OWASP project**, and it sits in this server because ASVS maps its
 requirements to CWE ids, not because it shares an upstream. That mapping is why
 an agent ends up holding a CWE id it cannot check: it reaches only 204 of 345
@@ -53,7 +53,7 @@ and change detection entirely. The build must call `finalize_for_readonly()`
 the file is packaged, or serving fails loudly.
 
 **2. Pinned to an exact upstream release.**
-`sources.lock.yml` pins ASVS and MASVS each to a release tag and rejects
+`sources.lock.yml` pins ASVS, MASVS and AISVS each to a release tag and rejects
 `latest` — the rolling bleeding-edge build — pins the Cheat Sheet Series to a
 40-character commit SHA, and pins CWE to a numbered release (`4.20`). Every
 document carries a `source_url` that pins the commit, so a citation resolves

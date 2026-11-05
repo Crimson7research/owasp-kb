@@ -149,6 +149,7 @@ LICENSES=(
   /opt/owasp-kb/licenses/LICENSE-OWASP-ASVS
   /opt/owasp-kb/licenses/LICENSE-OWASP-CHEATSHEET
   /opt/owasp-kb/licenses/LICENSE-OWASP-MASVS
+  /opt/owasp-kb/licenses/LICENSE-OWASP-AISVS
   /opt/owasp-kb/licenses/LICENSE-CWE
   /opt/owasp-kb/licenses/NOTICE
 )

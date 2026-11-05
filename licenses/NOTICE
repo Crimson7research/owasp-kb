@@ -13,11 +13,11 @@ its requirements to CWE ids, and the project name does not describe it.
 
 ## Third-party content
 
-This project pins content from four upstream projects in `sources.lock.yml`;
+This project pins content from five upstream projects in `sources.lock.yml`;
 its built container images bake in whatever of that content has been
-ingested. They do NOT share an upstream or a license. Three are OWASP
+ingested. They do NOT share an upstream or a license. Four are OWASP
 Foundation projects licensed CC-BY-SA-4.0, verified via the GitHub licence
-API on each upstream repository; the fourth is MITRE's, under MITRE's own
+API on each upstream repository; the fifth is MITRE's, under MITRE's own
 terms of use:
 
 - OWASP Application Security Verification Standard (ASVS)
@@ -32,6 +32,10 @@ terms of use:
   https://github.com/OWASP/masvs
   License: CC-BY-SA-4.0 (see LICENSE-OWASP-MASVS for the full text)
 
+- OWASP Artificial Intelligence Security Verification Standard (AISVS)
+  https://github.com/OWASP/AISVS
+  License: CC-BY-SA-4.0 (see LICENSE-OWASP-AISVS for the full text)
+
 - Common Weakness Enumeration (CWE) — The MITRE Corporation (not OWASP)
   https://cwe.mitre.org/
   License: LicenseRef-CWE-TOU (see LICENSE-CWE for the full terms)
@@ -43,14 +47,14 @@ framework.
 
 The index is a COMPOSITE of differently-licensed content, and no single
 license covers all of it. Wherever content derived from ASVS, the Cheat
-Sheet Series or MASVS appears -- in this repository, in an index built from
-it, or in an image shipping that index -- it remains CC-BY-SA-4.0 in its own
-right as an adaptation, and each of the three carries its own copy of that
-license: LICENSE-OWASP-ASVS, LICENSE-OWASP-CHEATSHEET and
-LICENSE-OWASP-MASVS. Which of them a given build actually contains is
+Sheet Series, MASVS or AISVS appears -- in this repository, in an index built
+from it, or in an image shipping that index -- it remains CC-BY-SA-4.0 in its
+own right as an adaptation, and each of the four carries its own copy of that
+license: LICENSE-OWASP-ASVS, LICENSE-OWASP-CHEATSHEET, LICENSE-OWASP-MASVS
+and LICENSE-OWASP-AISVS. Which of them a given build actually contains is
 recorded per pack in sources.lock.yml and reported by the kb_info tool for a
 running server; this notice does not track that, so that it stays true of
-every build. The three files hold the same text because the three projects
+every build. The four files hold the same text because the four projects
 chose the same license, not because they are one work: they are pinned
 separately and any one of them could be relicensed without the others. The
 portion derived from the CWE catalogue is governed by MITRE's CWE Terms of

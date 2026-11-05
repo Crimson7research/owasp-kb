@@ -231,7 +231,8 @@ class Kb:
         far more dangerous claim than "nothing matched".
 
         A ``level`` filter with no ``pack`` excludes level-less packs by
-        construction -- asking for L2 is asking ASVS. Naming a level-less pack
+        construction -- asking for L2 is asking the levelled packs, ASVS and
+        AISVS, whose levels align one to one. Naming a level-less pack
         *and* a level is refused instead, because that call can only be a mistake.
         """
         if level is not None and pack is not None:
@@ -363,11 +364,12 @@ class Kb:
     ) -> list[RequirementRow]:
         """Enumerate requirements from a checklist pack in deterministic order.
 
-        ``level`` is CUMULATIVE, matching how ASVS defines its levels: level='2'
-        returns the requirements an L2 assessment must verify, which is every L1
-        and L2 requirement (253 in ASVS 5.0.0), not only those tagged L2 (183).
-        Returning the tagged set would silently drop password minimums and every
-        other L1 control from a report labelled L2.
+        ``level`` is CUMULATIVE, matching how ASVS defines its levels (AISVS
+        aligns with them one to one): level='2' returns the requirements an L2
+        assessment must verify, which is every L1 and L2 requirement (253 in
+        ASVS 5.0.0), not only those tagged L2 (183). Returning the tagged set
+        would silently drop password minimums and every other L1 control from a
+        report labelled L2.
 
         ``level_exact`` returns only the requirements tagged at that level, for
         the rarer case of inspecting one tier.

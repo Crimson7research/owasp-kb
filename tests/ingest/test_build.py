@@ -4,9 +4,39 @@ from pathlib import Path
 import pytest
 
 from owasp_kb.core.db import connect, is_wal_index
+from owasp_kb.ingest.aisvs_guidance import CURATED_GUIDANCE
 from owasp_kb.ingest.build import build_index
 
 FIXTURES = Path("tests/fixtures")
+
+# The two upstream links the AISVS fixture chapters carry, plus the curated map.
+AISVS_GUIDANCE_TARGETS = {
+    "LLM_Prompt_Injection_Prevention_Cheat_Sheet",
+    "MCP_Security_Cheat_Sheet",
+    *CURATED_GUIDANCE,
+}
+
+# The fixture chapters are C2 and C10. The curated map names more, and a curated
+# chapter the release lacks stops the build, so each one gets a stub chapter
+# holding one requirement.
+FIXTURE_AISVS_CHAPTERS = {2, 10}
+STUB_AISVS_CHAPTERS = sorted(
+    {int(c[1:]) for chapters in CURATED_GUIDANCE.values() for c in chapters}
+    - FIXTURE_AISVS_CHAPTERS
+)
+AISVS_REQUIREMENTS = 5 + len(STUB_AISVS_CHAPTERS)
+
+# Three ASVS-linked fixture sheets plus one stub per AISVS guidance target.
+CHEATSHEET_DOCUMENTS = 3 + len(AISVS_GUIDANCE_TARGETS)
+
+
+def _stub_chapter(number: int) -> str:
+    return (
+        f"# C{number} Stub Chapter\n\n## C{number}.1 Stub Section\n\n"
+        "| # | Description | Level |\n| :--: | --- | :---: |\n"
+        f"| **{number}.1.1** | **Verify that** stub {number} holds. | 1 |\n"
+    )
+
 
 # cwe_mapping_sample.json cites CWE-521 and CWE-307, and cwec_sample.xml contains
 # neither. That is fine for the per-module fixtures, which never run the integrity
@@ -46,6 +76,13 @@ def sources(tmp_path):
         (FIXTURES / "masvs_sample.yaml").read_text(encoding="utf-8")
     )
 
+    aisvs = tmp_path / "aisvs"
+    aisvs.mkdir()
+    for chapter in sorted((FIXTURES / "aisvs").glob("*.md")):
+        (aisvs / chapter.name).write_text(chapter.read_text(encoding="utf-8"))
+    for number in STUB_AISVS_CHAPTERS:
+        (aisvs / f"0x10-C{number:02d}-Stub.md").write_text(_stub_chapter(number))
+
     cs = tmp_path / "cheatsheets"
     (cs / "cheatsheets").mkdir(parents=True)
     for name in (
@@ -56,6 +93,10 @@ def sources(tmp_path):
         (cs / "cheatsheets" / name).write_text(
             (FIXTURES / "cheatsheets" / name).read_text(encoding="utf-8")
         )
+    # Every cheat sheet an AISVS guidance edge can point at, so the integrity
+    # gate's dangling-link check passes against the real curated map.
+    for name in sorted(AISVS_GUIDANCE_TARGETS):
+        (cs / "cheatsheets" / f"{name}.md").write_text(f"# {name}\n\n## Introduction\n\nStub.\n")
     (cs / "IndexASVS.md").write_text((FIXTURES / "IndexASVS_sample.md").read_text(encoding="utf-8"))
 
     # Named as fetch.py unpacks it: cwec_v<version>.xml, matched by glob so a
@@ -68,7 +109,7 @@ def sources(tmp_path):
 
 def _build(sources, out, **kw):
     kw.setdefault("lock_path", "sources.lock.yml")
-    kw.setdefault("expected_requirements", {"asvs": 3, "masvs": 4})
+    kw.setdefault("expected_requirements", {"aisvs": AISVS_REQUIREMENTS, "asvs": 3, "masvs": 4})
     kw.setdefault("with_vectors", False)
     kw.setdefault("check_edge_floors", False)
     return build_index(sources, out, **kw)
@@ -82,7 +123,8 @@ def test_build_creates_a_queryable_index(sources, tmp_path):
     # tests/fixtures/masvs_sample.yaml holds 2 groups of 2 controls each -- 4
     # controls total, counted from the fixture rather than hardcoded from memory.
     assert report.masvs_requirements == 4
-    assert report.cheatsheet_documents == 3
+    assert report.aisvs_requirements == AISVS_REQUIREMENTS
+    assert report.cheatsheet_documents == CHEATSHEET_DOCUMENTS
     assert report.integrity_failures == []
 
 
@@ -154,14 +196,19 @@ def test_the_catalogue_makes_the_mapping_check_enforceable(sources, tmp_path):
 
     conn = connect(out)
     failures = run_checks(
-        conn, expected_requirements={"asvs": 3, "masvs": 4}, check_edge_floors=False
+        conn,
+        expected_requirements={"aisvs": AISVS_REQUIREMENTS, "asvs": 3, "masvs": 4},
+        check_edge_floors=False,
     )
     assert any("CWE-99999" in f for f in failures), failures
 
 
 def test_build_reports_edge_counts(sources, tmp_path):
     report = _build(sources, tmp_path / "kb.sqlite")
-    assert report.guidance_links == 3
+    # IndexASVS_sample.md's three, the two AISVS chapter references, and every
+    # curated edge -- none of which duplicates an upstream one.
+    curated = sum(len(chapters) for chapters in CURATED_GUIDANCE.values())
+    assert report.guidance_links == 3 + 2 + curated
     assert report.cwe_links == 3
     assert report.cwe_dropped == 1
     assert report.supersedes_links >= 3
@@ -182,15 +229,20 @@ def test_build_finalizes_the_index_for_readonly_serving(sources, tmp_path):
     _build(sources, out)
     assert not is_wal_index(out)
     served = connect(out, read_only=True)
-    # 3 ASVS + 4 MASVS: this counts every checklist pack's rows, not one pack's
-    # report field, so it grew the moment MASVS was wired into the build.
-    assert served.execute("SELECT COUNT(*) FROM requirements").fetchone()[0] == 7
+    # 3 ASVS + 4 MASVS + the AISVS fixture: this counts every checklist pack's
+    # rows, not one pack's report field, so it grows with each pack wired in.
+    total = served.execute("SELECT COUNT(*) FROM requirements").fetchone()[0]
+    assert total == 3 + 4 + AISVS_REQUIREMENTS
 
 
 def test_build_raises_when_integrity_fails_and_removes_the_file(sources, tmp_path):
     out = tmp_path / "kb.sqlite"
     with pytest.raises(RuntimeError, match="integrity"):
-        _build(sources, out, expected_requirements={"asvs": 345, "masvs": 4})
+        _build(
+            sources,
+            out,
+            expected_requirements={"aisvs": AISVS_REQUIREMENTS, "asvs": 345, "masvs": 4},
+        )
     assert not out.exists(), "a failing build must not leave a partial index behind"
 
 
@@ -234,6 +286,8 @@ def test_main_returns_nonzero_when_a_pack_is_rejected(sources, tmp_path):
             "asvs=3",
             "--expected-requirements",
             "masvs=4",
+            "--expected-requirements",
+            f"aisvs={AISVS_REQUIREMENTS}",
             "--no-edge-floors",
         ]
     )
@@ -246,7 +300,7 @@ def test_build_is_rerunnable_over_an_existing_file(sources, tmp_path):
     _build(sources, out)
     report = _build(sources, out)
     assert report.requirements == 3
-    assert report.cheatsheet_documents == 3
+    assert report.cheatsheet_documents == CHEATSHEET_DOCUMENTS
 
 
 def test_build_missing_source_raises_actionably(tmp_path):
@@ -274,6 +328,8 @@ def test_main_returns_zero_on_success(sources, tmp_path):
             "asvs=3",
             "--expected-requirements",
             "masvs=4",
+            "--expected-requirements",
+            f"aisvs={AISVS_REQUIREMENTS}",
             "--no-edge-floors",
         ]
     )
@@ -295,6 +351,8 @@ def test_main_returns_nonzero_when_integrity_fails(sources, tmp_path):
             "asvs=999",
             "--expected-requirements",
             "masvs=4",
+            "--expected-requirements",
+            f"aisvs={AISVS_REQUIREMENTS}",
             "--no-edge-floors",
         ]
     )

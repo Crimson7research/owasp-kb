@@ -10,7 +10,20 @@ from pathlib import Path
 
 import yaml
 
+from owasp_kb.ingest.aisvs_guidance import CURATED_GUIDANCE, CURATED_SOURCE
+from owasp_kb.ingest.packs.aisvs import CHAPTER_GLOB as AISVS_CHAPTER_GLOB
+
 log = logging.getLogger(__name__)
+
+# AISVS links cheat sheets by their published .html URL, never the repo .md path
+# IndexASVS.md uses, so _CS_LINK below matches none of them.
+_AISVS_CS_LINK = re.compile(
+    r"cheatsheetseries\.owasp\.org/cheatsheets/([A-Za-z0-9_]+_Cheat_Sheet)\.html"
+)
+_AISVS_CHAPTER = re.compile(r"^#\s+C(\d+)\s", re.MULTILINE)
+_CS_TO_AISVS_CHAPTER = re.compile(r"github\.com/OWASP/AISVS/blob/[^)\s]*/0x10-C(\d+)-")
+AISVS_REFERENCES = "AISVS chapter references"
+CS_TO_AISVS = "cheat sheet links to AISVS"
 
 _SECTION_HEADING = re.compile(r"^###\s+(V\d+\.\d+)\b")
 _CHAPTER_HEADING = re.compile(r"^##\s+(V\d+):")
@@ -61,6 +74,83 @@ def ingest_guidance_links(conn: sqlite3.Connection, index_asvs_path: str | Path)
         for doc_key in _CS_LINK.findall(line):
             rows.append(("asvs_section", current, "doc", doc_key, "guidance", "IndexASVS.md"))
     return _insert(conn, rows, "IndexASVS.md")
+
+
+def _aisvs_reference_rows(chapters_dir: Path) -> list[tuple]:
+    """Chapter-to-cheat-sheet edges from each AISVS chapter's own links."""
+    rows: list[tuple] = []
+    for path in sorted(chapters_dir.glob(AISVS_CHAPTER_GLOB)):
+        text = path.read_text(encoding="utf-8")
+        heading = _AISVS_CHAPTER.search(text)
+        if heading is None:
+            continue
+        chapter = f"C{int(heading.group(1))}"
+        for doc_key in dict.fromkeys(_AISVS_CS_LINK.findall(text)):
+            rows.append(("aisvs_section", chapter, "doc", doc_key, "guidance", AISVS_REFERENCES))
+    return rows
+
+
+def _cheatsheet_aisvs_rows(cheatsheets_dir: Path) -> list[tuple]:
+    """Chapter-to-cheat-sheet edges from cheat sheets that link an AISVS chapter."""
+    rows: list[tuple] = []
+    for path in sorted(cheatsheets_dir.glob("*_Cheat_Sheet.md")):
+        text = path.read_text(encoding="utf-8")
+        for number in dict.fromkeys(_CS_TO_AISVS_CHAPTER.findall(text)):
+            rows.append(
+                ("aisvs_section", f"C{int(number)}", "doc", path.stem, "guidance", CS_TO_AISVS)
+            )
+    return rows
+
+
+def _curated_aisvs_rows() -> list[tuple]:
+    return [
+        ("aisvs_section", chapter, "doc", doc_key, "guidance", CURATED_SOURCE)
+        for doc_key, chapters in CURATED_GUIDANCE.items()
+        for chapter in chapters
+    ]
+
+
+def ingest_aisvs_guidance_links(
+    conn: sqlite3.Connection, chapters_dir: str | Path, cheatsheets_dir: str | Path
+) -> int:
+    """Map AISVS chapters to cheat sheets. Run after both packs are ingested.
+
+    No IndexASVS.md exists for AISVS, so the edges come from three places, in
+    order of authority: the links in AISVS's own chapters, the links cheat
+    sheets make to an AISVS chapter, and the reviewed map in aisvs_guidance.py.
+    The links primary key keeps the first source for an edge stated twice.
+
+    A curated chapter AISVS does not have is a ValueError: the map is ours, so
+    a renumbering upstream must stop the build rather than strand edges. An
+    upstream edge to an unknown chapter is dropped and logged instead.
+    """
+    known = {
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT r.chapter_id FROM requirements r"
+            " JOIN packs p ON p.id = r.pack_id WHERE p.name = 'aisvs'"
+        )
+    }
+    curated = _curated_aisvs_rows()
+    unknown = sorted({row[1] for row in curated} - known)
+    if unknown:
+        raise ValueError(
+            f"aisvs_guidance.CURATED_GUIDANCE names chapter(s) {', '.join(unknown)}, which "
+            "the ingested AISVS release does not have; re-review the map against it"
+        )
+    upstream = _aisvs_reference_rows(Path(chapters_dir)) + _cheatsheet_aisvs_rows(
+        Path(cheatsheets_dir)
+    )
+    kept = [row for row in upstream if row[1] in known]
+    if len(kept) < len(upstream):
+        log.warning(
+            "dropped %d AISVS guidance link(s) to chapters the release does not have",
+            len(upstream) - len(kept),
+        )
+    added = 0
+    for source in (AISVS_REFERENCES, CS_TO_AISVS):
+        added += _insert(conn, [row for row in kept if row[5] == source], source)
+    return added + _insert(conn, curated, CURATED_SOURCE)
 
 
 def load_be_to_release_map(mapping_path: str | Path) -> dict[str, str]:
