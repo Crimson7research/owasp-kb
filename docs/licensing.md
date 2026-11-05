@@ -15,6 +15,7 @@ CC-BY-SA-4.0 license:
 - [OWASP/ASVS](https://github.com/OWASP/ASVS)
 - [OWASP/CheatSheetSeries](https://github.com/OWASP/CheatSheetSeries)
 - [OWASP/masvs](https://github.com/OWASP/masvs)
+- [OWASP/AISVS](https://github.com/OWASP/AISVS)
 
 each license their content **CC-BY-SA-4.0** ("Attribution-ShareAlike"),
 verified directly via the GitHub licence API on each repository rather than
@@ -56,8 +57,8 @@ Two separate CC-BY-SA-4.0 obligations are in play, not one:
 ## The code/data split
 
 This repository carries one license file per pack, plus the project's own
-code, and none of them covers another — though three of the pack files are
-copies of the same CC-BY-SA-4.0 text, not five disjoint texts:
+code, and none of them covers another — though four of the pack files are
+copies of the same CC-BY-SA-4.0 text, not six disjoint texts:
 
 - **[LICENSE](../LICENSE) (MIT)** covers this project's own source code only:
   the ingest pipeline (`ingest/`), the domain model and retrieval logic
@@ -81,6 +82,11 @@ copies of the same CC-BY-SA-4.0 text, not five disjoint texts:
   image shipping one. It too holds the same text as the other two, for the
   same reason: MASVS is pinned separately and could be relicensed
   independently of them.
+- **[LICENSE-OWASP-AISVS](../licenses/LICENSE-OWASP-AISVS) (CC-BY-SA-4.0)**
+  covers the OWASP Artificial Intelligence Security Verification Standard
+  (AISVS) content as pinned in `sources.lock.yml`, on the same terms and for
+  the same reason as the MASVS entry: it holds the same text, and AISVS is
+  pinned separately and could be relicensed independently.
 - **[LICENSE-CWE](../licenses/LICENSE-CWE)** covers MITRE's CWE terms of use,
   under which the CWE pack's content is used — see
   [below](#cwe-is-mitres-under-its-own-terms).

@@ -14,12 +14,14 @@ from owasp_kb.core.db import connect, finalize_for_readonly
 from owasp_kb.core.integrity import run_checks
 from owasp_kb.core.schema import create_schema
 from owasp_kb.ingest.links import (
+    ingest_aisvs_guidance_links,
     ingest_cwe_links,
     ingest_guidance_links,
     ingest_nist_links,
     ingest_supersedes_links,
 )
 from owasp_kb.ingest.lock import Lock, load_lock
+from owasp_kb.ingest.packs.aisvs import ingest_aisvs
 from owasp_kb.ingest.packs.asvs import ingest_asvs
 from owasp_kb.ingest.packs.cheatsheets import ingest_cheatsheets
 from owasp_kb.ingest.packs.cwe import ingest_cwe
@@ -38,7 +40,12 @@ log = logging.getLogger(__name__)
 # tests/ingest/test_masvs.py, which skips without data/ and runs in the realdata
 # selection -- so an upstream reshuffle fails there, naming the shape that moved,
 # rather than only here as a count mismatch during a full build.
-EXPECTED_REQUIREMENTS = {"asvs": 345, "masvs": 24}
+#
+# aisvs is measured against tag v1.01, folder 1.01/en/: 214 requirement rows, one
+# of them the removed 10.2.6, so 213. Also asserted, with its 57/110/46 level
+# split, by test_the_real_release_matches_the_shape_the_build_expects in
+# tests/ingest/test_aisvs.py.
+EXPECTED_REQUIREMENTS = {"aisvs": 213, "asvs": 345, "masvs": 24}
 
 
 @dataclass
@@ -63,6 +70,7 @@ class BuildReport:
     # scopes sat in one log line looking alike.
     requirements: int = 0
     masvs_requirements: int = 0
+    aisvs_requirements: int = 0
     cheatsheet_documents: int = 0
     catalogue_entries: int = 0
     chunks: int = 0
@@ -132,21 +140,8 @@ def build_index(
     return report
 
 
-def _populate(
-    conn: Connection,
-    sources: Path,
-    lock: Lock,
-    *,
-    expected_requirements: Mapping[str, int],
-    with_vectors: bool,
-    check_edge_floors: bool,
-) -> BuildReport:
-    """Ingest every pack and every link set, then gate the result.
-
-    Raises rather than cleaning up: the caller owns the file.
-    """
-    report = BuildReport()
-
+def _ingest_checklists(conn: Connection, sources: Path, lock: Lock, report: BuildReport) -> None:
+    """Ingest the three checklist packs, recording each count on ``report``."""
     asvs_cfg = lock.packs["asvs"]
     report.requirements = ingest_asvs(
         conn,
@@ -166,6 +161,34 @@ def _populate(
         version=masvs_cfg.version,
         license=masvs_cfg.license,
     )
+
+    # Fetched as the chapter Markdown itself -- AISVS's only release asset is a
+    # PDF -- so the ingest is handed the directory and globs the chapters.
+    aisvs_cfg = lock.packs["aisvs"]
+    report.aisvs_requirements = ingest_aisvs(
+        conn,
+        sources / "aisvs",
+        version=aisvs_cfg.version,
+        license=aisvs_cfg.license,
+    )
+
+
+def _populate(
+    conn: Connection,
+    sources: Path,
+    lock: Lock,
+    *,
+    expected_requirements: Mapping[str, int],
+    with_vectors: bool,
+    check_edge_floors: bool,
+) -> BuildReport:
+    """Ingest every pack and every link set, then gate the result.
+
+    Raises rather than cleaning up: the caller owns the file.
+    """
+    report = BuildReport()
+
+    _ingest_checklists(conn, sources, lock, report)
 
     cs_cfg = lock.packs["cheatsheets"]
     report.cheatsheet_documents = ingest_cheatsheets(
@@ -192,6 +215,9 @@ def _populate(
     )
 
     report.guidance_links = ingest_guidance_links(conn, sources / "cheatsheets" / "IndexASVS.md")
+    report.guidance_links += ingest_aisvs_guidance_links(
+        conn, sources / "aisvs", sources / "cheatsheets" / "cheatsheets"
+    )
     report.cwe_links, report.cwe_dropped = ingest_cwe_links(
         conn,
         _one(sources / "asvs", "*cwe_mapping.json"),
@@ -291,13 +317,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     log.info(
-        "built %s: %d ASVS requirements, %d MASVS controls, %d cheat sheet documents, "
+        "built %s: %d ASVS requirements, %d MASVS controls, %d AISVS requirements, "
+        "%d cheat sheet documents, "
         "%d CWE catalogue entries, %d chunks index-wide (%d truncated), %d guidance "
         "links, %d CWE links (%d dropped), %d supersedes links, %d NIST links "
         "(%d unmatched), %d vectors",
         args.out,
         report.requirements,
         report.masvs_requirements,
+        report.aisvs_requirements,
         report.cheatsheet_documents,
         report.catalogue_entries,
         report.chunks,

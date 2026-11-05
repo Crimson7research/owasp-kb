@@ -122,21 +122,34 @@ TOOL_TRIGGER_TOPICS = (
     "IPC",
     "reverse engineering resilience",
     "root detection",
+    # Added when AISVS 1.01 shipped as a third checklist pack, for the reason
+    # the MASVS batch above was: an agent building an LLM application, an agent
+    # or an MCP server asks in these words, and none of them was advertised.
+    "prompt injection",
+    "LLM applications",
+    "AI agents",
+    "agent tool approval",
+    "MCP servers",
+    "RAG",
+    "vector databases",
+    "model supply chain",
+    "training data poisoning",
 )
 
 _TOPICS = ", ".join(TOOL_TRIGGER_TOPICS)
 
 SEARCH_DESCRIPTION = (
-    "Search authoritative OWASP security guidance (ASVS and MASVS requirements "
+    "Search authoritative OWASP security guidance (ASVS, MASVS and AISVS requirements "
     f"and Cheat Sheets). Call this BEFORE answering anything involving: {_TOPICS}. "
     "Do not answer from memory - return citable requirement IDs.\n\n"
     "Args:\n"
     "    query: Natural-language description of the security topic.\n"
-    "    pack: Restrict to one pack, e.g. 'asvs', 'masvs' or 'cheatsheets'.\n"
-    "    level: ASVS level '1', '2' or '3'. Applies to ASVS requirements only --\n"
-    "        naming a pack with no levels (e.g. 'masvs') together with a level\n"
-    "        is refused. Omitting pack, a level filter excludes level-less\n"
-    "        packs by construction: asking for L2 is asking ASVS.\n"
+    "    pack: Restrict to one pack, e.g. 'asvs', 'masvs', 'aisvs' or 'cheatsheets'.\n"
+    "    level: Level '1', '2' or '3', for the levelled packs ASVS and AISVS --\n"
+    "        AISVS levels align one to one with ASVS's. Naming a pack with no\n"
+    "        levels (e.g. 'masvs') together with a level is refused. Omitting\n"
+    "        pack, a level filter excludes level-less packs by construction:\n"
+    "        asking for L2 is asking ASVS and AISVS.\n"
     "    limit: Maximum hits to return."
 )
 
@@ -357,15 +370,18 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
         level: str | None = None,
         level_exact: str | None = None,
     ) -> dict:
-        """Enumerate verification requirements from a checklist pack such as ASVS
-        or MASVS, filtered by chapter (V6), section (V6.2), requirement id
-        (V6.2.1) or level.
+        """Enumerate verification requirements from a checklist pack -- ASVS for
+        web applications, MASVS for mobile apps, AISVS for AI systems (LLM
+        applications, agents, RAG pipelines, MCP servers) -- filtered by chapter
+        (V6, C10), section (V6.2, C10.2), requirement id (V6.2.1, C10.2.2) or level.
 
-        Not every checklist pack has levels. Where a pack does -- ASVS -- level
-        is CUMULATIVE, as ASVS defines it: level='2' returns the 253
+        Not every checklist pack has levels. Where a pack does -- ASVS and AISVS
+        -- level is CUMULATIVE, as ASVS defines it: level='2' returns the 253
         requirements an L2 assessment must verify, including all 70 L1 ones.
         level='1' returns 70, level='3' returns all 345. Use level_exact only to
-        inspect a single tier (level_exact='2' returns the 183 tagged L2).
+        inspect a single tier (level_exact='2' returns the 183 tagged L2). For
+        pack='aisvs' (1.01) level='1', '2' and '3' return 57, 167 and 213;
+        AISVS LN assumes ASVS LN for general application security.
         MASVS 2.x defines no levels: its 24 controls are unlevelled, passing
         level or level_exact with pack='masvs' is refused rather than silently
         answered, and requirements from a level-less pack carry no "L" key.
@@ -435,7 +451,8 @@ def build_tools(kb: Kb) -> list[Callable[..., Any]]:
 
     def owasp_related(id: str, rel: str | None = None) -> dict:
         """Find content related to an ASVS requirement id (V6.2.1), an ASVS
-        section or chapter id (V6.2, V6), or a cheat sheet doc_key.
+        section or chapter id (V6.2, V6), an AISVS id (C10.2.2, C10.2, C10), or
+        a cheat sheet doc_key. AISVS guidance edges are chapter-level.
         Relationships: 'guidance' (which cheat sheet explains how to satisfy a
         requirement), 'cwe', 'nist', 'supersedes'. Use this to go from "what is
         required" to "how do I do it"."""

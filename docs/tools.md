@@ -72,15 +72,15 @@ owasp_search(query: str, pack: str | None = None, level: str | None = None,
   internally reduced to a set of search terms (stopwords stripped for the
   lexical half — see [docs/build.md](build.md) and
   `core/retrieval/lexical.to_fts_query`).
-- `pack` — restrict to one pack (`"asvs"`, `"cheatsheets"`, `"cwe"` or
-  `"masvs"`). Omit to search all four. `cwe_search` is exactly this call with
+- `pack` — restrict to one pack (`"aisvs"`, `"asvs"`, `"cheatsheets"`, `"cwe"`
+  or `"masvs"`). Omit to search all five. `cwe_search` is exactly this call with
   `pack="cwe"`.
-- `level` — ASVS level `"1"`, `"2"`, or `"3"`. Levels are ASVS's, not every
-  checklist pack's: cheat sheet and CWE hits are unaffected since they carry
-  no level, and naming a level-less checklist pack (`pack="masvs"`) together
-  with `level` is refused rather than silently matching nothing. Omitting
-  `pack`, a `level` filter excludes level-less packs by construction — asking
-  for L2 is asking ASVS.
+- `level` — level `"1"`, `"2"`, or `"3"`. ASVS and AISVS have levels, and
+  AISVS's align with ASVS's one to one; MASVS has none. Cheat sheet and CWE
+  hits are unaffected since they carry no level, and naming a level-less
+  checklist pack (`pack="masvs"`) together with `level` is refused rather than
+  silently matching nothing. Omitting `pack`, a `level` filter excludes
+  level-less packs by construction — asking for L2 is asking ASVS and AISVS.
 - `limit` — maximum hits returned (default 8).
 
 **Return shape (a hit):**
@@ -99,7 +99,7 @@ For a cheat sheet hit, `req_id` is `null` and `doc_key`/`anchor` are set
 instead; `citation` is `"{doc_key}#{anchor}"` in that case.
 
 **Error cases:**
-- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: asvs, cheatsheets, cwe, masvs"}`.
+- Unknown `pack` name → `{"error": "unknown pack 'xyz'; available packs: aisvs, asvs, cheatsheets, cwe, masvs"}`.
 - **No match → `{"hits": [], "message": "..."}`, not `{"hits": []}` and never
   a bare `[]`.** This is deliberate and worth stating explicitly: an agent
   that receives `[]` for a search reads it as "no security requirements apply
@@ -186,7 +186,7 @@ owasp_checklist(pack: str = "asvs", chapter: str | None = None,
                  level: str | None = None, level_exact: str | None = None) -> dict
 ```
 
-Enumerates requirements from a `checklist` pack (`asvs` or `masvs`), filtered
+Enumerates requirements from a `checklist` pack (`asvs`, `masvs` or `aisvs`), filtered
 by any combination of `chapter` (`"V6"`), `section` (`"V6.2"`), and `req_id`
 (`"V6.2.1"`). Rows come back in ascending chapter/section/id order (`V10`
 after `V9`, not before `V2`, for ASVS) rather than lexical order, since
@@ -199,7 +199,7 @@ that read ASVS's `V<n>.<n>.<n>` shape directly and evaluated to `0` for any
 other id shape — which would have silently ordered a second checklist pack by
 table-scan order the moment one existed.
 
-**Levels are ASVS's, not every checklist pack's.** Where a pack has levels,
+**Levels belong to ASVS and AISVS, not every checklist pack.** Where a pack has levels,
 `level` is **cumulative**, matching how ASVS itself defines its levels:
 `level="2"` returns every requirement an L2 assessment must verify — all L1
 requirements plus everything newly introduced at L2 (253 of 345 in ASVS
@@ -208,7 +208,9 @@ set would silently drop password minimums and every other L1 control from a
 report labelled L2. `level="1"` returns 70; `level="3"` returns all 345.
 `level_exact` is the rarer single-tier query — `level_exact="2"` returns
 exactly the 183 requirements tagged L2, nothing inherited from L1. Passing
-both `level` and `level_exact` is an error (see below).
+both `level` and `level_exact` is an error (see below). AISVS 1.01 works
+the same way: `level="1"`, `"2"` and `"3"` return 57, 167 and 213, and its ids
+are `C`-prefixed (`chapter="C10"`, `section="C10.2"`, `req_id="C10.2.2"`).
 
 MASVS defines no levels at all: its 24 controls come back with no `"L"` key,
 and passing `level` or `level_exact` with `pack="masvs"` is an error naming

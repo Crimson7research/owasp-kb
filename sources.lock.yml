@@ -17,6 +17,30 @@ packs:
       - 5.0/mappings/mapping_v5.0.be_to_v5.0.0.yml
       - 5.0/mappings/nist.md
       - 5.0/mappings/mapping_v5.0.0_to_v4.0.3.yml
+  aisvs:
+    type: checklist
+    repo: OWASP/AISVS
+    release: v1.01
+    version: "1.01"
+    license: CC-BY-SA-4.0
+    # The release's only asset is a PDF, so the frozen chapter Markdown is
+    # fetched from the tag instead. Tag v1.01 carries both 1.0/ and 1.01/;
+    # 1.01/LOCKED.md freezes 1.01/en/ and is the citable v1.01-Cx.y.z text, so
+    # that folder is the one pinned. Appendices B and C are deliberately not
+    # ingested -- see docs/kb-packs.md.
+    extra_paths:
+      - 1.01/en/0x10-C01-Training-Data-Integrity-and-Traceability.md
+      - 1.01/en/0x10-C02-Input-Validation.md
+      - 1.01/en/0x10-C03-Model-Lifecycle-Management.md
+      - 1.01/en/0x10-C04-Infrastructure.md
+      - 1.01/en/0x10-C05-Access-Control-and-Identity.md
+      - 1.01/en/0x10-C06-Supply-Chain.md
+      - 1.01/en/0x10-C07-Model-Behavior.md
+      - 1.01/en/0x10-C08-Memory-Embeddings-and-Vector-Database.md
+      - 1.01/en/0x10-C09-Orchestration-and-Agentic-Action.md
+      - 1.01/en/0x10-C10-MCP-Security.md
+      - 1.01/en/0x10-C11-Adversarial-Robustness.md
+      - 1.01/en/0x10-C12-Monitoring-and-Logging.md
   cheatsheets:
     type: corpus
     repo: OWASP/CheatSheetSeries

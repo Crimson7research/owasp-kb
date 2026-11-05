@@ -14,8 +14,21 @@ def _lock_yaml(packs: dict) -> str:
     return yaml.safe_dump({"packs": packs})
 
 
-def test_lock_parses_all_four_packs():
-    assert set(load_lock(LOCK).packs) == {"asvs", "cheatsheets", "cwe", "masvs"}
+def test_lock_parses_all_five_packs():
+    assert set(load_lock(LOCK).packs) == {"aisvs", "asvs", "cheatsheets", "cwe", "masvs"}
+
+
+def test_aisvs_pins_a_tag_and_the_frozen_1_01_chapters():
+    """The release's only asset is a PDF, so the chapters come from the tag.
+    1.01/en/ is the folder 1.01/LOCKED.md freezes; 1.0/en/ is the superseded one."""
+    aisvs = load_lock(LOCK).packs["aisvs"]
+    assert aisvs.type == "checklist"
+    assert aisvs.release == "v1.01"
+    assert aisvs.version == "1.01"
+    assert aisvs.license == "CC-BY-SA-4.0"
+    assert aisvs.assets == []
+    assert len(aisvs.extra_paths) == 12
+    assert all(p.startswith("1.01/en/0x10-C") for p in aisvs.extra_paths)
 
 
 def test_masvs_pins_a_release_and_its_machine_readable_asset():

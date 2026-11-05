@@ -10,14 +10,15 @@ with no network access.
   build time (make build)                      serve time (per agent session)
  ┌─────────────────────────────────────┐       ┌───────────────────────────────┐
  │ sources.lock.yml                     │       │  docker run -i --rm           │
- │   pins ASVS,MASVS,CWE rels, CS SHA   │       │    --network none owasp-kb    │
+ │   pins ASVS,MASVS,AISVS,CWE, CS SHA  │       │    --network none owasp-kb    │
  │            │                         │       │            │                  │
  │            v                         │       │            v                  │
  │ ingest/fetch.py  -- downloads -->    │       │  server/app.py (entrypoint)   │
- │   data/{asvs,cheatsheets,cwe,masvs}/*│       │    opens the baked index      │
+ │ data/{aisvs,asvs,cheatsheets,cwe,    │       │                               │
+ │      masvs}/*                        │       │    opens the baked index      │
  │            │                         │       │    read-only, builds Kb       │
  │            v                         │       │            │                  │
- │ ingest/packs/{asvs,cheatsheets,      │       │            v                  │
+ │ ingest/packs/{aisvs,asvs,cheatsheets,│       │            v                  │
  │               cwe,masvs}.py          │       │  server/tools.py              │
  │   -> requirements, catalogue_entries,│       │    ten MCP tool adapters      │
  │      docs, sections, chunks          │       │                               │
@@ -51,10 +52,11 @@ binary over stdio; nothing about the server is Claude-Code-specific.
 - **`ingest/`** — everything that runs at build time and touches the network
   or the filesystem outside the index: `fetch.py` downloads pinned sources per
   `sources.lock.yml`; `lock.py` parses and validates the lock file (and
-  refuses `release: latest`); `packs/asvs.py`, `packs/cheatsheets.py`,
-  `packs/cwe.py` and `packs/masvs.py` turn the four source formats into rows;
-  `links.py` populates the `links` edge table from the four upstream mapping
-  files (MASVS ships none of its own — see [docs/kb-packs.md](kb-packs.md)),
+  refuses `release: latest`); `packs/aisvs.py`, `packs/asvs.py`,
+  `packs/cheatsheets.py`, `packs/cwe.py` and `packs/masvs.py` turn the five
+  source formats into rows; `links.py` populates the `links` edge table from
+  the four upstream mapping files and AISVS's guidance links, curated map
+  included (MASVS ships none of its own — see [docs/kb-packs.md](kb-packs.md)),
   and `packs/cwe.py` writes CWE's own three graph rels directly; `build.py`
   orchestrates all of it, runs the integrity checks, and either finalizes the
   file or deletes it.

@@ -35,6 +35,7 @@ PREFIXES = {
     "cheatsheets": "cs",
     "cwe": "cwe",
     "masvs": "masvs",
+    "aisvs": "aisvs",
 }
 
 # Explicit rather than `sorted(lock.packs)`: this is the order the tag has
@@ -43,7 +44,7 @@ PREFIXES = {
 # published images. Changing this order would change every future tag's
 # spelling for packs that did not change, which is exactly the kind of churn
 # an immutable tag exists to avoid.
-ORDER = ["asvs", "cheatsheets", "cwe", "masvs"]
+ORDER = ["asvs", "cheatsheets", "cwe", "masvs", "aisvs"]
 
 
 def pinned_tag(packs: dict[str, dict]) -> str:
