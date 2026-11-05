@@ -17,12 +17,12 @@ Authoritative OWASP security guidance — ASVS 5.0.0 for web applications, MASVS
 plus MITRE's CWE catalogue, served to AI coding agents as an MCP server, with
 citations, over stdio, offline.
 
-![Five illustrative agent sessions: an SSRF fix citing ASVS V1.3.6 and CWE-918, an OAuth design review citing ASVS V10.1.2, an MCP server review citing AISVS C10.2.2 and C10.2.7, an Android token-storage change citing MASVS-STORAGE-1, and the skill declining a CSS fix](docs/assets/owasp-kb-in-action.png)
+<img src="docs/assets/in-action-ssrf-avatar-import.png" width="680" alt="An agent asked to import avatars from a URL announces owasp-secure-coding, retrieves ASVS V1.3.6, the SSRF Prevention cheat sheet and CWE-918, and allowlists protocols before hosts">
 
-<sub>Illustrative sessions, modelled on how agents announce the
-`owasp-secure-coding` skill in real work. The projects are invented; every
+<sub>An illustrative session, modelled on how agents announce the
+`owasp-secure-coding` skill in real work. The project is invented; every
 requirement, cheat sheet and CWE id shown is real and was retrieved from the
-index. Source: [docs/assets/showcase/index.html](docs/assets/showcase/index.html).</sub>
+index. More sessions are under [Ask it](#ask-it).</sub>
 
 This project is not affiliated with, endorsed by, or sponsored by the OWASP
 Foundation. See [NOTICE](licenses/NOTICE). **CWE is not an OWASP project** —
@@ -50,20 +50,38 @@ build of the pinned sources on 2026-11-05.
 ## Ask it
 
 You do not call the tools yourself. The skills trigger on what you are working
-on, and the agent retrieves before it answers. Prompts like these get a
-citation back instead of a recollection:
+on, and the agent retrieves before it answers. The sessions below are
+illustrative, and every id in them is real.
 
-- "Add an endpoint that downloads a file from a URL the user gives us." → ASVS
-  V1.3.6, the SSRF Prevention cheat sheet, CWE-918.
-- "Review the auth on our MCP server." → AISVS C10.2, the MCP Security cheat sheet.
-- "Where should the Android app keep the refresh token?" → MASVS-STORAGE-1.
+**A design review, before the code exists.** The agent walks the OAuth chapter
+at your target level and names the requirement the design misses.
+
+<img src="docs/assets/in-action-oauth-callback-review.png" width="680" alt="An agent reviewing a Sign in with GitLab design enumerates ASVS V10 at level 2 and finds that state is not bound to the session, which V10.1.2 requires">
+
+**An AI system.** An MCP server, an agent or a RAG pipeline gets AISVS
+requirements, not ASVS ones adapted by analogy.
+
+<img src="docs/assets/in-action-aisvs-mcp-server-review.png" width="680" alt="An agent reviewing an MCP server enumerates AISVS C10.2 and finds token passthrough, which C10.2.7 forbids">
+
+**A mobile client.** Device-side storage gets a MASVS control, and the server
+side still gets its ASVS requirement.
+
+<img src="docs/assets/in-action-masvs-token-storage.png" width="680" alt="An agent persisting a refresh token on Android cites MASVS-STORAGE-1 and ASVS V10.4.8">
+
+**No security dimension.** The skill says so in one line, with its reason, so
+you can overrule it.
+
+<img src="docs/assets/in-action-declines-a-css-fix.png" width="680" alt="An agent fixing button padding declines the skill because the change has no trust boundary">
+
+Two more that need no picture:
+
 - "What do we need for ASVS level 2 on sessions?" → every L1 and L2 requirement
   in the chapter, enumerated, not the best-matching few.
 - "Is CWE-1004 the right id for this cookie finding?" → the catalogue entry, or
   an error if the id does not exist.
 
-When the work has no security dimension, the skill says so in one line, with
-its reason, so you can overrule it.
+The page these are cut from is
+[docs/assets/showcase/index.html](docs/assets/showcase/index.html).
 
 ## Works with
 
