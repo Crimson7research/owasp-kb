@@ -14,6 +14,7 @@ import yaml
 
 MARKETPLACE = Path(".claude-plugin/marketplace.json")
 PLUGIN = Path("plugins/owasp-kb/.claude-plugin/plugin.json")
+HOOKS = Path("plugins/owasp-kb/hooks/hooks.json")
 MCP_CONFIG = Path("plugins/owasp-kb/.mcp.json")
 PINNED_PACKS = Path("plugins/owasp-kb/pinned-packs.json")
 SKILLS_DIR = Path("plugins/owasp-kb/skills")
@@ -219,7 +220,7 @@ def test_the_server_command_creates_the_state_directory_itself():
     assert "mkdir -p" in _server_command()
 
 
-INSTALL_SCRIPTS = (Path("install/codex.sh"), Path("install/opencode.sh"))
+INSTALL_SCRIPTS = (Path("install/opencode.sh"),)
 
 
 @pytest.mark.parametrize("script", INSTALL_SCRIPTS, ids=lambda p: p.name)
@@ -242,6 +243,14 @@ def test_the_install_scripts_carry_no_image_literal(script):
         f"{script} hardcodes a tag, which resolves to Docker Hub and finds nothing"
     )
     assert ".mcp.json" in text, f"{script} does not read the image from .mcp.json"
+
+
+def test_the_manifest_declares_no_hooks_because_hooks_json_is_the_one_source():
+    """Codex ignores hooks declared in plugin.json and reads hooks/hooks.json;
+    Claude Code reads both. One file serves both hosts, and a second declaration
+    would drift from it (#94)."""
+    assert "hooks" not in json.loads(PLUGIN.read_text())
+    assert HOOKS.is_file()
 
 
 def test_all_four_skills_exist():
@@ -1533,7 +1542,7 @@ def test_the_plugin_registers_the_inventory_gate_against_a_dispatch():
     class #58 replaced. Both dispatch tool names are matched -- `Task` in the
     harness this plugin targets, `Agent` elsewhere -- because matching one leaves
     the gate inert wherever the other is used."""
-    hooks = json.loads(PLUGIN.read_text())["hooks"]["PreToolUse"]
+    hooks = json.loads(HOOKS.read_text())["hooks"]["PreToolUse"]
     gate = [entry for entry in hooks if "gate_triage_on_inventory" in json.dumps(entry)]
     assert len(gate) == 1, "the inventory gate is not registered exactly once"
     matcher = gate[0]["matcher"]
@@ -1547,7 +1556,7 @@ def test_the_plugin_registers_the_security_flag_hook():
     skill was seen and chosen against. The other is the SessionStart hook, which has
     no condition at all; this one is gated on the firing vocabulary and fires once
     per session, so it is the one that can name the class in its payload."""
-    hooks = json.loads(PLUGIN.read_text())["hooks"]
+    hooks = json.loads(HOOKS.read_text())["hooks"]
     entries = hooks.get("UserPromptSubmit") or []
     flagged = [e for e in entries if "flag_security_topic" in json.dumps(e)]
     assert len(flagged) == 1, "the security flag hook is not registered exactly once"
@@ -2587,7 +2596,7 @@ def test_the_docs_count_the_hooks_the_plugin_ships():
         guards against, and a guard that fires on one gets deleted."""
         return " ".join(Path(path).read_text().lower().split())
 
-    shipped = json.loads(PLUGIN.read_text())["hooks"]
+    shipped = json.loads(HOOKS.read_text())["hooks"]
     count = sum(len(matcher["hooks"]) for event in shipped.values() for matcher in event)
     spelled = {1: "one hook", 2: "two hooks", 3: "three hooks", 4: "four hooks", 5: "five hooks"}
     assert count in spelled, (
