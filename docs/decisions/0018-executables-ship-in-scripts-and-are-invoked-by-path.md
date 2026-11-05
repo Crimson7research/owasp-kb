@@ -138,8 +138,9 @@ a stale install makes unanswerable.
   bare name of the old convention did not suffer this, because it worked in any process; this
   is a capability the change gives up, not an oversight it introduces.
 
-- **The known limitation: the non-Claude installs cannot expand the token.** `install/codex.sh`
-  and `install/opencode.sh` copy only `plugins/owasp-kb/skills/*/` — into `~/.codex/skills/`
+- **The known limitation: the non-Claude installs cannot expand the token.** (Codex now
+  installs the plugin itself, so only the OpenCode part of this paragraph is current;
+  see issue #94.) `install/codex.sh` and `install/opencode.sh` copied only `plugins/owasp-kb/skills/*/` — into `~/.codex/skills/`
   and `~/.config/opencode/skill/` respectively — and then print an MCP server snippet naming
   the pinned image. They ship no hooks, no `scripts/`, and no plugin manifest. There is no
   `SessionStart` hook in those harnesses and no `CLAUDE_PLUGIN_ROOT`, so a copied skill's

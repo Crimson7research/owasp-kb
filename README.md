@@ -87,8 +87,11 @@ The page these are cut from is
 
 - **Claude Code** — install the plugin: MCP server, four skills, six agents
   and five hooks in one step.
-- **Codex** and **OpenCode** — `install/codex.sh` and `install/opencode.sh`
-  print the config snippet.
+- **Codex** — install the same plugin with `codex plugin marketplace add` and
+  `codex plugin add`: MCP server, skills and hooks. The two assessment skills
+  need the agents, which Codex does not load yet (#94).
+- **OpenCode** — `install/opencode.sh` prints the config snippet. The two
+  assessment skills need agents OpenCode does not load (#95).
 - **Any MCP client** — stdio by default, or streamable HTTP and SSE for a
   sidecar deployment.
 
@@ -230,12 +233,11 @@ python3 <scripts>/owasp-kb doctor
 ```
 
 **Any MCP-capable agent.** The image reference is the digest in
-`plugins/owasp-kb/.mcp.json`; `install/codex.sh` and `install/opencode.sh` read
-it from there and print the config snippet for Codex and OpenCode respectively,
-so neither needs editing per release.
+`plugins/owasp-kb/.mcp.json`; `install/opencode.sh` reads it from there and
+prints the config snippet for OpenCode, so it needs no editing per release.
+Codex installs the plugin itself; see [docs/install.md](docs/install.md#codex).
 
 ```
-./install/codex.sh
 ./install/opencode.sh
 ```
 

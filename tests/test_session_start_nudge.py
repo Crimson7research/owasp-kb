@@ -134,8 +134,8 @@ def test_the_plugin_registers_the_hook_at_the_events_that_keep_it_resident():
     loses its context at the first compaction of a long session, which is the whole
     reason this is a SessionStart hook rather than a one-off note.
     """
-    plugin = json.loads(Path("plugins/owasp-kb/.claude-plugin/plugin.json").read_text())
-    entries = plugin["hooks"]["SessionStart"]
+    shipped = json.loads(Path("plugins/owasp-kb/hooks/hooks.json").read_text())
+    entries = shipped["hooks"]["SessionStart"]
     assert len(entries) == 1
     entry = entries[0]
     assert entry["matcher"] == "startup|clear|compact"

@@ -154,22 +154,34 @@ verdict inline on each call. ADR
 
 ## Codex
 
-```
-./install/codex.sh
-```
+Codex installs the Claude Code plugin as it is. It reads
+`.claude-plugin/marketplace.json` and `plugins/owasp-kb/.claude-plugin/plugin.json`:
 
-Copies the four skills to `${CODEX_HOME:-$HOME/.codex}/skills` and prints the
-`config.toml` snippet to add:
-
-```toml
-[mcp_servers.owasp-kb]
-command = "docker"
-args = ["run", "-i", "--rm", "--network", "none", "ghcr.io/crimson7research/owasp-kb@sha256:<digest>"]
+```
+codex plugin marketplace add Crimson7research/owasp-kb
+codex plugin add owasp-kb@owasp-kb
 ```
 
-The digest is read out of `plugins/owasp-kb/.mcp.json` at run time, so the script
-needs no edit when a release re-pins it. Set `OWASP_KB_IMAGE` before running to
-override — a local `make build` image, or the `lite` variant's immutable tag.
+That installs the skills, the MCP server entry from `.mcp.json` (pinned digest and
+the `/state` mount) and the hooks. Update with:
+
+```
+codex plugin marketplace upgrade
+```
+
+Observed on `codex-cli 0.166.0`:
+
+- **Hooks need a trust review.** Codex skips new or changed hooks until you
+  review them in `/hooks`. Hooks live in `plugins/owasp-kb/hooks/hooks.json`,
+  because Codex ignores hooks declared in `plugin.json`.
+- **`codex exec` cannot call MCP tools by default.** Every call fails with
+  `MCP tool call requires approval, but approval policy is never`. Interactive
+  sessions prompt for approval instead.
+- **The version column reads `local`.** The plugin declares no version, so the
+  commit is the version (ADR [0014](decisions/0014-image-digest-pin.md)).
+- **The two assessment skills do not complete.** `owasp-asvs-verify` and
+  `owasp-asvs-gap-report` dispatch six agents. Codex copies `agents/*.md` into
+  its plugin cache but does not register them. Issue #94 tracks the port.
 
 ## OpenCode
 
