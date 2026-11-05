@@ -1,0 +1,176 @@
+<!doctype html>
+<!--
+  Source of docs/assets/in-action-*.png, one PNG per session card. The sessions below are
+  illustrative, modelled on how agents announce the owasp-secure-coding skill in
+  real sessions. Every requirement id, cheat sheet and CWE id they cite is real
+  and was retrieved from the index; the projects and prompts are invented.
+  After editing, re-render each card: a headless Chromium screenshot of the
+  card plus a 14px margin, at a 1440px-wide viewport and device scale factor 2.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>owasp-kb in action</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #1c2330; --line: #2a3340;
+    --text: #e6edf3; --muted: #8b98a8; --accent: #58a6ff;
+    --asvs: #4c8dff; --masvs: #2ea043; --aisvs: #a371f7; --cs: #f0883e; --cwe: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: radial-gradient(1200px 600px at 10% -10%, #1f2a44 0%, var(--bg) 55%);
+    color: var(--text); font: 15px/1.5 -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  .wrap { width: 1440px; margin: 0 auto; padding: 44px 48px 40px; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; }
+  h1 { margin: 0; font-size: 34px; letter-spacing: -0.5px; }
+  h1 span { color: var(--accent); }
+  .tagline { color: var(--muted); margin-top: 6px; font-size: 16px; }
+  .legend { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex-wrap: nowrap; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .card {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line);
+    border-radius: 14px; overflow: hidden; box-shadow: 0 12px 30px rgba(0,0,0,.35);
+  }
+  .bar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: #11161d; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .bar .title { margin-left: 8px; color: var(--muted); font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .body { padding: 16px 18px 18px; }
+  .user { display: flex; gap: 10px; margin-bottom: 12px; }
+  .avatar { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .avatar.you { background: #30363d; }
+  .avatar.agent { background: linear-gradient(135deg, #58a6ff, #a371f7); color: #0d1117; }
+  .bubble { background: #21262d; border-radius: 10px; padding: 8px 12px; }
+  .reply { display: flex; gap: 10px; }
+  .reply .content { flex: 1; min-width: 0; }
+  .announce { font-weight: 700; }
+  .announce.no { color: var(--muted); font-weight: 600; }
+  .call {
+    margin: 9px 0 7px; padding: 7px 10px; border-left: 3px solid var(--accent); background: #0f141b;
+    border-radius: 0 8px 8px 0; font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #c9d1d9;
+  }
+  .call b { color: var(--accent); font-weight: 600; }
+  .hit { display: flex; gap: 9px; align-items: baseline; margin: 6px 0; }
+  .badge {
+    flex: none; font: 600 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 7px;
+    border-radius: 999px; border: 1px solid currentColor; white-space: nowrap;
+  }
+  .asvs { color: var(--asvs); background: rgba(76,141,255,.12); }
+  .masvs { color: var(--masvs); background: rgba(46,160,67,.12); }
+  .aisvs { color: var(--aisvs); background: rgba(163,113,247,.14); }
+  .cs { color: var(--cs); background: rgba(240,136,62,.12); }
+  .cwe { color: var(--cwe); background: rgba(248,81,73,.12); }
+  .hit p { margin: 0; color: #c9d1d9; font-size: 13.5px; }
+  .verdict { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 14px; }
+  .verdict em { color: var(--accent); font-style: normal; font-weight: 600; }
+  .wide { grid-column: 1 / -1; }
+  .wide .body { display: flex; gap: 28px; align-items: center; }
+  .wide .user { margin: 0; }
+  footer { margin-top: 22px; display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
+  code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #d2a8ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>owasp-kb <span>in action</span></h1>
+      <div class="tagline">Your coding agent cites the exact OWASP requirement before it writes the code, instead of guessing from memory.</div>
+    </div>
+    <div class="legend">
+      <span class="badge asvs">ASVS 5.0.0</span>
+      <span class="badge masvs">MASVS 2.1.0</span>
+      <span class="badge aisvs">AISVS 1.01</span>
+      <span class="badge cs">Cheat Sheet Series</span>
+      <span class="badge cwe">CWE 4.20</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- 1: SSRF on a web feature -->
+    <div class="card">
+      <div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="title">~/acme-forum · feature/avatar-import</span></div>
+      <div class="body">
+        <div class="user"><div class="avatar you">A</div><div class="bubble">Let users import their avatar from a URL. The server downloads it and stores it.</div></div>
+        <div class="reply"><div class="avatar agent">AI</div><div class="content">
+          <div class="announce">Using owasp-secure-coding to retrieve the applicable OWASP guidance before this change is written.</div>
+          <div class="call"><b>owasp_search</b>(query="server downloads an image from a user-supplied URL")</div>
+          <div class="hit"><span class="badge asvs">ASVS 5.0.0 V1.3.6</span><p>Allowlist protocols, domains, paths and ports for untrusted data used to call another service.</p></div>
+          <div class="hit"><span class="badge cs">SSRF Prevention</span><p>Avatar URLs are the cheat sheet's first named SSRF example.</p></div>
+          <div class="call"><b>cwe_get</b>("CWE-918")</div>
+          <div class="hit"><span class="badge cwe">CWE-918</span><p>Server-Side Request Forgery (SSRF). Base weakness.</p></div>
+          <div class="verdict">The allowlist covers <em>protocols first</em>, so <code>file://</code> and <code>gopher://</code> are rejected before any host check runs.</div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 2: OAuth callback design -->
+    <div class="card">
+      <div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="title">~/ledgerly · design review</span></div>
+      <div class="body">
+        <div class="user"><div class="avatar you">A</div><div class="bubble">Here is the plan for "Sign in with GitLab". Anything missing before I build the callback?</div></div>
+        <div class="reply"><div class="avatar agent">AI</div><div class="content">
+          <div class="announce">Using owasp-secure-coding to check the callback-authentication design against OAuth guidance.</div>
+          <div class="call"><b>owasp_checklist</b>(pack="asvs", chapter="V10", level="2")</div>
+          <div class="hit"><span class="badge asvs">ASVS 5.0.0 V10.1.2</span><p>Accept the code only from a flow this same browser session started: <code>state</code>, <code>nonce</code> and PKCE verifier bound to it.</p></div>
+          <div class="hit"><span class="badge asvs">ASVS 5.0.0 V10.4.6</span><p>Require PKCE, and refuse <code>code_challenge_method=plain</code>.</p></div>
+          <div class="call"><b>owasp_related</b>("V10.1.2", rel="guidance")</div>
+          <div class="hit"><span class="badge cs">OAuth2 Cheat Sheet</span><p>Linked to this requirement by OWASP's own ASVS index.</p></div>
+          <div class="verdict">The design stores <code>state</code> in a cookie but never binds it to the session. That gap is <em>V10.1.2</em>.</div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 3: AISVS on an MCP server -->
+    <div class="card">
+      <div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="title">~/docs-assistant · mcp-server</span></div>
+      <div class="body">
+        <div class="user"><div class="avatar you">A</div><div class="bubble">Review the auth on our MCP server before we put it in front of customers.</div></div>
+        <div class="reply"><div class="avatar agent">AI</div><div class="content">
+          <div class="announce">Using owasp-secure-coding to scope the review: token validation, tool authorization and token passthrough.</div>
+          <div class="call"><b>owasp_checklist</b>(pack="aisvs", section="C10.2", level="1")</div>
+          <div class="hit"><span class="badge aisvs">AISVS 1.01 C10.2.2</span><p>Validate the access token's issuer, audience, expiration and scope claims.</p></div>
+          <div class="hit"><span class="badge aisvs">AISVS 1.01 C10.2.7</span><p>Accept only tokens issued for this server. Never pass them through to downstream APIs.</p></div>
+          <div class="call"><b>owasp_related</b>("C10", rel="guidance")</div>
+          <div class="hit"><span class="badge cs">MCP Security</span><p>Linked by AISVS's own chapter references.</p></div>
+          <div class="verdict">The server forwards the caller's token to the search API, which <em>C10.2.7</em> forbids.</div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 4: MASVS on a mobile client -->
+    <div class="card">
+      <div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="title">~/fieldnotes-android · fix/session-persistence</span></div>
+      <div class="body">
+        <div class="user"><div class="avatar you">A</div><div class="bubble">Users get logged out on every restart. Persist the refresh token on the device.</div></div>
+        <div class="reply"><div class="avatar agent">AI</div><div class="content">
+          <div class="announce">Using owasp-secure-coding to retrieve the applicable OWASP guidance before this change is written.</div>
+          <div class="call"><b>owasp_search</b>(query="securely store tokens locally on device", pack="masvs")</div>
+          <div class="hit"><span class="badge masvs">MASVS-STORAGE-1</span><p>The app securely stores sensitive data, whatever the storage location.</p></div>
+          <div class="call"><b>owasp_search</b>(query="refresh token expiry", pack="asvs")</div>
+          <div class="hit"><span class="badge asvs">ASVS 5.0.0 V10.4.8</span><p>Refresh tokens have an absolute expiration, even with sliding renewal.</p></div>
+          <div class="verdict">The token goes into the platform keystore, not <code>SharedPreferences</code>, and the server still ends it at an <em>absolute expiry</em>.</div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 5: an honest decline -->
+    <div class="card wide">
+      <div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="title">~/acme-forum · fix/settings-padding</span></div>
+      <div class="body">
+        <div class="user"><div class="avatar you">A</div><div class="bubble">The save button on the settings page overlaps the footer on mobile.</div></div>
+        <div class="reply"><div class="avatar agent">AI</div><div class="content">
+          <div class="announce no">Not using owasp-secure-coding: this is a layout fix with no trust boundary, so there is no requirement to retrieve.</div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>Illustrative sessions. Every requirement, cheat sheet and CWE id shown is real and was retrieved from the index.</span>
+    <span>MCP server · offline · pinned releases</span>
+  </footer>
+</div>
+</body>
+</html>
