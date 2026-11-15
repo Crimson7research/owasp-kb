@@ -33,6 +33,9 @@ class Result:
     detail: str
     remedy: str = ""
     notes: tuple[str, ...] = ()
+    # The host exposes no state to check. Reported as "unkn", never "ok", and not
+    # counted as a failure: nothing was found wrong, and nothing was verified.
+    unknown: bool = False
 
 
 def plugin_root() -> Path:
@@ -403,6 +406,62 @@ def check_marketplace_failure_mode() -> Result:
     )
 
 
+PLUGIN_ID = "owasp-kb@owasp-kb"
+OPENCODE_ISSUE = "https://github.com/Crimson7research/owasp-kb/issues/95"
+
+
+def check_codex_plugin() -> Result:
+    """Is the plugin installed and enabled, as Codex itself reports it?"""
+    if shutil.which("codex") is None:
+        return Result(True, "codex is not on PATH, so there is no Codex install to check")
+    done = _run("codex", "plugin", "list", "--json")
+    if done.returncode != 0:
+        return Result(
+            False,
+            f"`codex plugin list --json` failed: {done.stderr.strip()[-160:]}",
+            remedy="run `codex plugin list` to see why",
+        )
+    try:
+        installed = json.loads(done.stdout).get("installed", [])
+    except json.JSONDecodeError:
+        return Result(False, "`codex plugin list --json` did not print JSON")
+    entry = next((p for p in installed if p.get("pluginId") == PLUGIN_ID), None)
+    if entry is None:
+        return Result(
+            False,
+            f"{PLUGIN_ID} is not installed in Codex",
+            remedy=(
+                "codex plugin marketplace add Crimson7research/owasp-kb && "
+                f"codex plugin add {PLUGIN_ID}"
+            ),
+        )
+    if not entry.get("enabled"):
+        return Result(False, f"{PLUGIN_ID} is installed but disabled", remedy="enable it in Codex")
+    return Result(True, f"{PLUGIN_ID} is installed and enabled in Codex")
+
+
+def check_codex_hooks() -> Result:
+    """Codex skips new or changed hooks until they are reviewed, and shows a script
+    nothing about that. Presence of hooks/hooks.json is therefore not evidence they run."""
+    if shutil.which("codex") is None:
+        return Result(True, "codex is not on PATH, so there are no Codex hooks to check")
+    return Result(
+        True,
+        "unknown: Codex exposes no hook trust state to a script",
+        remedy="review the hooks in Codex with /hooks after every install and update",
+        notes=("hooks only run once reviewed, so a plugin that looks healthy may run none",),
+        unknown=True,
+    )
+
+
+def check_opencode() -> Result:
+    return Result(
+        False,
+        "OpenCode is not supported yet: no agents, hooks or plugin install path",
+        remedy=f"see {OPENCODE_ISSUE}; install/opencode.sh gives MCP tools and the lighter skills only",
+    )
+
+
 CHECKS: list[tuple[str, Callable[[], Result]]] = [
     ("docker", check_docker),
     ("plugin", check_plugin_identity),
@@ -413,13 +472,42 @@ CHECKS: list[tuple[str, Callable[[], Result]]] = [
     ("state", check_state_dir),
     ("ssh", check_ssh_prerequisites),
     ("marketplace", check_marketplace_failure_mode),
+    ("codex-plugin", check_codex_plugin),
+    ("codex-hooks", check_codex_hooks),
+    ("opencode", check_opencode),
 ]
 
+SHARED = ("docker", "pin", "image", "server", "state")
+HOST_CHECKS = {
+    "claude": ("plugin", "hooks", "ssh", "marketplace"),
+    "codex": ("codex-plugin", "codex-hooks"),
+    "opencode": ("opencode",),
+}
+HOSTS = tuple(HOST_CHECKS)
 
-def run(checks: list[tuple[str, Callable[[], Result]]] | None = None) -> int:
-    """Every check, in order. Returns 1 if any failed."""
+
+def checks_for(hosts: tuple[str, ...] = HOSTS) -> list[tuple[str, Callable[[], Result]]]:
+    """The shared checks, then each requested host's, in registry order."""
+    wanted = set(SHARED)
+    for host in hosts:
+        wanted.update(HOST_CHECKS[host])
+    return [(name, check) for name, check in CHECKS if name in wanted]
+
+
+def run(
+    checks: list[tuple[str, Callable[[], Result]]] | None = None,
+    hosts: tuple[str, ...] = HOSTS,
+) -> int:
+    """Every check, in order. Returns 1 if any failed.
+
+    With no `checks`, runs the shared checks plus those of each host in `hosts`,
+    which defaults to every host: an install on one host says nothing about another.
+    """
+    if checks is None:
+        print(f"hosts: {', '.join(hosts)}")
+        checks = checks_for(hosts)
     failures = 0
-    for name, check in CHECKS if checks is None else checks:
+    for name, check in checks:
         try:
             result = check()
         except Exception as error:  # noqa: BLE001
@@ -431,13 +519,14 @@ def run(checks: list[tuple[str, Callable[[], Result]]] | None = None) -> int:
                 f"the check itself failed: {type(error).__name__}: {error}",
                 remedy="report this; doctor should degrade rather than raise",
             )
-        print(f"  {'ok  ' if result.ok else 'FAIL'} {name}: {result.detail}")
+        label = "unkn" if result.unknown else ("ok  " if result.ok else "FAIL")
+        print(f"  {label} {name}: {result.detail}")
         for note in result.notes:
             print(f"       note: {note}")
         if not result.ok:
             failures += 1
-            if result.remedy:
-                print(f"       fix:  {result.remedy}")
+        if (not result.ok or result.unknown) and result.remedy:
+            print(f"       fix:  {result.remedy}")
     print(f"\n{'PASS' if not failures else f'{failures} check(s) failed'}")
     return 1 if failures else 0
 

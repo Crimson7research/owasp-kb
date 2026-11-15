@@ -249,6 +249,10 @@ name doctor reports a symptom under.
 | Symptom | Check | Cause |
 |---|---|---|
 | Anything at all, as a first step | — | `python3 <scripts>/owasp-kb doctor` |
+| Anything on one host only | — | `python3 <scripts>/owasp-kb doctor --host claude` (or `codex`, `opencode`); with no flag it checks every host |
+| Plugin missing or disabled in Codex | `codex-plugin` | `codex plugin marketplace add Crimson7research/owasp-kb`, then `codex plugin add owasp-kb@owasp-kb` |
+| Codex hooks may not run | `codex-hooks` | Reported as `unkn`: Codex shows a script no trust state. Review the hooks with `/hooks` after every install and update |
+| OpenCode reported as failing | `opencode` | Expected until OpenCode gets agents and hooks (#95); `install/opencode.sh` gives the MCP tools and lighter skills |
 | `docker: permission denied`, or docker missing | `docker` | Not on PATH, daemon down, or user not in the `docker` group |
 | Tools absent right after installing | `plugin` | The plugin loaded from an unexpected directory; doctor prints which one it ran from |
 | The configured image is a tag, not a digest | `pin` | `.mcp.json` was hand-edited, or `pin_image.py` never ran for this release |

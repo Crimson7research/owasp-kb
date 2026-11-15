@@ -751,3 +751,83 @@ def test_the_entry_point_puts_its_own_directory_on_the_import_path():
         "the entry point no longer inserts its own directory, so the package "
         "beside it is unimportable"
     )
+
+
+def _fake_codex(monkeypatch, doctor, payload=None, code=0):
+    """Stand in for the codex binary: doctor shells out to `codex plugin list --json`."""
+    import subprocess
+
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/bin/codex")
+    out = json.dumps(payload) if payload is not None else "not json"
+    monkeypatch.setattr(
+        doctor,
+        "_run",
+        lambda *cmd: subprocess.CompletedProcess(cmd, code, stdout=out, stderr="boom"),
+    )
+
+
+def test_every_registered_check_belongs_to_shared_or_a_host():
+    """A check in CHECKS that no host selects never runs, and reads as covered."""
+    doctor = _module("doctor")
+    placed = set(doctor.SHARED).union(*map(set, doctor.HOST_CHECKS.values()))
+    assert placed == {name for name, _ in doctor.CHECKS}
+
+
+def test_checks_for_one_host_leaves_out_the_other_hosts_checks():
+    doctor = _module("doctor")
+    names = [n for n, _ in doctor.checks_for(("codex",))]
+    assert "codex-plugin" in names and "docker" in names
+    assert "marketplace" not in names and "opencode" not in names
+
+
+def test_doctor_checks_every_host_by_default(capsys, monkeypatch):
+    doctor = _module("doctor")
+    seen = []
+    monkeypatch.setattr(doctor, "checks_for", lambda hosts: seen.append(hosts) or [])
+    doctor.run()
+    assert seen == [doctor.HOSTS]
+    assert "claude, codex, opencode" in capsys.readouterr().out
+
+
+def test_the_codex_check_fails_when_the_plugin_is_missing(monkeypatch):
+    doctor = _module("doctor")
+    _fake_codex(monkeypatch, doctor, {"installed": []})
+    result = doctor.check_codex_plugin()
+    assert result.ok is False and "codex plugin add" in result.remedy
+
+
+def test_the_codex_check_fails_when_the_plugin_is_disabled(monkeypatch):
+    doctor = _module("doctor")
+    entry = {"pluginId": "owasp-kb@owasp-kb", "enabled": False}
+    _fake_codex(monkeypatch, doctor, {"installed": [entry]})
+    result = doctor.check_codex_plugin()
+    assert result.ok is False and "disabled" in result.detail
+
+
+def test_the_codex_check_passes_when_the_plugin_is_enabled(monkeypatch):
+    doctor = _module("doctor")
+    entry = {"pluginId": "owasp-kb@owasp-kb", "enabled": True}
+    _fake_codex(monkeypatch, doctor, {"installed": [entry]})
+    assert doctor.check_codex_plugin().ok is True
+
+
+def test_the_codex_check_skips_when_codex_is_absent(monkeypatch):
+    doctor = _module("doctor")
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    assert doctor.check_codex_plugin().ok is True
+
+
+def test_codex_hooks_are_reported_unknown_never_ok(monkeypatch, capsys):
+    """Codex shows a script no trust state, so file presence must not read as `ok`."""
+    doctor = _module("doctor")
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/bin/codex")
+    result = doctor.check_codex_hooks()
+    assert result.unknown and "/hooks" in result.remedy
+    assert doctor.run([("codex-hooks", lambda: result)]) == 0
+    assert "unkn" in capsys.readouterr().out
+
+
+def test_opencode_is_reported_as_a_failure():
+    doctor = _module("doctor")
+    result = doctor.check_opencode()
+    assert result.ok is False and "issues/95" in result.remedy
