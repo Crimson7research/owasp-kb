@@ -1915,6 +1915,7 @@ DOCTOR_CHECK_NAMES = {
     "marketplace",
     "codex-plugin",
     "codex-hooks",
+    "codex-agents",
     "opencode",
 }
 

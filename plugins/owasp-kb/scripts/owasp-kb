@@ -7,6 +7,7 @@ container can write a report or clear a session.
 
     owasp-kb report merge --session <id> --out <path> [--expect-findings N]
     owasp-kb doctor [--pull] [--host claude|codex|opencode]
+    owasp-kb sync --host codex [--pull]
     owasp-kb sessions list
     owasp-kb sessions purge <id>... [--yes]
     owasp-kb sessions purge --older-than <days> [--yes]
@@ -23,7 +24,7 @@ from pathlib import Path
 # PATH either, deliberately (ADR 0018); this insert is only about imports.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from owasp_kb_cli import doctor, report, sessions  # noqa: E402
+from owasp_kb_cli import codex_agents, doctor, report, sessions  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
         help="check only this host (repeatable); default is every host",
     )
 
+    y = sub.add_parser("sync", help="install what a host's plugin install cannot carry")
+    y.add_argument("--host", required=True, choices=["codex"], help="the host to sync")
+    y.add_argument("--pull", action="store_true", help="also pull the pinned image")
+
     s = sub.add_parser("sessions", help="inspect or clear assessment state on this machine")
     s_sub = s.add_subparsers(dest="sessions_command", required=True)
     s_sub.add_parser("list", help="what each session holds, and how much of it")
@@ -73,6 +78,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "doctor":
         return doctor.pull() if args.pull else doctor.run(hosts=tuple(args.host or doctor.HOSTS))
+
+    if args.command == "sync":
+        return codex_agents.run_sync(pull=args.pull)
 
     if args.command == "sessions":
         if args.sessions_command == "list":

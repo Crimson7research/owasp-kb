@@ -454,6 +454,26 @@ def check_codex_hooks() -> Result:
     )
 
 
+def check_codex_agents() -> Result:
+    """Do the installed Codex agents match what this plugin copy would generate?"""
+    from owasp_kb_cli import codex_agents
+
+    if shutil.which("codex") is None:
+        return Result(True, "codex is not on PATH, so there are no Codex agents to check")
+    target = codex_agents.codex_home() / "agents"
+    sync_command = f"{invocation()} sync --host codex"
+    manifest = codex_agents.read_manifest(target)
+    if not manifest:
+        return Result(False, f"no agents installed in {target}", remedy=sync_command)
+    expected = codex_agents.generate(plugin_root() / "agents")
+    missing = [n for n in expected if not (target / n).is_file()]
+    if missing:
+        return Result(False, f"agent files are absent: {missing}", remedy=sync_command)
+    if manifest.get("content_hash") != codex_agents.content_hash(expected):
+        return Result(False, "installed agents are stale against this plugin", remedy=sync_command)
+    return Result(True, f"{len(expected)} Codex agents match this plugin")
+
+
 def check_opencode() -> Result:
     return Result(
         False,
@@ -476,13 +496,14 @@ CHECKS: list[tuple[str, Callable[[], Result]]] = [
     ("marketplace", check_marketplace_failure_mode),
     ("codex-plugin", check_codex_plugin),
     ("codex-hooks", check_codex_hooks),
+    ("codex-agents", check_codex_agents),
     ("opencode", check_opencode),
 ]
 
 SHARED = ("docker", "pin", "image", "server", "state")
 HOST_CHECKS = {
     "claude": ("plugin", "hooks", "ssh", "marketplace"),
-    "codex": ("codex-plugin", "codex-hooks"),
+    "codex": ("codex-plugin", "codex-hooks", "codex-agents"),
     "opencode": ("opencode",),
 }
 HOSTS = tuple(HOST_CHECKS)
