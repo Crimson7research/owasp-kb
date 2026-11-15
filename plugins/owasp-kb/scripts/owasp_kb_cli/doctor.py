@@ -284,13 +284,13 @@ def check_server_answers() -> Result:
 
 def check_hooks() -> Result:
     root = plugin_root()
-    manifest = root / ".claude-plugin" / "plugin.json"
+    manifest = root / "hooks" / "hooks.json"
     limit = (
         "nothing on the host can see which hooks the harness registered, so this "
-        "checks the files the manifest names"
+        "checks the files hooks/hooks.json names"
     )
     if not manifest.is_file():
-        return Result(False, f"no manifest at {manifest}. {limit}", remedy="reinstall the plugin")
+        return Result(False, f"no hooks file at {manifest}. {limit}", remedy="reinstall the plugin")
     declared: list[str] = []
     for entries in json.loads(manifest.read_text()).get("hooks", {}).values():
         for entry in entries:
@@ -302,7 +302,7 @@ def check_hooks() -> Result:
     if missing:
         return Result(
             False,
-            f"hook files the manifest names are absent: {missing}. {limit}",
+            f"hook files hooks/hooks.json names are absent: {missing}. {limit}",
             remedy="reinstall the plugin",
         )
     return Result(True, f"{len(declared)} hook files present. {limit}")
