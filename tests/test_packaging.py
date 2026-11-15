@@ -1913,6 +1913,9 @@ DOCTOR_CHECK_NAMES = {
     "state",
     "ssh",
     "marketplace",
+    "codex-plugin",
+    "codex-hooks",
+    "opencode",
 }
 
 
@@ -1922,7 +1925,7 @@ def test_the_doctor_check_names_are_the_ones_the_cli_registers():
     that do not exist -- documentation asserted against documentation."""
     text = Path("plugins/owasp-kb/scripts/owasp_kb_cli/doctor.py").read_text()
     registry = text[text.index("CHECKS: list[") : text.index("def run(")]
-    registered = set(re.findall(r'\("(\w+)", check_', registry))
+    registered = set(re.findall(r'\("([\w-]+)", check_', registry))
     assert registered == DOCTOR_CHECK_NAMES, (
         f"doctor registers {sorted(registered)}, this file lists {sorted(DOCTOR_CHECK_NAMES)}"
     )

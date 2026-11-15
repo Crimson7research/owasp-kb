@@ -6,7 +6,7 @@ read-only and the target repository is not mounted at all, so nothing inside the
 container can write a report or clear a session.
 
     owasp-kb report merge --session <id> --out <path> [--expect-findings N]
-    owasp-kb doctor [--pull]
+    owasp-kb doctor [--pull] [--host claude|codex|opencode]
     owasp-kb sessions list
     owasp-kb sessions purge <id>... [--yes]
     owasp-kb sessions purge --older-than <days> [--yes]
@@ -51,6 +51,12 @@ def main(argv: list[str] | None = None) -> int:
 
     d = sub.add_parser("doctor", help="check the install chain")
     d.add_argument("--pull", action="store_true", help="pull the pinned image and exit")
+    d.add_argument(
+        "--host",
+        action="append",
+        choices=doctor.HOSTS,
+        help="check only this host (repeatable); default is every host",
+    )
 
     s = sub.add_parser("sessions", help="inspect or clear assessment state on this machine")
     s_sub = s.add_subparsers(dest="sessions_command", required=True)
@@ -66,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         return report.merge(args.session, args.out, args.expect_findings)
 
     if args.command == "doctor":
-        return doctor.pull() if args.pull else doctor.run()
+        return doctor.pull() if args.pull else doctor.run(hosts=tuple(args.host or doctor.HOSTS))
 
     if args.command == "sessions":
         if args.sessions_command == "list":
