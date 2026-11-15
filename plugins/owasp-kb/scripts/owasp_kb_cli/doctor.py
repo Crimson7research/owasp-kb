@@ -458,7 +458,9 @@ def check_opencode() -> Result:
     return Result(
         False,
         "OpenCode is not supported yet: no agents, hooks or plugin install path",
-        remedy=f"see {OPENCODE_ISSUE}; install/opencode.sh gives MCP tools and the lighter skills only",
+        remedy=(
+            f"see {OPENCODE_ISSUE}; install/opencode.sh gives MCP tools and the lighter skills only"
+        ),
     )
 
 
