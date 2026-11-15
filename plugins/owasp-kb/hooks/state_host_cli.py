@@ -52,7 +52,7 @@ from pathlib import Path
 # its subparsers are built inside main() rather than at module level, so reading
 # them means constructing the parser. A three-word tuple that a test compares
 # against the real parsers is cheaper and fails just as loudly.
-COMMANDS = ("report merge", "doctor", "sessions")
+COMMANDS = ("report merge", "doctor", "sync", "sessions")
 
 
 def scripts_directory() -> Path:

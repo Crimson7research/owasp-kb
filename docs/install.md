@@ -179,9 +179,17 @@ Observed on `codex-cli 0.166.0`:
   sessions prompt for approval instead.
 - **The version column reads `local`.** The plugin declares no version, so the
   commit is the version (ADR [0014](decisions/0014-image-digest-pin.md)).
-- **The two assessment skills do not complete.** `owasp-asvs-verify` and
-  `owasp-asvs-gap-report` dispatch six agents. Codex copies `agents/*.md` into
-  its plugin cache but does not register them. Issue #96 tracks the port.
+- **Agents need a sync step.** Codex copies `agents/*.md` into its plugin cache but
+  registers none, and a plugin cannot declare them yet. Run
+  `python3 <scripts>/owasp-kb sync --host codex` after every install and update. It
+  generates a Codex TOML agent per file into `$CODEX_HOME/agents`, records a
+  manifest, prunes agents no longer shipped, and leaves your own agents alone. Set
+  `max_depth = 2` under `[agents]` in `config.toml`, because the chapter
+  orchestrator launches the finders.
+- **Agent tool limits are instructions on Codex.** Codex has no per-agent tool
+  allowlist, so each agent's old limit is restated as a rule it must follow.
+- **The assessment skills are not proven on Codex.** Their wording, the session id
+  and agent nesting are tracked in #96.
 
 ## OpenCode
 
@@ -251,6 +259,7 @@ name doctor reports a symptom under.
 | Anything at all, as a first step | — | `python3 <scripts>/owasp-kb doctor` |
 | Anything on one host only | — | `python3 <scripts>/owasp-kb doctor --host claude` (or `codex`, `opencode`); with no flag it checks every host |
 | Plugin missing or disabled in Codex | `codex-plugin` | `codex plugin marketplace add Crimson7research/owasp-kb`, then `codex plugin add owasp-kb@owasp-kb` |
+| Codex agents missing or stale | `codex-agents` | Run `python3 <scripts>/owasp-kb sync --host codex`; it writes the six agents to `$CODEX_HOME/agents` and prunes ones no longer shipped |
 | Codex hooks may not run | `codex-hooks` | Reported as `unkn`: Codex shows a script no trust state. Review the hooks with `/hooks` after every install and update |
 | OpenCode reported as failing | `opencode` | Expected until OpenCode gets agents and hooks (#95); `install/opencode.sh` gives the MCP tools and lighter skills |
 | `docker: permission denied`, or docker missing | `docker` | Not on PATH, daemon down, or user not in the `docker` group |

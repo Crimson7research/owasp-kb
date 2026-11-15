@@ -831,3 +831,77 @@ def test_opencode_is_reported_as_a_failure():
     doctor = _module("doctor")
     result = doctor.check_opencode()
     assert result.ok is False and "issues/95" in result.remedy
+
+
+AGENTS_DIR = Path("plugins/owasp-kb/agents")
+
+
+def test_every_claude_agent_becomes_a_valid_codex_agent():
+    """Codex needs name, description and developer_instructions; a file missing one
+    is dropped without an error."""
+    import tomllib
+
+    files = _module("codex_agents").generate(AGENTS_DIR)
+    assert len(files) == len(list(AGENTS_DIR.glob("*.md"))) == 6
+    for name, text in files.items():
+        data = tomllib.loads(text)
+        assert f"{data['name']}.toml" == name
+        assert data["description"] and data["developer_instructions"]
+
+
+def test_the_generated_agents_carry_no_claude_only_machinery():
+    text = "".join(_module("codex_agents").generate(AGENTS_DIR).values())
+    for leftover in ("ToolSearch", "mcp__plugin_", "maxTurns", "model:"):
+        assert leftover not in text, leftover
+
+
+def test_the_tool_allowlist_is_restated_as_a_rule():
+    """Codex has no per-agent allowlist, so the refuter's read-only limit survives
+    only as an instruction."""
+    import tomllib
+
+    files = _module("codex_agents").generate(AGENTS_DIR)
+    refuter = tomllib.loads(files["owasp-exemption-refuter.toml"])["developer_instructions"]
+    rule = refuter.split("\n\n")[0]
+    assert "You may only: read files, search file contents, find files by name" in rule
+    assert "MCP" not in rule
+    probe = tomllib.loads(files["owasp-probe-runner.toml"])["developer_instructions"]
+    assert "run shell commands" in probe.split("\n\n")[0]
+
+
+def test_sync_writes_prunes_and_leaves_a_users_own_agent_alone(tmp_path):
+    agents = _module("codex_agents")
+    src = tmp_path / "src"
+    src.mkdir()
+    for path in AGENTS_DIR.glob("*.md"):
+        (src / path.name).write_text(path.read_text())
+    home = tmp_path / "home"
+    (home / "agents").mkdir(parents=True)
+    (home / "agents" / "owasp-probe-runner.toml").write_text("name = 'mine'\n")
+
+    first = agents.sync(src, home, "img@sha256:x")
+    assert any(a.startswith("skipped owasp-probe-runner.toml") for a in first)
+    assert (home / "agents" / "owasp-probe-runner.toml").read_text() == "name = 'mine'\n"
+    assert (home / "agents" / "owasp-scope-inventory.toml").is_file()
+
+    (src / "owasp-scope-inventory.md").unlink()
+    second = agents.sync(src, home, "img@sha256:x")
+    assert "removed owasp-scope-inventory.toml: no longer shipped" in second
+    assert not (home / "agents" / "owasp-scope-inventory.toml").exists()
+
+
+def test_the_codex_agents_check_reports_missing_stale_and_current(monkeypatch, tmp_path):
+    doctor = _module("doctor")
+    agents = _module("codex_agents")
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/bin/codex")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(doctor, "plugin_root", lambda: Path("plugins/owasp-kb"))
+    assert doctor.check_codex_agents().ok is False
+
+    agents.sync(AGENTS_DIR, tmp_path, "img")
+    assert doctor.check_codex_agents().ok is True
+
+    manifest = tmp_path / "agents" / agents.MANIFEST
+    stale = json.loads(manifest.read_text()) | {"content_hash": "old"}
+    manifest.write_text(json.dumps(stale))
+    assert "stale" in doctor.check_codex_agents().detail

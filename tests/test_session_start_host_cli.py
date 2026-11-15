@@ -88,7 +88,7 @@ def test_the_note_names_every_command_the_cli_registers():
         for line in source.splitlines()
         if re.search(r"=\s*sub\.add_parser\(", line)
     }
-    assert registered == {"report", "doctor", "sessions"}, (
+    assert registered == {"report", "doctor", "sync", "sessions"}, (
         f"the CLI registers {sorted(registered)}; this test's expectation is stale"
     )
     note = _context()
