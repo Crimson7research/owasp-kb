@@ -4,7 +4,7 @@
       "command": "sh",
       "args": [
         "-c",
-        "mkdir -p \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb\" && exec docker run -i --rm --network none -v \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb:/state:ro\" ${OWASP_KB_IMAGE:-ghcr.io/crimson7research/owasp-kb@sha256:1252f3c3bb98fc007ebc03c9181e9737cfdac6e5b6803418216357a0489a4e34}"
+        "mkdir -p \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb\" && exec docker run -i --rm --network none -v \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/owasp-kb:/state:ro\" ${OWASP_KB_IMAGE:-ghcr.io/crimson7research/owasp-kb@sha256:370e7e15c16851103fb3190066f3ddb429eeb920f8992c67838070475144fe22}"
       ]
     }
   }

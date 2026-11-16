@@ -1,5 +1,5 @@
 {
-  "image": "ghcr.io/crimson7research/owasp-kb@sha256:1252f3c3bb98fc007ebc03c9181e9737cfdac6e5b6803418216357a0489a4e34",
+  "image": "ghcr.io/crimson7research/owasp-kb@sha256:370e7e15c16851103fb3190066f3ddb429eeb920f8992c67838070475144fe22",
   "packs": {
     "aisvs": "1.01",
     "asvs": "5.0.0",
@@ -7,5 +7,5 @@
     "cwe": "4.20",
     "masvs": "2.1.0"
   },
-  "server_version": "0.24.0"
+  "server_version": "0.25.0"
 }
